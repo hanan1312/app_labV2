@@ -158,8 +158,8 @@ async function saveResults() {
 // saved result (save_results() only returns messaging.enabled when is_complete is true),
 // so a partial save never messages the client.
 async function sendCompletionMessage(messaging, reportUrl) {
-    const liveServer = `${window.location.protocol}//${window.location.hostname}:7000`;
-    const nodeServer = `${window.location.protocol}//${window.location.hostname}:3000`;
+    const liveServer = `${window.location.protocol}//${window.location.hostname}:${window.APP_PORTS.backend}`;
+    const nodeServer = `${window.location.protocol}//${window.location.hostname}:${window.APP_PORTS.node}`;
     const endpoint = messaging.method === 'sms' ? '/api/sms/send' : '/api/whatsapp/send';
 
     let cleanUrl = encodeURI(reportUrl.trim());

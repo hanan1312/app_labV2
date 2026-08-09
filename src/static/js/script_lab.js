@@ -728,7 +728,7 @@ async function handleBulkEmailHR() {
     // --- WhatsApp, direct to the Node bot (same pattern as the results-delivery flow) ---
     let waSent = 0, waFailed = 0;
     if (phoneRecipients.length > 0) {
-        const nodeServer = `http://${window.location.hostname}:3000`;
+        const nodeServer = `http://${window.location.hostname}:${window.APP_PORTS.node}`;
         for (const r of phoneRecipients) {
             try {
                 const waResponse = await fetch(`${nodeServer}/api/whatsapp/send`, {
@@ -3208,8 +3208,8 @@ async function handleFileUpload(event) {
                 showAlert("Report uploaded. Auto-messaging is disabled.", "info");
                 return;
             }
-            const liveServer = `http://${window.location.hostname}:7000`;
-            const nodeServer = `http://${window.location.hostname}:3000`; // Your Node.js Bot Port
+            const liveServer = `http://${window.location.hostname}:${window.APP_PORTS.backend}`;
+            const nodeServer = `http://${window.location.hostname}:${window.APP_PORTS.node}`; // Your Node.js Bot Port
             const endpoint = (method === 'sms') ? '/api/sms/send' : '/api/whatsapp/send';
             
             const patientName = window.currentUploadPatientName || "Patient";
@@ -3303,7 +3303,7 @@ async function checkWhatsAppStatus() {
     const qrContainer = document.getElementById('wa-modal-qr-container');
     const qrImg = document.getElementById('wa-modal-qr-img');
     
-    const nodeServer = `http://${window.location.hostname}:3000`;
+    const nodeServer = `http://${window.location.hostname}:${window.APP_PORTS.node}`;
 
     try {
         const response = await fetch(`${nodeServer}/api/whatsapp/status?centerId=lab`);

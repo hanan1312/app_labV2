@@ -66,7 +66,7 @@ app.get('/api/whatsapp/status', (req, res) => {
     res.json(status);
 });
 
-const PORT = 3000;
+const PORT = process.env.NODE_PORT || 5050;
 app.listen(PORT, () => {
     console.log(`Node Server: WhatsApp Microservice running on port ${PORT}`);
 });

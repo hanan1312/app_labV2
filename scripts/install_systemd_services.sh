@@ -63,7 +63,7 @@ echo "========================================"
 mkdir -p "$LOG_DIR"
 chown "$APP_USER":"$APP_USER" "$LOG_DIR"
 
-cat > /etc/systemd/system/lab_python.service <<EOF
+cat > /etc/systemd/system/lab_python_port.service <<EOF
 [Unit]
 Description=Lab App - Python Backend
 After=network.target
@@ -82,7 +82,7 @@ StandardError=append:$LOG_DIR/python_err.log
 WantedBy=multi-user.target
 EOF
 
-cat > /etc/systemd/system/lab_node.service <<EOF
+cat > /etc/systemd/system/lab_node_port.service <<EOF
 [Unit]
 Description=Lab App - Node WhatsApp Bot
 After=network.target
@@ -101,11 +101,11 @@ StandardError=append:$LOG_DIR/node_err.log
 WantedBy=multi-user.target
 EOF
 
-echo "--> Wrote /etc/systemd/system/lab_python.service and lab_node.service"
+echo "--> Wrote /etc/systemd/system/lab_python_port.service and lab_node_port.service"
 
 systemctl daemon-reload
-systemctl enable lab_python.service lab_node.service
-systemctl restart lab_python.service lab_node.service
+systemctl enable lab_python_port.service lab_node_port.service
+systemctl restart lab_python_port.service lab_node_port.service
 
 echo "========================================"
 echo " Done. Both services are running and will:"
