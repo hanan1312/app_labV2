@@ -43,7 +43,15 @@ fi
 # PATH), so the unit file gets an absolute path systemd can actually exec — systemd services
 # don't source .bashrc/.profile, so relying on PATH at runtime wouldn't work even if this
 # script's own PATH happens to resolve it.
-NODE_BIN="$(sudo -u "$APP_USER" bash -lc 'command -v node' 2>/dev/null || true)"
+#
+# Source nvm.sh directly rather than going through a login shell (bash -lc): nvm's installer
+# appends its init lines to ~/.bashrc, which only runs for *interactive* shells — a
+# non-interactive login shell skips them (same reasoning as setup_and_run.sh's own nvm block).
+NODE_BIN="$(sudo -u "$APP_USER" bash -c '
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+    command -v node
+' 2>/dev/null || true)"
 if [ -z "$NODE_BIN" ]; then
     echo "ERROR: couldn't resolve 'node' for user $APP_USER (checked via their login shell, e.g. nvm)." >&2
     echo "Make sure Node is installed for that user (./setup_and_run.sh installs it via nvm if missing), then re-run." >&2
