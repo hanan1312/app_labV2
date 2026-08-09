@@ -32,6 +32,12 @@ ENV_NAME="lab_app"
 VENV_PYTHON="$SCRIPT_DIR/$ENV_NAME/bin/python"
 LOG_DIR="/var/log/lab_app"
 
+# Same override convention as setup_and_run.sh: BACKEND_PORT=8080 NODE_PORT=4000 sudo -E
+# ./scripts/install_systemd_services.sh. Baked into the unit files via Environment= below —
+# systemd doesn't inherit this shell's env otherwise, unlike PM2 which does.
+BACKEND_PORT="${BACKEND_PORT:-9050}"
+NODE_PORT="${NODE_PORT:-5050}"
+
 if [ ! -x "$VENV_PYTHON" ]; then
     echo "ERROR: $VENV_PYTHON not found." >&2
     echo "Run ./setup_and_run.sh once first (as $APP_USER, not root) to create the venv and" >&2
@@ -58,6 +64,59 @@ if [ -z "$NODE_BIN" ]; then
     exit 1
 fi
 
+# src/static/js/whatsapp.js launches a system-installed Chromium (falls back to
+# /usr/bin/chromium if unset) — same detection as setup_and_run.sh's npm-install step, needed
+# here too since systemd doesn't inherit whatever that step exported for this shell.
+if [ -z "$PUPPETEER_EXECUTABLE_PATH" ]; then
+    for candidate in /usr/bin/chromium /usr/bin/chromium-browser /snap/bin/chromium /usr/bin/google-chrome-stable /usr/bin/google-chrome; do
+        if [ -x "$candidate" ]; then
+            PUPPETEER_EXECUTABLE_PATH="$candidate"
+            break
+        fi
+    done
+fi
+if [ -z "$PUPPETEER_EXECUTABLE_PATH" ]; then
+    echo "WARNING: No system Chromium found — the WhatsApp bot will fail to launch a browser" >&2
+    echo "         until one is installed, e.g.: sudo apt-get install -y chromium-browser" >&2
+fi
+
+# setup_and_run.sh's own instructions say to run it once first to install deps — but it also
+# starts PM2-managed copies of both services as a side effect. Leaving those running alongside
+# the systemd units below means two process managers fight over the same ports: whichever one
+# is currently bound serves traffic while the other crash-loops (Restart=always/PM2 respawn),
+# silently wiping in-memory state (login-lockout counters, presence tracking) on every retry —
+# this is what caused the flaky login/session behavior seen on the server but not locally
+# (locally there's only ever PM2, never both). Stop any PM2 process pointing at this repo
+# before systemd takes the ports, so systemd is the sole owner from here on.
+PM2_BIN="$(sudo -u "$APP_USER" bash -c '
+    export NVM_DIR="$HOME/.nvm"
+    [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+    command -v pm2
+' 2>/dev/null || true)"
+if [ -n "$PM2_BIN" ]; then
+    CONFLICTING_PM2_NAMES="$(sudo -u "$APP_USER" "$PM2_BIN" jlist 2>/dev/null | "$VENV_PYTHON" -c '
+import json, sys
+try:
+    procs = json.load(sys.stdin)
+except Exception:
+    procs = []
+repo = sys.argv[1]
+for p in procs:
+    env = p.get("pm2_env") or {}
+    if str(env.get("pm_exec_path", "")).startswith(repo) or str(env.get("pm_cwd", "")).startswith(repo):
+        print(p.get("name", ""))
+' "$SCRIPT_DIR" 2>/dev/null || true)"
+    if [ -n "$CONFLICTING_PM2_NAMES" ]; then
+        echo "--> Found PM2-managed instance(s) of this app — stopping them (systemd is taking over):"
+        while IFS= read -r pm2_name; do
+            [ -z "$pm2_name" ] && continue
+            echo "    - $pm2_name"
+            sudo -u "$APP_USER" "$PM2_BIN" delete "$pm2_name" 2>/dev/null || true
+        done <<< "$CONFLICTING_PM2_NAMES"
+        sudo -u "$APP_USER" "$PM2_BIN" save 2>/dev/null || true
+    fi
+fi
+
 echo "========================================"
 echo " Installing systemd services"
 echo "========================================"
@@ -66,6 +125,9 @@ echo "  Running as:    $APP_USER"
 echo "  Python:        $VENV_PYTHON"
 echo "  Node:          $NODE_BIN"
 echo "  Logs:          $LOG_DIR"
+echo "  Backend port:  $BACKEND_PORT"
+echo "  Node port:     $NODE_PORT"
+echo "  Chromium:      ${PUPPETEER_EXECUTABLE_PATH:-<not found>}"
 echo "========================================"
 
 mkdir -p "$LOG_DIR"
@@ -79,6 +141,7 @@ After=network.target
 [Service]
 User=$APP_USER
 WorkingDirectory=$SCRIPT_DIR
+Environment=BACKEND_PORT=$BACKEND_PORT
 ExecStart=$VENV_PYTHON -m src.main
 Restart=always
 RestartSec=5
@@ -98,6 +161,8 @@ After=network.target
 [Service]
 User=$APP_USER
 WorkingDirectory=$SCRIPT_DIR/src/static/js
+Environment=NODE_PORT=$NODE_PORT
+Environment=PUPPETEER_EXECUTABLE_PATH=$PUPPETEER_EXECUTABLE_PATH
 ExecStart=$NODE_BIN $SCRIPT_DIR/src/static/js/server.js
 Restart=always
 RestartSec=5
@@ -120,10 +185,10 @@ echo " Done. Both services are running and will:"
 echo "   - restart automatically if they crash (Restart=always)"
 echo "   - start automatically on boot (systemctl enable)"
 echo "========================================"
-echo "Check status:   systemctl status lab_python.service lab_node.service"
+echo "Check status:   systemctl status lab_python_port.service lab_node_port.service"
 echo "Watch logs:     tail -f $LOG_DIR/python_out.log"
 echo "                tail -f $LOG_DIR/node_out.log"
-echo "Restart both:   sudo systemctl restart lab_python.service lab_node.service"
+echo "Restart both:   sudo systemctl restart lab_python_port.service lab_node_port.service"
 echo ""
 echo "NOTE: the WhatsApp bot needs its QR code scanned once per machine (see node_out.log"
 echo "the first time it starts) — this can't be automated, it needs a phone in hand."

@@ -22,6 +22,17 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+def _mark_online(username):
+    """Resets this user's PRESENCE_STORE entry (main.py) to 'online' right when they log in —
+    otherwise a stale 'offline'/timed-out flag left over from *any* prior logout (idle-triggered
+    or manual) would immediately kill the brand-new session on the very next API call, via the
+    offline-enforcement check in before_request_interceptor. Re-login should only ever be
+    blocked by the scheduled force_logout_time/login_resume_time window (checked separately
+    above), never by presence bookkeeping left over from before this login happened."""
+    from src.main import PRESENCE_STORE  # deferred: main.py imports this blueprint at load time
+    PRESENCE_STORE[username] = {'status': 'online', 'last_seen': time.time()}
+
+
 def admin_required(f):
     """Decorator to require a user to be logged in AND be an admin."""
     @wraps(f)
@@ -133,6 +144,7 @@ def login():
             session['workspace'] = workspace
             session['username'] = username
             _clear_failed_login(username)
+            _mark_online(username)
             log_activity('login', resource='auth', description=f"{username} logged in (master)")
             return jsonify({
                 "message": "Master Login successful",
@@ -175,6 +187,7 @@ def login():
         session['workspace'] = workspace
         session['username'] = user.username
         _clear_failed_login(username)
+        _mark_online(username)
 
         user_data = user.to_dict()
         user_data['workspace'] = workspace

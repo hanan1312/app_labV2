@@ -192,12 +192,17 @@ def before_request_interceptor():
         if 'user_id' not in session:
             return jsonify({'error': 'Authentication required. Please log in.'}), 401
 
-    # 1. STRICT OFFLINE LOGOUT ENFORCEMENT
-    # Ignore the login/logout routes to prevent infinite loops
+    # 1. STRICT OFFLINE LOGOUT ENFORCEMENT — regular users only; admins/masters are exempt
+    # (same exemption as the scheduled-lockout check below), since attendance-style presence
+    # policies were never meant to apply to them. Ignore the login/logout routes to prevent
+    # infinite loops.
     if request.path.startswith('/api/') and request.path not in ['/api/auth/login', '/api/auth/logout']:
+        role = (session.get('role') or '').lower()
+        user_id = str(session.get('user_id', ''))
         username = session.get('username')
 
-        if username and username in PRESENCE_STORE:
+        if (username and role != 'admin' and not user_id.startswith('master_')
+                and username in PRESENCE_STORE):
             user_data = PRESENCE_STORE[username]
             time_offline = time.time() - user_data['last_seen']
 
