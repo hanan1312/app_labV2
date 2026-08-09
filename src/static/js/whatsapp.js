@@ -47,8 +47,7 @@ const initializeClient = (centerId) => {
     const client = new Client({
         authStrategy: new LocalAuth({ clientId: centerId }), 
         puppeteer: {
-//            executablePath: '/snap/bin/chromium',
-            executablePath: '/usr/bin/chromium',
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium',
             headless: true,
             args: [
                 '--no-sandbox',

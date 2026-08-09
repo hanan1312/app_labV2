@@ -114,6 +114,31 @@ fi
 # src/static/js/server.js regardless of where it physically sits). Installing from the
 # manifest here — instead of a hardcoded package list baked into this script — keeps
 # dependencies in sync with package.json/package-lock.json automatically as they change.
+#
+# whatsapp-web.js pulls in Puppeteer, whose postinstall step tries to download its own
+# bundled Chrome — which has no build at all for Linux ARM (aarch64/armv7 hosts), and fails
+# `npm install` outright. We don't need that browser anyway: src/static/js/whatsapp.js always
+# launches a system-installed Chromium via PUPPETEER_EXECUTABLE_PATH. Skip the download and
+# point at whichever Chromium binary this host actually has (the package name/path varies —
+# "chromium" on some distros, "chromium-browser" on others).
+export PUPPETEER_SKIP_DOWNLOAD=true
+if [ -z "$PUPPETEER_EXECUTABLE_PATH" ]; then
+    for candidate in /usr/bin/chromium /usr/bin/chromium-browser /snap/bin/chromium /usr/bin/google-chrome-stable /usr/bin/google-chrome; do
+        if [ -x "$candidate" ]; then
+            PUPPETEER_EXECUTABLE_PATH="$candidate"
+            break
+        fi
+    done
+fi
+if [ -n "$PUPPETEER_EXECUTABLE_PATH" ]; then
+    echo "--> Using system Chromium at $PUPPETEER_EXECUTABLE_PATH for the WhatsApp bot."
+    export PUPPETEER_EXECUTABLE_PATH
+else
+    echo "WARNING: No system Chromium found (checked chromium, chromium-browser, snap chromium,"
+    echo "         google-chrome). The WhatsApp bot will fail to launch a browser until one is"
+    echo "         installed, e.g.: sudo apt-get install -y chromium-browser"
+fi
+
 echo "--> Installing Node.js dependencies (from package.json)..."
 npm install
 
