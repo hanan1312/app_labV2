@@ -1,0 +1,69 @@
+2026/08/09-05:01:57.573 1182b0 Reusing MANIFEST /home/hanan/work/github/app-labV2/src/static/js/.wwebjs_auth/session-lab/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/08/09-05:01:57.586 1182b0 Recovering log #5488
+2026/08/09-05:01:57.693 1182b0 Reusing old log /home/hanan/work/github/app-labV2/src/static/js/.wwebjs_auth/session-lab/Default/IndexedDB/https_web.whatsapp.com_0.indexeddb.leveldb/005488.log 
+2026/08/09-05:02:08.463 1182b0 Level-0 table #5538: started
+2026/08/09-05:02:08.491 1182b0 Level-0 table #5538: 1075919 bytes OK
+2026/08/09-05:02:08.495 1182b0 Delete type=0 #5488
+2026/08/09-05:02:08.570 1182b0 Compacting 1@0 + 0@1 files
+2026/08/09-05:02:08.598 1182b0 Generated table #5539@0: 14524 keys, 201865 bytes
+2026/08/09-05:02:08.600 1182b0 Generated table #5540@0: 1 keys, 1767 bytes
+2026/08/09-05:02:08.610 1182b0 Generated table #5541@0: 4103 keys, 272896 bytes
+2026/08/09-05:02:08.610 1182b0 Compacted 1@0 + 0@1 files => 476528 bytes
+2026/08/09-05:02:08.613 1182b0 compacted to: files[ 0 3 55 10 0 0 0 ]
+2026/08/09-05:02:08.666 1182b0 Compacting 1@1 + 10@2 files
+2026/08/09-05:02:08.731 1182b0 Generated table #5542@1: 22873 keys, 2190219 bytes
+2026/08/09-05:02:08.827 1182b0 Generated table #5543@1: 27726 keys, 2269885 bytes
+2026/08/09-05:02:08.927 1182b0 Generated table #5544@1: 23170 keys, 2283837 bytes
+2026/08/09-05:02:09.037 1182b0 Generated table #5545@1: 23816 keys, 2278988 bytes
+2026/08/09-05:02:09.206 1182b0 Generated table #5546@1: 24403 keys, 2275470 bytes
+2026/08/09-05:02:09.283 1182b0 Generated table #5547@1: 20516 keys, 2316354 bytes
+2026/08/09-05:02:09.368 1182b0 Generated table #5548@1: 24925 keys, 2202256 bytes
+2026/08/09-05:02:09.475 1182b0 Generated table #5549@1: 25832 keys, 2283047 bytes
+2026/08/09-05:02:09.579 1182b0 Generated table #5550@1: 18415 keys, 2334286 bytes
+2026/08/09-05:02:09.603 1182b0 Generated table #5551@1: 9063 keys, 683633 bytes
+2026/08/09-05:02:09.604 1182b0 Compacted 1@1 + 10@2 files => 21117975 bytes
+2026/08/09-05:02:09.607 1182b0 compacted to: files[ 0 2 55 10 0 0 0 ]
+2026/08/09-05:02:09.609 1182b0 Delete type=2 #5533
+2026/08/09-05:02:09.609 1182b0 Delete type=2 #5541
+2026/08/09-05:02:09.610 1182b0 Delete type=2 #5532
+2026/08/09-05:02:09.610 1182b0 Delete type=2 #5531
+2026/08/09-05:02:09.610 1182b0 Delete type=2 #5530
+2026/08/09-05:02:09.610 1182b0 Delete type=2 #5527
+2026/08/09-05:02:09.610 1182b0 Delete type=2 #5529
+2026/08/09-05:02:09.611 1182b0 Delete type=2 #5514
+2026/08/09-05:02:09.611 1182b0 Delete type=2 #5515
+2026/08/09-05:02:09.611 1182b0 Delete type=2 #5528
+2026/08/09-05:02:09.611 1182b0 Delete type=2 #5526
+2026/08/09-05:02:09.611 1182b0 Delete type=2 #5538
+2026/08/09-05:02:10.068 1182b0 Compacting 1@1 + 10@2 files
+2026/08/09-05:02:10.083 1182b0 Generated table #5552@1: 12321 keys, 108457 bytes
+2026/08/09-05:02:10.156 1182b0 Generated table #5553@1: 99686 keys, 2250974 bytes
+2026/08/09-05:02:10.229 1182b0 Generated table #5554@1: 99475 keys, 2248927 bytes
+2026/08/09-05:02:10.343 1182b0 Generated table #5555@1: 98680 keys, 2249580 bytes
+2026/08/09-05:02:10.446 1182b0 Generated table #5556@1: 66928 keys, 2216797 bytes
+2026/08/09-05:02:10.571 1182b0 Generated table #5557@1: 108248 keys, 2260675 bytes
+2026/08/09-05:02:10.659 1182b0 Generated table #5558@1: 39741 keys, 2272286 bytes
+2026/08/09-05:02:10.724 1182b0 Generated table #5559@1: 35869 keys, 2189427 bytes
+2026/08/09-05:02:10.856 1182b0 Generated table #5560@1: 70113 keys, 2236559 bytes
+2026/08/09-05:02:10.969 1182b0 Generated table #5561@1: 56143 keys, 2224133 bytes
+2026/08/09-05:02:11.056 1182b0 Generated table #5562@1: 42047 keys, 2205570 bytes
+2026/08/09-05:02:11.059 1182b0 Generated table #5563@1: 23 keys, 43575 bytes
+2026/08/09-05:02:11.059 1182b0 Compacted 1@1 + 10@2 files => 22506960 bytes
+2026/08/09-05:02:11.063 1182b0 compacted to: files[ 0 1 57 10 0 0 0 ]
+2026/08/09-05:02:17.479 1182bd Compacting 1@2 + 1@3 files
+2026/08/09-05:02:17.526 1182bd Generated table #5564@2: 2583 keys, 1906768 bytes
+2026/08/09-05:02:17.526 1182bd Compacted 1@2 + 1@3 files => 1906768 bytes
+2026/08/09-05:02:17.528 1182bd compacted to: files[ 0 1 56 10 0 0 0 ]
+2026/08/09-05:02:17.530 1182bd Delete type=2 #5498
+2026/08/09-05:02:17.530 1182bd Delete type=2 #5539
+2026/08/09-05:02:17.530 1182bd Delete type=2 #5496
+2026/08/09-05:02:17.530 1182bd Delete type=2 #5497
+2026/08/09-05:02:17.530 1182bd Delete type=2 #5495
+2026/08/09-05:02:17.530 1182bd Delete type=2 #5500
+2026/08/09-05:02:17.530 1182bd Delete type=2 #5499
+2026/08/09-05:02:17.530 1182bd Delete type=2 #5501
+2026/08/09-05:02:17.530 1182bd Delete type=2 #5552
+2026/08/09-05:02:17.530 1182bd Delete type=2 #5503
+2026/08/09-05:02:17.530 1182bd Delete type=2 #5516
+2026/08/09-05:02:17.530 1182bd Delete type=2 #5494
+2026/08/09-05:02:17.531 1182bd Delete type=2 #5502

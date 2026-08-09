@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ config.lab_name or 'Lab Report' }} — {{ visit.visit_id }}</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f7f6; margin: 0; padding: 20px; color: #222; }
+        .sheet { max-width: 800px; margin: 0 auto; background: white; border-radius: 10px; padding: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.08); }
+        .header { display: flex; align-items: center; gap: 15px; border-bottom: 2px solid #667eea; padding-bottom: 15px; margin-bottom: 15px; }
+        .header img { width: 60px; height: 60px; object-fit: contain; }
+        .header h1 { margin: 0; color: #2d3748; font-size: 22px; }
+        .header p { margin: 2px 0 0; color: #667eea; font-size: 13px; }
+        .credentials { display: flex; justify-content: space-between; font-size: 12px; color: #555; margin-bottom: 8px; }
+        .contact { font-size: 12px; color: #555; margin-bottom: 20px; }
+        .info-box { border: 1px solid #ddd; border-radius: 6px; padding: 15px; margin-bottom: 20px; font-size: 14px; line-height: 1.6; }
+        .test-title { color: #2d3748; font-size: 15px; margin: 20px 0 8px; text-transform: uppercase; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 13px; }
+        th { background: #667eea; color: white; text-align: left; padding: 8px; }
+        td { padding: 8px; border-bottom: 1px solid #eee; }
+        .abnormal { color: #c0392b; font-weight: bold; }
+        .interpretation { border: 1px solid #ddd; border-radius: 6px; padding: 15px; font-size: 13px; background: #fffaf0; }
+        .footer { margin-top: 25px; font-size: 11px; color: #888; border-top: 1px solid #eee; padding-top: 10px; }
+        .no-results { color: #888; font-style: italic; text-align: center; padding: 20px; }
+    </style>
+</head>
+<body>
+    <div class="sheet">
+        <div class="header">
+            {% if config.logo_path %}<img src="{{ config.logo_path if config.logo_path.startswith('data:') else '/' + config.logo_path.lstrip('/') }}" alt="Logo">{% endif %}
+            <div>
+                <h1>{{ config.lab_name or 'Laboratory' }}</h1>
+                {% if config.lab_subtitle %}<p>{{ config.lab_subtitle }}</p>{% endif %}
+            </div>
+        </div>
+
+        <div class="credentials">
+            <div>{{ config.lab_director or '' }}{% if config.doctor_qualification %}<br>{{ config.doctor_qualification }}{% endif %}{% if config.doctor_reg_no %}<br>Reg. No. {{ config.doctor_reg_no }}{% endif %}</div>
+            <div>{{ config.tech_name or '' }}{% if config.tech_qualification %}<br>{{ config.tech_qualification }}{% endif %}{% if config.tech_institute %}<br>{{ config.tech_institute }}{% endif %}</div>
+        </div>
+        <div class="contact">
+            {{ [config.lab_address, config.lab_phone, config.lab_email] | select | join(' | ') }}
+            {% if config.social_facebook or config.social_instagram or config.social_twitter %}
+                <br>{{ [config.social_facebook, config.social_instagram, config.social_twitter] | select | join(' | ') }}
+            {% endif %}
+        </div>
+
+        <div class="info-box">
+            <strong>Patient:</strong> {{ patient.first_name }} {{ patient.last_name }} &nbsp;|&nbsp;
+            <strong>Report ID:</strong> {{ visit.visit_id }}<br>
+            <strong>Age/Sex:</strong> {{ age if age is not none else '-' }} / {{ patient.gender if patient else '-' }} &nbsp;|&nbsp;
+            <strong>Referred By:</strong> {{ visit.referred_by or 'Self' }}<br>
+            <strong>Collection Date:</strong> {{ visit.date }} &nbsp;|&nbsp;
+            <strong>Report Date:</strong> {{ report_date.strftime('%Y-%m-%d %H:%M') }}
+        </div>
+
+        {% if tests %}
+            {% for test in tests %}
+            <div class="test-title">{{ test.name }}</div>
+            <table>
+                <thead><tr><th>Investigation</th><th>Result</th><th>Ref. Range</th><th>Unit</th></tr></thead>
+                <tbody>
+                    {% for row in test.rows %}
+                    <tr>
+                        <td>{{ row.name }}{% if row.method %}<br><em style="color:#888; font-size:11px;">Method: {{ row.method }}</em>{% endif %}</td>
+                        <td class="{{ 'abnormal' if row.abnormal else '' }}">{{ row.result_value or '-' }}</td>
+                        <td>{{ row.reference_range or '-' }}</td>
+                        <td>{{ row.unit or '-' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endfor %}
+        {% else %}
+            <div class="no-results">Results for this visit aren't available yet.</div>
+        {% endif %}
+
+        {% if interpretations %}
+        <div class="interpretation">
+            <strong>Interpretation:</strong><br>
+            {% for item in interpretations %}
+                <strong>{{ item.parameter }}:</strong> {{ item.note }}<br>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="footer">
+            {{ config.report_footer_note or 'This report is not valid for medical legal purposes.' }}
+        </div>
+    </div>
+</body>
+</html>

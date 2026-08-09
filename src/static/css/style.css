@@ -1,0 +1,506 @@
+:root {
+    /* DARK MODE VARIABLES (DEFAULT) */
+    --bg: #0f0452;
+    --bg-2: #0a1d2e;
+    --surface: #0e2638;
+    --surface-2: #102d42;
+    --border: rgba(255,255,255,.07);
+    --border-strong: rgba(255,255,255,.12);
+    --text: #e6f1f7;
+    --muted: #8aa6b8;
+    --brand: #2d8a9e;
+    --teal: #5cbdb9;
+    --mint: #7ce0c2;
+    --gold: #e8c07a;
+    --danger: #ef6b6b;
+    --warn: #f4b860;
+    --ok: #5cd1a3;
+    --grad: linear-gradient(135deg, #2d8a9e 0%, #5cbdb9 100%);
+    --shadow: 0 12px 40px -20px rgba(0,0,0,.6);
+    --radius: 18px;
+}
+
+.app-body.light-mode {
+    /* LIGHT MODE VARIABLES */
+    --bg: #08361a;
+    --bg-2: #ffffff75;
+    --surface: #ffffff;
+    --surface-2: #f8fafc;
+    --border: rgba(0,0,0,.1);
+    --border-strong: rgba(0,0,0,.15);
+    --text: #1a202c;
+    --muted: #64748b;
+    --shadow: 0 8px 30px -10px rgba(0,0,0,.1);
+    --ok: #16a34a;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', system-ui, sans-serif;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+}
+
+body.app-body {
+    background: 
+      radial-gradient(900px 600px at 80% -10%, rgba(92,189,185,.15), transparent 60%),
+      radial-gradient(700px 500px at -10% 110%, rgba(45, 137, 158, 0.671), transparent 60%),
+      var(--bg);
+    transition: background 0.3s, color 0.3s;
+}
+
+h1, h2, h3, h4 { 
+    font-family: 'Space Grotesk', sans-serif; 
+    letter-spacing: -.01em; 
+    color: var(--text); 
+    margin-bottom: 10px; 
+}
+
+/* Layout */
+.app { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+.main { display: flex; flex-direction: column; min-width: 0; }
+.view { padding: 28px; display: flex; flex-direction: column; gap: 24px; }
+
+/* Sidebar */
+.sidebar { background: var(--bg-2) !important; border-right: 1px solid var(--border); padding: 20px 16px; display: flex; flex-direction: column; gap: 24px; transition: background 0.3s; }
+.brand { display: flex; gap: 12px; align-items: center; padding: 6px 8px; }
+.logo { width: 40px; height: 40px; border-radius: 12px; background: var(--grad); display: grid; place-items: center; font-family: 'Space Grotesk'; font-weight: 700; color: #04121d; font-size: 20px; box-shadow: 0 6px 20px -6px rgba(92,189,185,.5); }
+.brand-name { font-family: 'Space Grotesk'; font-weight: 600; font-size: 16px; color: var(--text); }
+.brand-sub { color: var(--muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+
+/* Navigation & Tabs */
+.nav { display: flex; flex-direction: column; gap: 4px; }
+.nav-tab { display: flex; align-items: center; gap: 10px; padding: 10px 12px; color: var(--muted); background: transparent; border: none; text-align: left; border-radius: 10px; font-weight: 500; font-size: 14px; cursor: pointer; transition: .15s; font-family: inherit; width: 100%; }
+.nav-tab .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .4; display: inline-block; }
+.nav-tab:hover { background: var(--surface); color: var(--text); }
+.nav-tab.active { background: linear-gradient(90deg, rgba(92,189,185,.18), transparent); color: var(--text); }
+.nav-tab.active .dot { background: var(--mint); opacity: 1; box-shadow: 0 0 10px var(--mint); }
+
+/* Sidebar Nav Icons */
+.nav-tab {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    color: var(--muted);
+    background: transparent;
+    border: none;
+    text-align: left;
+    border-radius: 10px;
+    font-weight: 500;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    width: 100%;
+}
+
+.nav-tab:hover {
+    background: var(--surface);
+    color: var(--text);
+}
+
+.nav-icon {
+    font-size: 16px;
+    opacity: 0.6;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* Smooth bounce */
+}
+
+/* Active State Magic */
+.nav-tab.active {
+    background: linear-gradient(90deg, rgba(92, 189, 185, 0.18), transparent);
+    color: var(--text);
+}
+
+.nav-tab.active .nav-icon {
+    opacity: 1;
+    transform: scale(1.2); /* Makes the icon slightly bigger when active */
+    filter: drop-shadow(0 0 8px rgba(92, 189, 185, 0.4)); /* Gives it a slight glow */
+}
+
+/* Hide the old dot just in case it's still lying around in the CSS */
+.nav-tab .dot {
+    display: none; 
+}
+
+.tab-content { display: none; animation: fadeIn 0.3s ease; }
+.tab-content.active { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Topbar */
+.topbar {
+    display: flex;
+    flex-direction: column; /* Forces everything into vertical rows */
+    padding: 10px;
+    background: var(--bg-2);
+    border-bottom: 1px solid var(--border);
+}
+.top-actions { display: flex; gap: 12px; align-items: center; }
+.user { display: flex; align-items: center; gap: 10px; }
+.avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--grad); display: grid; place-items: center; font-family: 'Space Grotesk'; font-weight: 700; color: #04121d; }
+.user-name { font-size: 13px; font-weight: 600; color: var(--text); }
+.user-role { font-size: 11px; color: var(--muted); }
+
+/* Bento Grid */
+.bento { display: grid; grid-template-columns: repeat(12, 1fr); gap: 18px; }
+.card { background: linear-gradient(180deg, var(--surface), var(--bg-2)); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); transition: .2s; min-width: 0; }
+.col-3 { grid-column: span 3; } .col-4 { grid-column: span 4; } .col-6 { grid-column: span 6; } .col-8 { grid-column: span 8; } .col-12 { grid-column: span 12; }
+
+/* Stats / KPIs */
+.kpi .val { font-family: 'Space Grotesk'; font-size: 36px; font-weight: 600; line-height: 1; color: var(--text); }
+.kpi .label { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+
+/* Tables */
+.table-container { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; color: var(--text); }
+th { text-align: left; color: var(--muted); font-weight: 500; text-transform: uppercase; font-size: 11px; letter-spacing: .06em; padding: 14px; border-bottom: 1px solid var(--border); background: var(--bg-2); }
+td { padding: 14px; border-bottom: 1px solid var(--border); }
+tbody tr:hover { background: rgba(128,128,128,.05); }
+
+/* Forms */
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+.form-group { margin-bottom: 20px; }
+label { display: block; margin-bottom: 8px; font-weight: 500; color: var(--muted); font-size: 13px; }
+input, textarea, select { width: 100%; padding: 12px 16px; background: var(--bg-2); border: 1px solid var(--border); color: var(--text); border-radius: 10px; font-size: 14px; font-family: inherit; transition: .2s; }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 2px rgba(92,189,185,.2); }
+.search-box { position: relative; margin-bottom: 20px; max-width: 500px; }
+.search-box input { padding-left: 40px; }
+.search-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 18px; }
+
+/* Buttons & Pills */
+.btn { background: var(--grad); color: #04121d; border: 0; padding: 10px 18px; border-radius: 10px; font-weight: 600; font-family: inherit; cursor: pointer; font-size: 13px; transition: .2s; }
+.btn:hover { opacity: 0.9; transform: translateY(-1px); }
+.btn.ghost { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+.btn-danger { background: rgba(239,107,107,.15); color: var(--danger); border: 1px solid rgba(239,107,107,.3); }
+.pill { font-size: 11px; padding: 4px 10px; border-radius: 999px; font-weight: 600; display: inline-block; }
+.pill.ok { background: rgba(92,209,163,.15); color: var(--ok); }
+.pill.warn { background: rgba(244,184,96,.15); color: var(--warn); }
+.pill.danger { background: rgba(239,107,107,.15); color: var(--danger); }
+.pill.info { background: rgba(92,189,185,.15); color: var(--teal); }
+.pill.ghost { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+
+/* Modals */
+.modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; backdrop-filter: blur(4px); }
+.modal-content { background: var(--bg); margin: 5vh auto; padding: 30px; border-radius: var(--radius); border: 1px solid var(--border); width: 90%; max-width: 600px; max-height: 85vh; overflow-y: auto; box-shadow: var(--shadow); color: var(--text); }
+.close { color: var(--muted); float: right; font-size: 24px; cursor: pointer; }
+.close:hover { color: var(--text); }
+/* These "detail" modals are opened from a row inside another modal that's still open behind
+   them (e.g. Bills History / Work Orders lists). Equal z-index with the base .modal rule
+   left stacking to DOM order, so the list modal (declared later in the HTML) rendered in
+   front of the detail popup instead of behind it. Bumping these above the base layer makes
+   them always appear on top regardless of DOM position. */
+#bulk-bill-detail-modal, #work-order-detail-modal { z-index: 150; }
+
+/* Alerts */
+.alert-item { display: flex; justify-content: space-between; gap: 12px; padding: 14px; border-radius: 12px; border: 1px solid var(--border); margin-bottom: 12px; }
+.alert-item.ok { background: rgba(92,209,163,.10); border-color: rgba(92,209,163,.3); color: var(--ok); }
+.alert-item.warn { background: rgba(244,184,96,.10); border-color: rgba(244,184,96,.3); color: var(--warn); }
+.alert-item.danger { background: rgba(239,107,107,.10); border-color: rgba(239,107,107,.3); color: var(--danger); }
+
+/* =========================================
+   DASHBOARD ACTION BUTTONS
+   ========================================= */
+.dashboard-button-group { display: flex; gap: 15px; flex-wrap: wrap; margin-bottom: 24px; }
+.dashboard-btn { display: flex; align-items: center; justify-content: space-between; flex: 1; min-width: 220px; padding: 16px 20px; font-size: 1rem; font-weight: 600; font-family: inherit; color: #ffffff; border: none; border-radius: 8px; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+.dashboard-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(0,0,0,0.15); }
+.dashboard-btn .btn-badge { background: rgba(255, 255, 255, 0.25); padding: 4px 12px; border-radius: 20px; font-size: 1.1rem; }
+.blue-btn { background: #007bff; }
+.gray-btn { background: #6c757d; }
+.teal-btn { background: #17a2b8; }
+.yellow-btn { background: #ffc107; color: #000000; }
+.yellow-btn .btn-badge { background: rgba(0, 0, 0, 0.1); }
+
+/* =========================================
+   ACTION DROPDOWN MENU
+   ========================================= */
+.action-dropdown { position: relative; display: inline-block; }
+.action-dropdown-content { display: none; position: absolute; right: 0; top: 90%; background-color: var(--surface-2) !important; min-width: 160px; box-shadow: 0px 15px 40px rgba(0,0,0,0.4); z-index: 9999; border: 1px solid var(--border-strong) !important; z-index: 1000 !important; box-shadow: var(--shadow); border-radius: 8px; text-align: left; overflow: hidden; }
+.action-dropdown-content button { color: var(--text) !important; padding: 12px 14px; text-decoration: none; display: block; border: none; background: none; width: 100%; text-align: left; cursor: pointer; font-size: 13px; font-family: inherit; transition: background 0.2s; }
+.action-dropdown-content button:hover { background-color: var(--surface-2); color: var(--teal) !important; }
+.action-dropdown:hover .action-dropdown-content { display: block; }
+
+.table-container { overflow: visible !important; }
+
+/* =========================================
+   SETTINGS PAGE STYLES
+   ========================================= */
+.settings-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; box-shadow: var(--shadow); color: var(--text); overflow: hidden; }
+.logo-preview-wrapper { width: 100px; height: 100px; border-radius: 50%; border: 2px solid var(--border); margin: 0 auto; overflow: hidden; display: flex; align-items: center; justify-content: center; background: var(--bg-2); }
+.logo-preview-wrapper img { width: 100%; height: 100%; object-fit: cover; }
+.custom-file-input-group { display: flex; border: 1px solid var(--border); border-radius: 4px 4px 0 0; overflow: hidden; }
+.custom-file-input-group input[type="text"] { flex: 1; padding: 10px 15px; border: none; outline: none; background: var(--surface); color: var(--text); font-size: 14px; }
+.custom-file-input-group .browse-btn { background: var(--surface-2); padding: 10px 20px; border-left: 1px solid var(--border); cursor: pointer; color: var(--text); font-size: 14px; transition: background 0.2s; margin: 0; }
+.custom-file-input-group .browse-btn:hover { background: var(--bg); }
+.cover-image-container { background: var(--bg-2); padding: 0; text-align: center; border: 1px solid var(--border); border-top: none; height: 400px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.cover-image-container img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.settings-footer { background: var(--surface-2); padding: 15px 20px; border-top: 1px solid var(--border); }
+
+/* =========================================
+   PREMIUM GLASSMORPHISM THEME (DARK MODE DEFAULTS)
+   ========================================= */
+html, body, .main-content, .content-wrapper, .app-container, .tab-content { background-color: transparent !important; }
+
+/* Glass elements for Dark Mode */
+.glass-panel, .table-container, .admin-panel, .card, .settings-panel, .admin-controls, .admin-panel-header {
+    background: rgba(15, 23, 42, 0.55) !important;
+    backdrop-filter: blur(16px) !important;
+    -webkit-backdrop-filter: blur(16px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3) !important;
+}
+
+.admin-table { background: transparent !important; }
+.admin-table th { background: rgba(0, 0, 0, 0.4) !important; border-color: rgba(255, 255, 255, 0.05) !important; color: var(--text); }
+.admin-table td { border-color: rgba(255, 255, 255, 0.05) !important; color: var(--text); }
+.admin-table tr:nth-child(even) td { background: rgba(255, 255, 255, 0.02) !important; }
+.admin-table tr:hover td { background: rgba(255, 255, 255, 0.06) !important; }
+
+input[type="text"], input[type="date"], select, .search-box input {
+    background: rgba(0, 0, 0, 0.3) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    color: var(--text) !important;
+}
+input::placeholder { color: rgba(255, 255, 255, 0.4) !important; }
+
+/* =========================================
+   LIGHT MODE GLASSMORPHISM OVERRIDES
+   ========================================= */
+.app-body.light-mode .glass-panel,
+.app-body.light-mode .table-container,
+.app-body.light-mode .admin-panel,
+.app-body.light-mode .card,
+.app-body.light-mode .settings-panel,
+.app-body.light-mode .admin-controls,
+.app-body.light-mode .admin-panel-header,
+.app-body.light-mode .sidebar {
+    background: rgba(255, 255, 255, 0.85) !important;
+    border: 1px solid rgba(0, 0, 0, 0.1) !important;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.05) !important;
+    color: var(--text) !important;
+}
+
+/* Fix Tables for Light Mode */
+.app-body.light-mode .admin-table th { 
+    background: rgba(0, 0, 0, 0.05) !important; 
+    border-color: rgba(0, 0, 0, 0.1) !important;
+    color: var(--muted) !important;
+}
+.app-body.light-mode .admin-table td { 
+    border-color: rgba(0, 0, 0, 0.05) !important; 
+    color: var(--text) !important;
+}
+.app-body.light-mode .admin-table tr:nth-child(even) td { 
+    background: rgba(0, 0, 0, 0.02) !important; 
+}
+.app-body.light-mode .admin-table tr:hover td { 
+    background: rgba(0, 0, 0, 0.06) !important; 
+}
+
+/* Fix Inputs & Selects for Light Mode */
+.app-body.light-mode input[type="text"], 
+.app-body.light-mode input[type="date"], 
+.app-body.light-mode select, 
+.app-body.light-mode .search-box input {
+    background: rgba(255, 255, 255, 0.9) !important;
+    border: 1px solid rgba(0, 0, 0, 0.15) !important;
+    color: var(--text) !important;
+}
+.app-body.light-mode input::placeholder {
+    color: var(--muted) !important;
+}
+
+/* Fix Action Dropdowns for Light Mode */
+.app-body.light-mode .action-dropdown-content {
+    background: #ffffff !important;
+    border: 1px solid rgba(0,0,0,0.1) !important;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1) !important;
+}
+.app-body.light-mode .action-dropdown-content button:hover {
+    background: rgba(0,0,0,0.05) !important;
+}
+
+/* Fix Modal Backgrounds for Light mode */
+.app-body.light-mode .modal-content {
+    background: rgba(255, 255, 255, 0.95) !important;
+    color: var(--text);
+}
+/* Presence Indicator Dots */
+.presence-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 8px;
+}
+
+.presence-online {
+    background-color: var(--ok);
+    box-shadow: 0 0 6px var(--ok);
+}
+
+.presence-idle {
+    background-color: var(--warn);
+}
+
+.presence-offline {
+    background-color: var(--danger);
+    opacity: 0.6;
+}
+
+/* --- MOBILE RESPONSIVE FIXES --- */
+
+/* If screen is smaller than 900px */
+/* --- Mobile Responsive Fixes --- */
+@media (max-width: 900px) {
+    .topbar-row {
+        flex-wrap: wrap;
+        gap: 5px;
+    }
+    #mobile-menu-btn {
+        display: block !important; /* The !important ensures it overrides any other hidden state */
+        font-size: 24px;
+        cursor: pointer;
+        background: transparent;
+        border: none;
+        color: var(--text);
+    }
+    .app {
+        grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        width: 260px;
+        z-index: 1000;
+        background: var(--bg);
+        border-right: 1px solid var(--border);
+        /* Use transform for hardware-accelerated, smoother movement */
+        transform: translateX(-100%);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .sidebar.open {
+        transform: translateX(0);
+        box-shadow: 2px 0 15px rgba(0, 0, 0, 0.3);
+    }
+
+    .main {
+        width: 100%;
+        overflow-x: hidden; /* Prevents horizontal scroll on the main body */
+    }
+
+    /* Table responsive handling */
+    .table-container {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        /* Adds a subtle shadow to indicate scrollability */
+        background: linear-gradient(to right, var(--bg) 30%, rgba(255,255,255,0)),
+                    linear-gradient(to left, var(--bg) 30%, rgba(255,255,255,0));
+        background-position: left center, right center;
+        background-repeat: no-repeat;
+        background-size: 20px 100%;
+    }
+}
+/* ClockPicker Dark Theme Overrides */
+.popover {
+    background-color: var(--surface-2) !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: var(--shadow) !important;
+}
+.popover-title {
+    background-color: var(--surface) !important;
+    color: var(--text) !important;
+    border-bottom: 1px solid var(--border) !important;
+}
+.clockpicker-plate {
+    background-color: var(--bg-2) !important;
+}
+.clockpicker-tick {
+    color: var(--muted) !important;
+}
+.clockpicker-tick:hover {
+    color: var(--text) !important;
+    background-color: var(--surface) !important;
+}
+.clockpicker-canvas-bg {
+    fill: rgba(92, 189, 185, 0.2) !important; /* Matches your --teal */
+}
+.clockpicker-canvas-bearing, .clockpicker-canvas-fg {
+    fill: var(--teal) !important;
+}
+.clockpicker-canvas-line {
+    stroke: var(--teal) !important;
+}
+.popover.clockpicker-popover {
+    position: absolute !important;
+    z-index: 9999 !important;
+    /* You may need to adjust these based on your specific HR tab layout */
+    margin-top: 10px !important; 
+}
+
+/* --- 2. SOLID COLOR DASHBOARD CARDS (Image 2 Style) --- */
+.dashboard-top-cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 18px;
+    margin-bottom: 24px;
+}
+
+.stat-card-btn {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24px 20px;
+    border-radius: 8px;
+    color: #ffffff;
+    cursor: pointer;
+    border: none;
+    text-align: left;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.stat-card-btn:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.15);
+}
+
+.stat-card-btn .details h3 {
+    font-size: 14px;
+    font-weight: 500;
+    margin: 0 0 8px 0;
+    color: #ffffff; /* Override any global heading colors */
+}
+
+.stat-card-btn .details .val {
+    font-size: 32px;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    margin: 0;
+}
+
+.stat-card-btn .icon {
+    font-size: 40px;
+    opacity: 0.7;
+}
+
+/* Specific Colors from Image 2 */
+.bg-blue   { background-color: #2196F3; } /* Total Clients */
+.bg-cyan   { background-color: #00BCD4; } /* Pending Clients */
+.bg-orange { background-color: #FF9800; } /* Collected */
+.bg-teal   { background-color: #009688; } /* Demanded Tests */
+
+/* Mobile Responsiveness for Cards */
+@media (max-width: 1100px) {
+    .dashboard-top-cards { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 600px) {
+    .dashboard-top-cards { grid-template-columns: 1fr; }
+}
+

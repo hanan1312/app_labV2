@@ -1,0 +1,336 @@
+{
+  "EN": {
+    "sidebar": {
+      "dashboard": "Dashboard",
+      "patients": "Patients",
+      "tests": "Tests List",
+      "results": "Test Results",
+      "reports": "Reports",
+      "financial": "Financials",
+      "settings": "Settings",
+      "add_patient": "Add Patient",
+      "pending_samples": "Pending Samples",
+      "transaction_history": "Transaction History",
+      "history": "History",
+      "statistics": "Statistics",
+      "activity_log": "Activity Log"
+    },
+    "dashboard": {
+      "title": "Laboratory Dashboard",
+      "daily_reset": "Daily Reset",
+      "subtitle": "Overview of all laboratory activities and metrics",
+      "total_clients": "Total Clients",
+      "total_appointments": "List of All Appointments",
+      "pending_clients": "Pending Clients",
+      "pending_appointments": "List of Pending Appointments",
+      "finished_clients": "Collected (Waiting for Reports/s)",
+      "finished_appointments": "List of Finished Appointments",
+      "demanded_tests": "List of Demanded Tests",
+      "search_placeholder": "Search Patient ID, Name, Phone..."
+    },
+    "patients": {
+      "title": "Patient Directory",
+      "subtitle": "Manage all registered laboratory clients"
+    },
+    "filters": {
+      "filter_date": "Filter Date",
+      "from_date": "From Date",
+      "to_date": "To Date",
+      "all_statuses": "All Statuses",
+      "status": "Status",
+      "registration_date": "Registration Date",
+      "gender": "Gender",
+      "all_genders": "All Genders",
+      "male": "Male",
+      "female": "Female"
+    },
+    "table_headers": {
+      "number": "#",
+      "patient_id": "Patient ID",
+      "name": "Name",
+      "date_time": "Date & Time",
+      "phone": "Phone Number",
+      "gender": "Gender",
+      "latest_status": "Status",
+      "action": "Action",
+      "test_name": "Test Name",
+      "sample_type": "Sample Type",
+      "tests_included": "Tests Included",
+      "price": "Price (EGP)"
+    },
+    "status": {
+      "registered": "Registered",
+      "pending": "Pending",
+      "waiting_results": "Waiting for Results",
+      "processing": "Processing",
+      "delivered": "Delivered"
+    },
+    "actions": {
+      "view_details": "View Details",
+      "book_test": "Book test/s",
+      "upload_pdf": "Upload PDF Report",
+      "edit_patient": "Edit Patient",
+      "print_report": "Print Report",
+      "collect_sample": "Collect sample",
+      "action_menu": "Action ▾",
+      "save": "Save",
+      "cancel": "Cancel",
+      "update": "Update",
+      "export_excel": "Export to Excel",
+      "parameters": "Parameters",
+      "add_parameter": "+ Add Parameter"
+    },
+    "forms": {
+      "test_name": "Test Name",
+      "sample_type": "Sample Type",
+      "price": "Price (EGP)",
+      "param_name": "Name",
+      "param_unit": "Unit",
+      "param_method": "Method",
+      "param_ref_low": "Ref. Low",
+      "param_ref_high": "Ref. High",
+      "param_ref_text": "Reference Range (display)",
+      "param_abnormal_note": "Abnormal Interpretation"
+    },
+    "settings": {
+      "report_branding": "Report Branding",
+      "report_branding_hint": "Shown on the header/footer of generated lab reports.",
+      "doctor_name": "Doctor Name",
+      "doctor_qualification": "Doctor Qualification",
+      "doctor_reg_no": "Doctor Reg. No.",
+      "tech_name": "Lab Technician Name",
+      "tech_qualification": "Technician Qualification",
+      "tech_institute": "Technician Institute",
+      "lab_phone": "Lab Phone",
+      "lab_email": "Lab Email",
+      "lab_address": "Lab Address",
+      "social_facebook": "Facebook",
+      "social_instagram": "Instagram",
+      "social_twitter": "Twitter / X",
+      "report_footer_note": "Report Footer Note"
+    },
+    "modals": {
+      "add_test": "Add New Test",
+      "edit_test": "Edit Test",
+      "transaction_complete": "Transaction Complete",
+      "print_receipt": "Print Financial Receipt",
+      "print_barcodes": "Print Sample Barcodes",
+      "print_sampling_sheet": "Print Sampling Details Sheet",
+      "upload_title": "Upload PDF Report",
+      "select_pdf": "Select PDF File",
+      "visit_history": "Visit History",
+      "no_visits": "No laboratory visits recorded for this patient yet.",
+      "parameters_title": "Result Parameters",
+      "parameters_hint": "These rows appear as the results-entry table for this test on every visit that books it."
+    },
+    "financials": {
+      "title": "Financial  Statistics",
+      "subtitle": "Real-time revenue tracking and statistics",
+      "revenue_trend": "Revenue Trend (Last 7 Days)",
+      "demographics": "Patient Demographics",
+      "top_tests": "Top Demanded Tests",
+      "daily_revenue": "Daily Revenue",
+      "monthly_revenue": "Monthly Revenue",
+      "yearly_revenue": "Yearly Revenue"
+    },
+    "tests": {
+      "title": "Test Directory",
+      "subtitle": "Manage available laboratory tests and pricing"
+    },
+    "results": {
+      "title": "Delivered Results History",
+      "subtitle": "Archive of all patients with finished and uploaded PDF reports"
+    },
+    "reports": {
+      "title": "Master Patient Directory & Reports",
+      "subtitle": "Complete laboratory history for all registered patients"
+    },
+    "history": {
+      "title": "Transaction History",
+      "subtitle": "View and filter all patient payments"
+    },
+    "stats": {
+      "title": "Test Results Statistics",
+      "subtitle": "Every parameter result across all visits — filter for analytics and reporting",
+      "search_placeholder": "Search Patient, Test, Parameter...",
+      "status_label": "Result Status",
+      "status_all": "All Statuses",
+      "status_normal": "Normal",
+      "status_high": "High",
+      "status_low": "Low",
+      "status_abnormal": "Abnormal"
+    },
+    "activity": {
+      "title": "Activity Log",
+      "subtitle": "Every login, action, and page view across the system",
+      "online_now": "Online Now"
+    }
+  },
+  "AR": {
+    "sidebar": {
+      "dashboard": "لوحة التحكم",
+      "patients": "المرضى",
+      "tests": "التحاليل",
+      "results": "نتائج التحاليل",
+      "reports": "التقارير",
+      "financial": "الماليات",
+      "settings": "الإعدادات",
+      "add_patient": "إضافة مريض",
+      "pending_samples": "العينات المعلقة",
+      "transaction_history": "سجل المعاملات",
+      "history": "السجل",
+      "statistics": "الإحصائيات",
+      "activity_log": "سجل النشاط"
+    },
+    "dashboard": {
+      "title": "لوحة تحكم المختبر",
+      "daily_reset": "يوم جديد",
+      "subtitle": "نظرة عامة على جميع أنشطة ومقاييس المختبر",
+      "total_clients": "جميع العملاء",
+      "total_appointments": "قائمة جميع المواعيد",
+      "pending_clients": "العملاء المنتظرين",
+      "pending_appointments": "قائمة المواعيد المعلقة",
+      "finished_clients": "المواعيد المنتهية (تم تجميع العينات)",
+      "finished_appointments": "قائمة المواعيد المنتهية",
+      "demanded_tests": "قائمة التحاليل المطلوبة",
+      "search_placeholder": "ابحث عن كود المريض، الاسم، الهاتف..."
+    },
+    "patients": {
+      "title": "ملف المرضى",
+      "subtitle": "إدارة جميع المرضى المدرجين بالملفات"
+    },
+    "filters": {
+      "filter_date": "تصفية بالتاريخ",
+      "from_date": "من تاريخ",
+      "to_date": "إلى تاريخ",
+      "all_statuses": "جميع الحالات",
+      "status": "الحالة",
+      "registration_date": "تاريخ التسجيل",
+      "gender": "النوع",
+      "all_genders": "جميع الأنواع",
+      "male": "ذكر",
+      "female": "أنثى"
+    },
+    "table_headers": {
+      "number": "#",
+      "patient_id": "كود المريض",
+      "name": "الاسم",
+      "date_time": "التاريخ والوقت",
+      "phone": "رقم الهاتف",
+      "gender": "النوع",
+      "latest_status": "الحالة",
+      "action": "إجراء",
+      "test_name": "اسم التحليل",
+      "sample_type": "نوع العينة",
+      "tests_included": "التحاليل المتضمنة",
+      "price": "السعر (جنيه)"
+    },
+    "status": {
+      "registered": "مسجل",
+      "pending": "قيد الانتظار",
+      "waiting_results": "في انتظار النتائج",
+      "processing": "قيد الفحص",
+      "delivered": "تم التسليم"
+    },
+    "actions": {
+      "view_details": "عرض التفاصيل",
+      "book_test": "حجز تحليل/تحاليل",
+      "upload_pdf": "رفع تقرير PDF",
+      "edit_patient": "تعديل بيانات المريض",
+      "print_report": "طباعة التقرير",
+      "collect_sample": "سحب العينة",
+      "action_menu": "إجراء ▾",
+      "save": "حفظ",
+      "cancel": "إلغاء",
+      "update": "تحديث",
+      "export_excel": "تنزيل ملف اكسيل",
+      "parameters": "معايير التحليل",
+      "add_parameter": "+ إضافة معيار"
+    },
+    "forms": {
+      "test_name": "اسم التحليل",
+      "sample_type": "نوع العينة",
+      "price": "السعر (جنيه)",
+      "param_name": "الاسم",
+      "param_unit": "الوحدة",
+      "param_method": "الطريقة",
+      "param_ref_low": "الحد الأدنى",
+      "param_ref_high": "الحد الأعلى",
+      "param_ref_text": "المعدل الطبيعي (للعرض)",
+      "param_abnormal_note": "تفسير النتيجة غير الطبيعية"
+    },
+    "settings": {
+      "report_branding": "بيانات التقرير",
+      "report_branding_hint": "تظهر في رأس وتذييل تقارير التحاليل التي يتم إنشاؤها.",
+      "doctor_name": "اسم الطبيب",
+      "doctor_qualification": "المؤهل العلمي للطبيب",
+      "doctor_reg_no": "رقم تسجيل الطبيب",
+      "tech_name": "اسم أخصائي المعمل",
+      "tech_qualification": "المؤهل العلمي للأخصائي",
+      "tech_institute": "جهة تخريج الأخصائي",
+      "lab_phone": "هاتف المعمل",
+      "lab_email": "البريد الإلكتروني للمعمل",
+      "lab_address": "عنوان المعمل",
+      "social_facebook": "فيسبوك",
+      "social_instagram": "انستغرام",
+      "social_twitter": "تويتر / X",
+      "report_footer_note": "ملاحظة تذييل التقرير"
+    },
+    "modals": {
+      "add_test": "إضافة تحليل جديد",
+      "edit_test": "تعديل التحليل",
+      "transaction_complete": "اكتملت المعاملة بنجاح",
+      "print_receipt": "طباعة إيصال الدفع",
+      "print_barcodes": "طباعة باركود العينات",
+      "print_sampling_sheet": "طباعة ورقة سحب العينات",
+      "upload_title": "رفع تقرير النتائج",
+      "select_pdf": "اختر ملف الـ PDF",
+      "visit_history": "تاريخ الزيارات",
+      "no_visits": "لا توجد زيارات سابقة مسجلة لهذا المريض.",
+      "parameters_title": "معايير النتائج",
+      "parameters_hint": "تظهر هذه الصفوف كجدول إدخال النتائج لهذا التحليل في كل زيارة يتم فيها حجزه."
+    },
+    "financials": {
+      "title": "الاحصائيات المالية",
+      "subtitle": "احصائيات ة عمليات تتبع الإيرادات",
+      "revenue_trend": "مؤشر الإيرادات (آخر 7 أيام)",
+      "demographics": "التركيبة السكانية للمرضى",
+      "top_tests": "التحاليل الأكثر طلباً",
+      "daily_revenue": "الإيراد اليومي",
+      "monthly_revenue": "الإيراد الشهري",
+      "yearly_revenue": "الإيراد السنوي"
+    },
+    "tests": {
+      "title": "فسم التحاليل",
+      "subtitle": "إدارة التحالبل الطبية: تعديل و إضافة جديد و تحديد الأسعار"
+    },
+    "results": {
+      "title": "ملف التقارير الطبية المرسلة",
+      "subtitle": "أرشيف جميع التقارير الطبية المرسلة و المرفوعة على النظام"
+    },
+    "reports": {
+      "title": "الملف الشامل للمريض بالمعمل",
+      "subtitle": "تاريخ شامل لمعاملات المريض مع المعمل"
+    },
+    "history": {
+      "title": "سجل المعاملات",
+      "subtitle": "عرض و تصنيف المعاملات المالية للمريض"
+    },
+    "stats": {
+      "title": "إحصائيات نتائج التحاليل",
+      "subtitle": "كل نتيجة معيار عبر جميع الزيارات — يمكن تصفيتها للتحليل والتقارير",
+      "search_placeholder": "ابحث بالمريض، التحليل، المعيار...",
+      "status_label": "حالة النتيجة",
+      "status_all": "جميع الحالات",
+      "status_normal": "طبيعي",
+      "status_high": "مرتفع",
+      "status_low": "منخفض",
+      "status_abnormal": "غير طبيعي"
+    },
+    "activity": {
+      "title": "سجل النشاط",
+      "subtitle": "كل تسجيل دخول وإجراء ومشاهدة صفحة عبر النظام",
+      "online_now": "متصل الآن"
+    }
+  }
+}

@@ -1,0 +1,1510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/x-icon" href="/shtk.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Helix Lab — Medical Analysis</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/clockpicker/0.0.7/bootstrap-clockpicker.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/clockpicker/0.0.7/jquery-clockpicker.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.0/dist/JsBarcode.all.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+    <script src="https://printjs-4de6.kxcdn.com/print.min.js"></script>
+    <link rel="manifest" href="/static/manifest.json">
+</head>
+<body class="app-body">
+    <div class="app">
+        
+        <aside class="sidebar" id="sidebar">
+            <div class="brand">
+                <img src="img/default-logo.png" id="sidebar-logo" alt="Lab Logo" style="width: 40px; height: 40px; border-radius: 50%;">
+                <div>
+                    <div class="brand-name" id="sidebar-brand-name">Hanan Lab</div>
+                    <div class="brand-sub" id="sidebar-brand-sub">Pathological Analysis</div>
+                </div>
+            </div>
+            <nav class="nav">
+                <button class="nav-tab active" data-tab="dashboard">
+                    <span class="nav-icon">📊</span> <span data-i18n="sidebar.dashboard">Dashboard</span>
+                </button>
+                <button class="nav-tab" data-tab="clients">
+                    <span class="nav-icon">👥</span> <span data-i18n="sidebar.patients">Patients</span>
+                </button>
+                <button class="nav-tab" data-tab="add-client">
+                    <span class="nav-icon">➕</span> <span data-i18n="sidebar.add_patient">Add Patient</span>
+                </button>
+                <button class="nav-tab" data-tab="pending-samples">
+                    <span class="nav-icon">🧪</span> <span data-i18n="sidebar.pending_samples">Pending Samples</span>
+                </button>
+                <button class="nav-tab" data-tab="test-list">
+                    <span class="nav-icon">📋</span> <span data-i18n="sidebar.tests">Tests List</span>
+                </button>
+                <button class="nav-tab" data-tab="test-results">
+                    <span class="nav-icon">🔬</span> <span data-i18n="sidebar.results">Test Results</span>
+                </button>
+                <button class="nav-tab" data-tab="statistics">
+                    <span class="nav-icon">📈</span> <span data-i18n="sidebar.statistics">Statistics</span>
+                </button>
+                <button class="nav-tab" data-tab="reports">
+                    <span class="nav-icon">📑</span> <span data-i18n="sidebar.reports">Reports</span>
+                </button>
+                <button class="nav-tab" data-tab="warehouse">
+                    <span class="nav-icon">📦</span> <span data-i18n="sidebar.warehouse">Warehouse</span>
+                </button>
+                <button class="nav-tab" data-tab="transaction-history">
+                    <span class="nav-icon">🧾</span> <span data-i18n="sidebar.transaction_history">Transaction History</span>
+                </button>
+                <button class="nav-tab" data-tab="financial-overview">
+                    <span class="nav-icon">💰</span> <span data-i18n="sidebar.financial">Financial</span>
+                </button>
+                <button class="nav-tab" data-tab="tech-screen">
+                    <span class="nav-icon">🧪</span> <span data-i18n="sidebar.tech_screen">Tech Screen</span>
+                </button>
+                <button class="nav-tab" data-tab="hr-management">
+                    <span class="nav-icon">👥</span> <span data-i18n="sidebar.hr">HR & Staff</span>
+                </button>
+                <button class="nav-tab" data-tab="settings" id="settings-tab">
+                    <span class="nav-icon">⚙️</span> <span data-i18n="sidebar.settings">Settings</span>
+                </button>
+                <button class="nav-tab" data-tab="activity-log">
+                    <span class="nav-icon">🕵️</span> <span data-i18n="sidebar.activity_log">Activity Log</span>
+                </button>
+            </nav>
+        </aside>
+
+        <main class="main">
+            <header class="topbar">
+                <div class="topbar-row" style="display: flex; align-items: center; justify-content: space-between; width: 100%; padding-bottom: 5px;">
+                    <div style="display: flex; align-items: center;">
+                        <button class="btn ghost" id="mobile-menu-btn" style="display: none; margin-right: 15px;">☰</button>
+                        <div class="user" id="user-info"></div>
+                        <select id="language-selector" class="btn ghost" onchange="changeLanguage(this.value)" style="padding: 6px 12px; height: 38px;">
+                            <option value="EN">🌐 English</option>
+                            <option value="AR">🌐 العربية</option>
+                        </select>
+                        <button class="btn ghost" onclick="logout()" style="height: 38px;">Logout</button>
+                        <div class="action-dropdown" style="position: relative; display: inline-block;">
+                            <button class="icon-btn" onclick="toggleNotifications(event)" style="position: relative;">
+                                🔔
+                                <span id="notif-badge" style="display: none; position: absolute; top: -5px; right: -5px; background: var(--danger); color: white; border-radius: 50%; padding: 2px 6px; font-size: 10px; font-weight: bold; min-width: 16px; text-align: center; line-height: 1.2; box-shadow: 0 2px 4px rgba(0,0,0,0.3);">
+                                    0
+                                </span>
+                            </button>
+                            
+                            <div id="notifications-dropdown" class="glass-panel" style="display: none; position: absolute; right: 0; top: 50px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; z-index: 1000; width: 320px; box-shadow: var(--shadow); overflow: hidden;">
+                                <div style="padding: 15px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                                    <h4 style="margin: 0; color: var(--text);" data-i18n="topbar.notifications">Notifications</h4>
+                                    <button class="btn ghost" style="padding: 4px 8px; font-size: 11px;" onclick="clearNotifications()">Clear All</button>
+                                </div>
+                                <div id="notifications-list" style="max-height: 300px; overflow-y: auto;">
+                                    </div>
+                            </div>
+                        </div>
+                        
+                    </div>
+                </div>
+                <div class="top-actions">
+                    <select id="workspace-selector" class="btn ghost" onchange="changeWorkspace()" style="padding: 6px 12px; height: 38px;">
+                        <option value="clinic">Clinic Workspace</option>
+                        <option value="lab">Lab Workspace</option>
+                    </select>
+                    <div id="role-simulator-container" style="display: none; align-items: center; gap: 10px;">
+                        <span style="font-size: 12px; color: var(--muted);">View As:</span>
+                        <select id="role-simulator" onchange="switchRole(this.value)" style="padding: 5px; background: rgba(0,0,0,0.5); color: white; border-radius: 4px;">
+                            <option value="lab_master">👑 Lab Master</option>
+                            <option value="Admin">👨‍💼 Admin</option>
+                            <option value="User">👩‍💻 User</option>
+                        </select>
+                    </div>
+                    <button id="topbar-wa-btn" class="icon-btn wa-btn" onclick="openWhatsAppModal()" title="WhatsApp Connection Status" style="display: none;">
+                        <span class="wa-icon">💬</span> 
+                        <span class="wa-text">WhatsApp Status</span>
+                    </button>
+                </div>
+            
+                
+            </header>
+
+            <section class="view" id="view">
+                <div id="book-test-modal" class="modal">
+                    <div class="modal-content glass-panel" style="max-width: 600px;">
+                        <span class="close" onclick="closeBookTestModal()">&times;</span>
+                        
+                        <h2 style="margin-bottom: 10px; color: var(--text);" data-i18n="modals.book_test_title">Book Tests for Patient</h2>
+                        <p style="margin-bottom: 20px; color: var(--muted);" data-i18n="modals.book_test_desc">Select the tests to demand for this appointment:</p>
+                        
+                        <form id="book-test-form" onsubmit="submitTestBooking(event)">
+                            
+                            <div id="dynamic-test-checkboxes" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 25px; background: rgba(0,0,0,0.2); padding: 20px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); max-height: 300px; overflow-y: auto;">
+                            </div>
+            
+                            <div style="text-align: right;">
+                                <button type="button" class="btn ghost" onclick="closeBookTestModal()" data-i18n="actions.cancel">Cancel</button>
+                                <button type="submit" class="btn" style="background: var(--teal); color: #04121d; margin-left: 10px;" data-i18n="actions.submit_booking">Submit Booking</button>
+                            </div>
+                            
+                        </form>
+                    </div>
+                </div>
+                <div id="wa-qr-modal" class="modal" style="display: none;">
+                    <div class="modal-content glass-panel" style="max-width: 400px; text-align: center;">
+                        <span class="close" onclick="closeWhatsAppModal()">&times;</span>
+                        
+                        <h2 style="color: var(--teal); margin-bottom: 15px;">WhatsApp Status</h2>
+                        <p id="wa-modal-status-msg" style="color: var(--warn); font-weight: bold; font-size: 16px;">Checking connection...</p>
+                        
+                        <!-- QR Code Container -->
+                        <div id="wa-modal-qr-container" style="display: none; background: white; padding: 15px; border-radius: 12px; margin: 20px auto; width: fit-content; box-shadow: var(--shadow);">
+                            <img id="wa-modal-qr-img" src="" alt="WhatsApp QR Code" style="width: 250px; height: 250px; display: block;">
+                            <p style="color: #000; font-size: 12px; margin-top: 10px; font-weight: bold;">Scan with WhatsApp to link device</p>
+                        </div>
+                        
+                        <button class="btn ghost" style="margin-top: 15px; width: 100%;" onclick="checkWhatsAppStatus()">🔄 Refresh Status</button>
+                    </div>
+                </div>
+                <div id="hr-management" class="tab-content">
+    
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 15px; margin-bottom: 24px;">
+                        <div>
+                            <h1 data-i18n="hr.title">HR & Staff Management</h1>
+                            <p style="color: var(--muted); margin-top: 5px;" data-i18n="hr.subtitle">Manage lab employees, roles, and payroll</p>
+                        </div>
+                        
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+
+                            <div style="width: 140px; margin-right: 10px;">
+                                <select id="hr-filter-presence" onchange="renderHRTable()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                                    <option value="">All Activity</option>
+                                    <option value="online">🟢 Online</option>
+                                    <option value="idle">🟡 Idle</option>
+                                    <option value="offline">🔴 Offline</option>
+                                </select>
+                            </div>
+                            <input type="file" id="import-hr-excel" accept=".xlsx, .xls, .csv" style="display: none;" onchange="processHRExcelImport(event)">
+                            
+                            <button class="btn ghost" style="border-color: #3b82f6; color: #3b82f6;" onclick="document.getElementById('import-hr-excel').click()">
+                                📤 Import Excel
+                            </button>
+                            
+                            <button class="btn ghost" style="border-color: var(--ok); color: var(--ok);" onclick="exportTableToCSV(this, 'hr_employees_directory')">
+                                📥 Export Excel
+                            </button>
+                            
+                            <button class="btn" style="background: var(--teal); color: #04121d; font-weight: bold;" onclick="openEmployeeModal()">
+                                + Add Employee
+                            </button>
+                        </div>
+                    </div>
+                    <div class="glass-panel" style="padding: 15px; border-radius: 8px; border: 1px dashed var(--border); margin-bottom: 20px; display: flex; gap: 20px; align-items: flex-end; flex-wrap: wrap;">
+                        <div style="flex: 1; min-width: 200px;">
+                            <h4 style="color: var(--warn); margin-bottom: 5px;">System Security Policies</h4>
+                            <p style="font-size: 11px; color: var(--muted); margin: 0;">These settings apply to all logged-in staff immediately.</p>
+                        </div>
+                        
+                        <div style="flex: 1;">
+                            <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;">Daily Logout Time</label>
+                            <input type="text" id="hr-force-logout-time" style="padding: 8px; width: 100%; border-radius: 4px; background: rgba(0,0,0,0.3); color: white;">
+                            <p id="display-logout-time" style="font-size: 10px; color: var(--teal); margin-top: 5px;"></p>
+                            <p style="font-size: 10px; color: var(--muted); margin-top: 2px;">Admins and master accounts are never force-logged-out by this.</p>
+                        </div>
+
+                        <div style="flex: 1;">
+                            <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;">Login Allowed Again From</label>
+                            <input type="text" id="hr-login-resume-time" style="padding: 8px; width: 100%; border-radius: 4px; background: rgba(0,0,0,0.3); color: white;">
+                            <p id="display-resume-time" style="font-size: 10px; color: var(--teal); margin-top: 5px;"></p>
+                            <p style="font-size: 10px; color: var(--muted); margin-top: 2px;">Non-admin staff can't log back in between the daily logout time and this time.</p>
+                        </div>
+
+                        <div>
+                            <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;">Idle Auto-Logout</label>
+                            <select id="hr-idle-logout-timeout" style="padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                                <option value="0">Never (Stay Logged In)</option>
+                                <option value="30">After 30 Mins</option>
+                                <option value="60">After 1 Hour</option>
+                                <option value="120">After 2 Hours</option>
+                            </select>
+                        </div>
+                        
+                        <button class="btn" style="background: var(--surface-2); color: white; border: 1px solid var(--border);" onclick="saveSessionPolicies()">💾 Save Policies</button>
+                    </div>
+                    <div id="hr-list-container"></div>
+                
+                </div>
+                
+                <div id="employee-modal" class="modal" style="display: none;">
+                    <div class="modal-content glass-panel" style="max-width: 500px;">
+                        <span class="close" onclick="closeEmployeeModal()">&times;</span>
+                        <h2 id="emp-modal-title" style="margin-bottom: 20px; color: var(--text);">Add New Employee</h2>
+                        
+                        <form id="employee-form" onsubmit="saveEmployeeRecord(event)">
+                            <input type="hidden" id="emp-id">
+                            
+                            <div style="margin-bottom: 15px;">
+                                <label style="color: var(--muted); font-size: 12px; text-transform: uppercase;">Full Name *</label>
+                                <input type="text" id="emp-name" required style="width: 100%; margin-top: 5px;">
+                            </div>
+                            
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                                <div>
+                                    <label style="color: var(--muted); font-size: 12px; text-transform: uppercase;">Role *</label>
+                                    <select id="emp-role" required style="width: 100%; margin-top: 5px;">
+                                        <option value="Pathologist">Pathologist</option>
+                                        <option value="Phlebotomist">Phlebotomist</option>
+                                        <option value="Lab Technician">Lab Technician</option>
+                                        <option value="User">User</option>
+                                        <option value="Admin">Admin</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="color: var(--muted); font-size: 12px; text-transform: uppercase;">Status</label>
+                                    <select id="emp-status" required style="width: 100%; margin-top: 5px;">
+                                        <option value="Active">Active</option>
+                                        <option value="On Leave">On Leave</option>
+                                        <option value="Terminated">Terminated</option>
+                                    </select>
+                                </div>
+                            </div>
+                
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 25px;">
+                                <div>
+                                    <label style="color: var(--muted); font-size: 12px; text-transform: uppercase;">Phone</label>
+                                    <input type="text" id="emp-phone" style="width: 100%; margin-top: 5px;">
+                                </div>
+                                <div>
+                                    <label style="color: var(--muted); font-size: 12px; text-transform: uppercase;">Salary (EGP)</label>
+                                    <input type="number" step="0.01" id="emp-salary" style="width: 100%; margin-top: 5px;">
+                                </div>
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 25px;">
+                                <div>
+                                    <label style="color: var(--muted); font-size: 12px; text-transform: uppercase;">Email</label>
+                                    <input type="email" id="emp-email" style="width: 100%; margin-top: 5px;" placeholder="name@example.com">
+                                </div>
+                                <div>
+                                    <label style="color: var(--muted); font-size: 12px; text-transform: uppercase;">Join Date</label>
+                                    <input type="date" id="emp-join-date" style="width: 100%; margin-top: 5px;">
+                                </div>
+                            </div>
+                            <div style="margin-bottom: 25px; padding: 15px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+                                <label style="color: var(--teal); font-size: 12px; text-transform: uppercase; font-weight: bold;">System Username (For Activity Tracking)</label>
+                                <p style="font-size: 11px; color: var(--muted); margin-top: 4px; margin-bottom: 8px;">Link this employee to a system login to track their live presence.</p>
+                                <input type="text" id="emp-username" style="width: 100%;" placeholder="e.g. dr_okafor (Leave blank if no system access)">
+                            </div>
+                            
+                            <div style="text-align: right;">
+                                <button type="button" class="btn ghost" onclick="closeEmployeeModal()">Cancel</button>
+                                <button type="submit" class="btn" style="background: var(--teal); color: #04121d; margin-left: 10px;">Save Employee</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <div id="payment-modal" class="modal">
+                    <div class="modal-content glass-panel" style="max-width: 500px;">
+                        <span class="close" onclick="closePaymentModal()">&times;</span>
+                        <h2 style="margin-bottom: 20px; color: var(--text);" data-i18n="modals.checkout_title">Checkout Summary</h2>
+                        
+                        <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                            <p><strong data-i18n="checkout.patient">Patient:</strong> <span id="pay-patient-name"></span> (ID: <span id="pay-patient-id"></span>)</p>
+                            <p><strong data-i18n="checkout.trans_id">Trans ID:</strong> <span id="pay-trans-id" style="color: var(--teal);"></span></p>
+                            <p><strong data-i18n="checkout.date">Date:</strong> <span id="pay-date"></span></p>
+                        </div>
+            
+                        <div style="margin-bottom: 20px;">
+                            <h4 style="color: var(--muted); border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; margin-bottom: 10px;" data-i18n="checkout.submitted_tests">Submitted Tests</h4>
+                            <div id="pay-test-list" style="max-height: 150px; overflow-y: auto;"></div>
+                        </div>
+            
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <strong data-i18n="checkout.subtotal">Subtotal:</strong>
+                            <strong style="font-size: 18px;">EGP <span id="pay-subtotal">0.00</span></strong>
+                        </div>
+            
+                        <div style="display: flex; gap: 15px; margin-bottom: 25px;">
+                            <div style="flex: 1;">
+                                <label style="font-size: 12px; color: var(--muted); display: block; margin-bottom: 5px;" data-i18n="checkout.discount">Discount</label>
+                                <select id="pay-discount" style="width: 100%;" onchange="calculateFinalPayment()">
+                                    <option value="0" data-i18n="checkout.discount_none">None (0%)</option>
+                                    <option value="10">10%</option>
+                                    <option value="15">15%</option>
+                                    <option value="30">30%</option>
+                                    <option value="50">50%</option>
+                                </select>
+                            </div>
+                            <div style="flex: 1;">
+                                <label style="font-size: 12px; color: var(--muted); display: block; margin-bottom: 5px;" data-i18n="checkout.payment_method">Payment Method</label>
+                                <input type="text" id="pay-method" list="pay-method-list" style="width: 100%;">
+                                <datalist id="pay-method-list">
+                                    <option value="Cash">Cash</option>
+                                    <option value="Visa">Visa</option>
+                                    <option value="InstaPay">InstaPay</option>
+                                    <option value="Vodafone Cash">Vodafone Cash</option>
+                                </datalist>
+                            </div>
+                        </div>
+            
+                        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0, 200, 150, 0.1); padding: 15px; border-radius: 8px; border: 1px solid rgba(0, 200, 150, 0.3); margin-bottom: 20px;">
+                            <span style="font-size: 18px; color: var(--text);" data-i18n="checkout.total_due">Total Due:</span>
+                            <span style="font-size: 24px; color: var(--ok); font-weight: bold;">EGP <span id="pay-final-total">0.00</span></span>
+                        </div>
+            
+                        <button class="btn" style="width: 100%; background: var(--teal); color: #04121d; font-size: 16px; padding: 12px;" onclick="processTransaction()">💳 <span data-i18n="checkout.pay_now">Pay Now</span></button>
+                    </div>
+                </div>
+            
+                <div id="receipt-modal" class="modal">
+                    <div class="modal-content" style="max-width: 450px; background: #fff; color: #000; border-radius: 8px; text-align: center; font-family: monospace;">
+                        <h2 style="margin-top: 10px; margin-bottom: 5px; color: #000;" data-i18n="receipt.title">OFFICIAL RECEIPT</h2>
+                        <p style="margin-bottom: 20px; font-size: 12px; color: #666;" data-i18n="receipt.subtitle">Medicio PathLabs</p>
+                        
+                        <div style="text-align: left; border-bottom: 1px dashed #ccc; padding-bottom: 10px; margin-bottom: 10px; font-size: 14px;">
+                            <p><strong data-i18n="receipt.patient">Patient:</strong> <span id="rec-name"></span></p>
+                            <p><strong data-i18n="receipt.pt_id">Pt ID:</strong> <span id="rec-pid"></span></p>
+                            <p><strong data-i18n="receipt.trans_id">Trans ID:</strong> <span id="rec-tid"></span></p>
+                            <p><strong data-i18n="receipt.date">Date:</strong> <span id="rec-date"></span></p>
+                        </div>
+            
+                        <table style="width: 100%; text-align: left; margin-bottom: 15px; font-size: 14px;">
+                            <thead>
+                                <tr style="border-bottom: 1px solid #000;">
+                                    <th data-i18n="receipt.test">Test</th>
+                                    <th style="text-align: right;" data-i18n="receipt.price">Price</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rec-table-body"></tbody>
+                        </table>
+            
+                        <div style="text-align: right; font-size: 14px; border-top: 1px dashed #ccc; padding-top: 10px;">
+                            <p><span data-i18n="receipt.subtotal">Subtotal</span>: <span id="rec-subtotal"></span> EGP</p>
+                            <p><span data-i18n="receipt.discount">Discount</span>: <span id="rec-discount"></span>%</p>
+                            <p><span data-i18n="receipt.method">Method</span>: <span id="rec-method"></span></p>
+                            <h3 style="margin-top: 10px;"><span data-i18n="receipt.total_paid">TOTAL PAID:</span> <span id="rec-total"></span> EGP</h3>
+                        </div>
+                        
+                        <button class="btn" style="margin-top: 25px; width: 100%; background: #000; color: #fff;" onclick="closeReceiptModal()" data-i18n="receipt.close">Close Window</button>
+                    </div>
+                </div>
+
+
+                <div id="test-modal" class="modal">
+                    <div class="modal-content glass-panel" style="max-width: 450px;">
+                        <span class="close" onclick="closeTestModal()">&times;</span>
+                        <h2 id="test-modal-title" style="margin-bottom: 20px; color: var(--text);" data-i18n="modals.add_test">Add New Test</h2>
+                        
+                        <form id="test-form" onsubmit="saveTestRecord(event)">
+                   
+                            <div style="margin-bottom: 15px;">
+                                <label style="color: var(--muted); font-size: 12px; text-transform: uppercase;" data-i18n="forms.test_name">Test Name</label>
+                                <input type="text" id="test-name-input" required style="width: 100%; margin-top: 5px;">
+                            </div>
+                            <div style="margin-bottom: 15px;">
+                                <label style="color: var(--muted); font-size: 12px; text-transform: uppercase;" data-i18n="forms.sample_type">Sample Type</label>
+                                <input type="text" id="test-sample-input" placeholder="e.g. Serum, EDTA Blood..." required style="width: 100%; margin-top: 5px;">
+                            </div>
+                            <div style="margin-bottom: 25px;">
+                                <label style="color: var(--muted); font-size: 12px; text-transform: uppercase;" data-i18n="forms.price">Price (EGP)</label>
+                                <input type="number" step="0.01" id="test-price-input" required style="width: 100%; margin-top: 5px;">
+                            </div>
+                            <div style="text-align: right;">
+                                <button type="button" class="btn ghost" onclick="closeTestModal()" data-i18n="actions.cancel">Cancel</button>
+                                <button type="submit" class="btn" style="background: var(--teal); color: #04121d; margin-left: 10px;" data-i18n="actions.save_test">Save Test</button>
+                            </div>
+                        </form>
+                        
+                    </div>
+                </div>
+                <div id="parameters-modal" class="modal">
+                    <div class="modal-content glass-panel" style="max-width: 800px;">
+                        <span class="close" onclick="closeParametersModal()">&times;</span>
+                        <h2 style="margin-bottom: 5px; color: var(--text);" data-i18n="modals.parameters_title">Result Parameters</h2>
+                        <p id="parameters-modal-subtitle" style="color: var(--muted); font-size: 12px; margin-bottom: 15px;"></p>
+                        <p style="color: var(--muted); font-size: 12px; margin-bottom: 15px;" data-i18n="modals.parameters_hint">These rows appear as the results-entry table for this test on every visit that books it.</p>
+
+                        <div class="table-container" style="max-height: 45vh; overflow-y: auto;">
+                            <table style="width: 100%;">
+                                <thead>
+                                    <tr>
+                                        <th data-i18n="forms.param_name">Name</th>
+                                        <th data-i18n="forms.param_unit">Unit</th>
+                                        <th data-i18n="forms.param_method">Method</th>
+                                        <th data-i18n="forms.param_ref_low">Ref. Low</th>
+                                        <th data-i18n="forms.param_ref_high">Ref. High</th>
+                                        <th data-i18n="forms.param_ref_text">Ref. Range (display)</th>
+                                        <th data-i18n="forms.param_abnormal_note">Abnormal Interpretation</th>
+                                        <th style="width: 40px;"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="parameters-modal-rows"></tbody>
+                            </table>
+                        </div>
+
+                        <div style="margin-top: 15px; text-align: left;">
+                            <button type="button" class="btn ghost" onclick="addParameterRow()" data-i18n="actions.add_parameter">+ Add Parameter</button>
+                        </div>
+
+                        <div style="text-align: right; margin-top: 20px;">
+                            <button type="button" class="btn ghost" onclick="closeParametersModal()" data-i18n="actions.cancel">Cancel</button>
+                            <button type="button" class="btn" style="background: var(--teal); color: #04121d; margin-left: 10px;" onclick="saveParameterRows()" data-i18n="actions.save">Save</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="post-payment-modal" class="modal">
+                    <div class="modal-content glass-panel" style="max-width: 400px; text-align: center;">
+                        <span class="close" onclick="document.getElementById('post-payment-modal').style.display='none'">&times;</span>
+                        <div style="font-size: 40px; margin-bottom: 10px;">✅</div>
+                        <h2 style="color: var(--text); margin-bottom: 10px;" data-i18n="modals.transaction_complete">Transaction Complete</h2>
+                        <p style="color: var(--muted); margin-bottom: 25px;" data-i18n="modals.next_action">Select your next action for this patient.</p>
+                        
+                        <button class="btn" style="width: 100%; margin-bottom: 15px; background: var(--teal); color: #000;" onclick="printReceipt()">🖨️ <span data-i18n="modals.print_receipt">Print Financial Receipt</span></button>
+                        <button class="btn" style="width: 100%; margin-bottom: 15px; background: #3b82f6; color: white; border: none;" onclick="printBarcodes()">🏷️ <span data-i18n="modals.print_barcodes">Print Sample Barcodes</span></button>
+                        <button class="btn" style="width: 100%; background: #e8c07a; color: black; border: none;" onclick="printSamplingSheet()">📄 <span data-i18n="modals.print_sampling_sheet">Print Sampling Details Sheet</span></button>
+                    </div>
+                </div>
+                <div id="alert-container"></div>
+
+                <div id="dashboard" class="tab-content active">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h2 style="color: var(--text);" data-i18n="dashboard.title">Laboratory Dashboard</h2>
+                        <!-- <button class="btn btn-danger" onclick="performDailyReset()">🔄 <span data-i18n="dashboard.daily_reset">Daily Reset</span></button> -->
+                    </div>
+                    
+                    <!-- 1. The 4 Colored Buttons -->
+                    <div class="dashboard-top-cards">
+                        <button class="stat-card-btn bg-blue" onclick="showDashboardTable('total')">
+                            <div class="details">
+                                <h3>All Patients</h3>
+                                <div class="val" id="count-total">0</div>
+                            </div>
+                            <div class="icon">👥</div>
+                        </button>
+
+                        <button class="stat-card-btn bg-cyan" onclick="showDashboardTable('pending')">
+                            <div class="details">
+                                <h3>Samples Waiting For Collection</h3>
+                                <div class="val" id="count-pending">0</div>
+                            </div>
+                            <div class="icon">👥</div>
+                        </button>
+
+                        <button class="stat-card-btn bg-orange" onclick="showDashboardTable('finished')">
+                            <div class="details">
+                                <h3>Collected</h3>
+                                <div class="val" id="count-finished">0</div>
+                            </div>
+                            <div class="icon">📈</div>
+                        </button>
+
+                        <button class="stat-card-btn bg-teal" onclick="showDashboardTable('tests')">
+                            <div class="details">
+                                <h3>Ordered Tests</h3>
+                                <div class="val" id="count-tests">0</div>
+                            </div>
+                            <div class="icon">💸</div>
+                        </button>
+                    </div>
+                
+                    <!-- 2. Default View (Shows until a button is clicked) -->
+                    <div id="default-dashboard-stats" class="bento" style="margin-top: 24px;">
+                        
+                        <!-- Latest Clients Table Card -->
+                        <div class="card col-6">
+                            <div class="card-h">
+                                <h3 style="color: var(--text);">Latest Registered Clients</h3>
+                            </div>
+                            <div class="table-container" style="background: transparent; border: none; box-shadow: none;">
+                                <table style="width: 100%; font-size: 13px;">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Name</th>
+                                            <th style="text-align: right;">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="latest-clients-list">
+                                        <!-- This will be populated by JavaScript -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Most Demanded Tests Chart Card (Clickable) -->
+                        <div class="card col-6" style="cursor: pointer; transition: transform 0.2s;" onclick="showTab('financial-overview')" onmouseover="this.style.borderColor='var(--teal)'" onmouseout="this.style.borderColor='var(--border)'">
+                            <div class="card-h">
+                                <h3 style="color: var(--text);">Most Demanded Tests</h3>
+                                <span style="font-size: 11px; color: var(--teal);">Click for Financials ➔</span>
+                            </div>
+                            <div style="position: relative; height: 220px; width: 100%;">
+                                <canvas id="dashboardTestDemandChart"></canvas>
+                            </div>
+                        </div>
+
+                    </div>
+                
+                    <!-- 3. Table View (Hidden by default, shown when a top button is clicked) -->
+                    <div id="dashboard-controls" style="display: none; gap: 15px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 20px; margin-top: 24px;">
+    
+                        <button class="btn ghost" onclick="resetDashboardView()" style="height: 38px; border-color: var(--teal); color: var(--teal);">
+                            ⬅ Back
+                        </button>
+                    
+                        <div class="search-box" style="margin: 0; flex: 1; min-width: 200px;">
+                            <span class="search-icon">⌕</span>
+                            <input type="text" id="dash-search" placeholder="Search Code, Name, Phone..." onkeyup="onDashboardFilterChange()">
+                        </div>
+
+                        <div style="display: flex; gap: 10px;">
+                            <div style="width: 130px;">
+                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;">From Date</label>
+                                <input type="date" id="dash-filter-date-from" onchange="onDashboardFilterChange()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                            </div>
+                            <div style="width: 130px;">
+                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;">To Date</label>
+                                <input type="date" id="dash-filter-date-to" onchange="onDashboardFilterChange()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                            </div>
+                        </div>
+
+                        <div id="status-filter-container" style="width: 140px;">
+                            <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; display: block;">Status</label>
+                            <select id="dash-filter-status" onchange="onDashboardFilterChange()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                                <option value="">All Statuses</option>
+                                <option value="registered">Registered</option>
+                                <option value="pending">Pending</option>
+                                <option value="collected">Collected</option>
+                            </select>
+                        </div>
+
+                        <label style="display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: var(--text); font-size: 13px; cursor: pointer; white-space: nowrap;">
+                            <input type="checkbox" id="dash-filter-unfinished" onchange="onDashboardFilterChange()">
+                            🔴 Unfinished Reports Only
+                        </label>
+                    </div>
+
+                    <div id="dashboard-table-container" style="display: none;"></div>
+                </div>
+                        
+                <div id="clients" class="tab-content">
+    
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                        <div>
+                            <h1 data-i18n="sidebar.patients">Patient Directory</h1>
+                            <p style="color: var(--muted)" data-i18n="patients.subtitle">Manage all registered patients</p>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="file" id="import-patient-excel" accept=".xlsx, .xls, .csv" style="display: none;" onchange="processPatientExcelImport(event)">
+                
+                            <button class="btn ghost" style="border-color: #3b82f6; color: #3b82f6;" onclick="document.getElementById('import-patient-excel').click()">
+                                📤 Import Excel
+                            </button>
+                
+                            <button class="btn" style="background: var(--teal); color: #04121d; font-weight: bold;" onclick="showTab('add-client')">+ <span data-i18n="actions.add_patient">Add New Patient</span></button>
+                        </div>
+                    </div>
+                
+                    <div style="margin-bottom: 20px; display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap;">
+                        <div class="search-box" style="margin: 0; flex: 1; min-width: 250px;">
+                            <span class="search-icon">⌕</span>
+                            <input type="text" id="client-search" placeholder="Search Code, Name, Phone..." data-i18n="filters.search_patients" onkeyup="searchClients()">
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <div style="width: 140px;">
+                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.from_date">From Date</label>
+                                <input type="text" class="custom-date-picker" id="client-filter-date-from" placeholder="Select Date" onchange="searchClients()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                            </div>
+                            <div style="width: 140px;">
+                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.to_date">To Date</label>
+                                <input type="text" class="custom-date-picker" id="client-filter-date-to" placeholder="Select Date" onchange="searchClients()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                            </div>
+                        </div>
+                        <div style="width: 120px;">
+                            <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.gender">Gender</label>
+                            <select id="client-filter-gender" onchange="searchClients()">
+                                <option value="" data-i18n="filters.all_genders">All Genders</option>
+                                <option value="Male" data-i18n="gender.male">Male</option>
+                                <option value="Female" data-i18n="gender.female">Female</option>
+                            </select>
+                        </div>
+                        <div style="width: 140px;">
+                            <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.status">Status</label>
+                            <select id="client-filter-status" onchange="searchClients()">
+                                <option value="" data-i18n="filters.all_statuses">All Statuses</option>
+                                <option value="registered" data-i18n="status.registered">Registered</option>
+                                <option value="pending" data-i18n="status.pending">Pending</option>
+                                <option value="collected" data-i18n="status.collected">Sample Collected</option>
+                            </select>
+                        </div>
+                    </div>
+                
+                    <div id="search-empty-state" style="display: none; text-align: center; padding: 40px; background: rgba(0,0,0,0.2); border-radius: 8px; border: 1px dashed var(--border); margin-bottom: 20px;">
+                        <p style="color: var(--text); font-size: 16px; margin-bottom: 10px;" data-i18n="empty_state.no_patients">No patients found matching your search.</p>
+                        <!-- <button class="btn" style="background: var(--teal); color: #04121d;" onclick="showTab('add-client')" data-i18n="actions.add_new_patient">Add New Patient</button> -->
+                    </div>
+                
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <button id="bulk-delete-btn" class="btn btn-danger" onclick="handleBulkDelete()" style="display: none;">Delete Selected</button>
+                        
+                        <button class="btn ghost" style="border-color: var(--ok); color: var(--ok); padding: 6px 12px; font-size: 12px; display: flex; align-items: center; gap: 6px; margin-left: auto;" 
+                            onclick="exportTableToCSV(this, 'patient_directory')">
+                            📥 <span data-i18n="actions.export_excel">Export to Excel</span>
+                        </button>
+                    </div>
+
+                    <div class="table-container">
+                        <table id="clients-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 40px;"><input type="checkbox" id="select-all-clients" onclick="toggleSelectAll(this)"></th>
+                                    <th data-i18n="table_headers.code">Code</th>
+                                    <th data-i18n="table_headers.reg_date">Reg. Date</th>
+                                    <th data-i18n="table_headers.name">Name</th>
+                                    <th data-i18n="table_headers.gender">Gender</th>
+                                    <th data-i18n="table_headers.phone">Phone</th>
+                                    <th data-i18n="table_headers.latest_status">Status</th>
+                                    <th style="text-align: right;" data-i18n="table_headers.action">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="clients-table-body"></tbody>
+                        </table>
+                    </div>
+                    <div id="clients-pagination" style="margin-top: 15px;"></div>
+                </div>
+
+                <div id="add-client" class="tab-content">
+                    <h1 data-i18n="add_patient.title">Register Patient</h1>
+                    <div class="card">
+                        <form id="client-form">
+                            <div class="form-row">
+                                <div class="form-group"><label data-i18n="forms.first_name">First Name *</label><input type="text" id="first-name" name="first_name" required></div>
+                                <div class="form-group"><label data-i18n="forms.last_name">Last Name *</label><input type="text" id="last-name" name="last_name" required></div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group"><label data-i18n="forms.dob">Date of Birth *</label><input type="date" id="date-of-birth" name="date_of_birth" required></div>
+                                <div class="form-group"><label data-i18n="forms.gender">Gender *</label>
+                                    <select id="gender" name="gender" required>
+                                        <option value="" data-i18n="forms.select">Select</option><option value="Male" data-i18n="filters.male">Male</option><option value="Female" data-i18n="filters.female">Female</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group"><label data-i18n="forms.contact_person">Contact Person *</label><input type="text" id="contact-person" name="contact_person" required></div>
+                                <div class="form-group"><label data-i18n="forms.phone">Phone *</label><input type="tel" id="phone" name="phone" required></div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group"><label data-i18n="forms.client_phone">Client Phone</label><input type="tel" id="client-phone" name="client_phone"></div>
+                                <div class="form-group"><label data-i18n="forms.blood_type">Blood Type</label>
+                                    <select id="blood-type" name="blood_type">
+                                        <option value="" data-i18n="forms.select">Select</option><option value="A+">A+</option><option value="O+">O+</option><option value="B+">B+</option><option value="AB+">AB+</option><option value="A-">A-</option><option value="O-">O-</option><option value="B-">B-</option><option value="AB-">AB-</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group"><label data-i18n="forms.city">City</label><input type="text" id="city" name="city"></div>
+                                <div class="form-group"><label data-i18n="forms.area">Area</label><input type="text" id="area" name="area"></div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group"><label data-i18n="forms.street">Street</label><input type="text" id="street" name="street"></div>
+                                <div class="form-group"><label data-i18n="forms.apartment">Apartment</label><input type="text" id="apartment" name="apartment"></div>
+                            </div>
+                            <div class="form-group"><label data-i18n="forms.allergies">Allergies</label><textarea id="allergies" name="allergies" rows="2"></textarea></div>
+                            <div class="form-group"><label data-i18n="forms.clinical_indications">Clinical Indications</label><textarea id="clinical-indications" name="clinical_indications" rows="3"></textarea></div>
+                            <button type="submit" class="btn" data-i18n="actions.save_patient">Save Patient Record</button>
+                        </form>
+                    </div>
+                </div>
+
+                <div id="pending-samples" class="tab-content">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px;">
+                        <div>
+                            <h1 data-i18n="pending.title">Pending Samples</h1>
+                            <p style="color: var(--muted)" data-i18n="pending.subtitle">Clients waiting for sample collection</p>
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                            <button id="finish-samples-btn" class="btn" style="background: var(--ok); color: white; display: none;" onclick="handleBulkFinish()">
+                                ✅ Finish Selected
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 20px;">
+                        <div class="search-box" style="margin: 0; flex: 1; min-width: 250px;">
+                            <span class="search-icon">⌕</span>
+                            <input type="text" id="pending-search" data-i18n="dashboard.search_placeholder" placeholder="Search Code, Name, Phone..." onkeyup="searchPendingSamples()">
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <div style="width: 140px;">
+                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.from_date">From Date</label>
+                                <input type="date" id="pending-filter-date-from" onchange="searchPendingSamples()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                            </div>
+                            <div style="width: 140px;">
+                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.to_date">To Date</label>
+                                <input type="date" id="pending-filter-date-to" onchange="searchPendingSamples()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="pending-samples-list"></div>
+                </div>
+                <div id="tech-screen" class="tab-content">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <h2 style="color: var(--text);" data-i18n="dashboard.title">Laboratory Technical Dashboard</h2>
+                        <!-- <button class="btn btn-danger" onclick="performDailyReset()">🔄 <span data-i18n="dashboard.daily_reset">Daily Reset</span></button> -->
+                    </div>
+                    
+                    <!-- Updated Tech Screen Buttons using Dashboard Card Style -->
+                    <div class="dashboard-top-cards" style="grid-template-columns: repeat(2, 1fr); margin-bottom: 24px;">
+                        <button class="stat-card-btn bg-cyan" onclick="showTechTable('pending')">
+                            <div class="details">
+                                <h3>Samples Waiting For Collection</h3>
+                                <div class="val" id="tech-count-pending">0</div>
+                            </div>
+                            <div class="icon">⏳</div>
+                        </button>
+                        
+                        <button class="stat-card-btn bg-orange" onclick="showTechTable('finished')">
+                            <div class="details">
+                                <h3 style="white-space: normal;">Collected (Waiting for Reports)</h3>
+                                <div class="val" id="tech-count-finished">0</div>
+                            </div>
+                            <div class="icon">🧪</div>
+                        </button>
+                    </div>
+                
+                    <!-- UNIQUE ID for this specific tab -->
+                    <div id="tech-table-container"></div>
+                </div>
+
+                <div id="test-results" class="tab-content">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px;">
+                        <div>
+                            <h1 data-i18n="results.title">Delivered Results History</h1>
+                            <p style="color: var(--muted)" data-i18n="results.subtitle">Archive of all patients with finished and uploaded PDF reports</p>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 20px;">
+                        <div class="search-box" style="margin: 0; flex: 1; min-width: 250px;">
+                            <span class="search-icon">⌕</span>
+                            <input type="text" id="results-search" data-i18n="dashboard.search_placeholder" placeholder="Search Patient ID, Name, Phone..." onkeyup="searchTestResults()">
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <div style="width: 140px;">
+                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.from_date">From Date</label>
+                                <input type="date" id="results-filter-date-from" onchange="searchTestResults()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                            </div>
+                            <div style="width: 140px;">
+                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.to_date">To Date</label>
+                                <input type="date" id="results-filter-date-to" onchange="searchTestResults()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                            </div>
+                        </div>
+                        <div style="width: 150px;">
+                            <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.gender">Gender</label>
+                            <select id="results-filter-gender" onchange="searchTestResults()">
+                                <option value="" data-i18n="filters.all_genders">All Genders</option>
+                                <option value="Male" data-i18n="filters.male">Male</option>
+                                <option value="Female" data-i18n="filters.female">Female</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="test-results-list"></div>
+                </div>
+                <div id="statistics" class="tab-content">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px;">
+                        <div>
+                            <h1 data-i18n="stats.title">Test Results Statistics</h1>
+                            <p style="color: var(--muted)" data-i18n="stats.subtitle">Every parameter result across all visits — filter for analytics and reporting</p>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 20px;">
+                        <div class="search-box" style="margin: 0; flex: 1; min-width: 250px;">
+                            <span class="search-icon">⌕</span>
+                            <input type="text" id="stats-search" data-i18n="stats.search_placeholder" placeholder="Search Patient, Test, Parameter..." onkeyup="searchStatistics()">
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <div style="width: 140px;">
+                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.from_date">From Date</label>
+                                <input type="date" id="stats-filter-date-from" onchange="searchStatistics()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                            </div>
+                            <div style="width: 140px;">
+                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.to_date">To Date</label>
+                                <input type="date" id="stats-filter-date-to" onchange="searchStatistics()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                            </div>
+                        </div>
+                        <div style="width: 150px;">
+                            <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.gender">Gender</label>
+                            <select id="stats-filter-gender" onchange="searchStatistics()">
+                                <option value="" data-i18n="filters.all_genders">All Genders</option>
+                                <option value="Male" data-i18n="filters.male">Male</option>
+                                <option value="Female" data-i18n="filters.female">Female</option>
+                            </select>
+                        </div>
+                        <div style="width: 160px;">
+                            <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="stats.status_label">Result Status</label>
+                            <select id="stats-filter-status" onchange="searchStatistics()">
+                                <option value="" data-i18n="stats.status_all">All Statuses</option>
+                                <option value="normal" data-i18n="stats.status_normal">Normal</option>
+                                <option value="high" data-i18n="stats.status_high">High</option>
+                                <option value="low" data-i18n="stats.status_low">Low</option>
+                                <option value="abnormal" data-i18n="stats.status_abnormal">Abnormal</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="statistics-list"></div>
+                </div>
+                <div id="test-list" class="tab-content">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                        <div>
+                            <h1 data-i18n="tests.title">Test Directory</h1>
+                            <p style="color: var(--muted)" data-i18n="tests.subtitle">Manage available laboratory tests and pricing</p>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <button id="bulk-delete-tests-btn" class="btn btn-danger" onclick="handleBulkDeleteTests()" style="display: none;" data-i18n="actions.delete_selected">Delete Selected</button>
+                
+                            <input type="file" id="import-excel-file" accept=".xlsx, .xls, .csv" style="display: none;" onchange="processExcelImport(event)">
+                            
+                            <button class="btn ghost" style="border-color: #3b82f6; color: #3b82f6;" onclick="document.getElementById('import-excel-file').click()">
+                                📤 Import Excel
+                            </button>
+                            
+                            <button class="btn" style="background: var(--teal); color: #04121d; font-weight: bold;" onclick="openTestModal()">+ <span data-i18n="modals.add_test">Add New Test</span></button>
+                        </div>
+                    </div>
+                    
+                    <div id="test-list-container"></div>
+                </div>
+                <div id="warehouse" class="tab-content">
+    
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 15px; margin-bottom: 24px;">
+                        <div>
+                            <h1 data-i18n="warehouse.title">Warehouse Management</h1>
+                            <p style="color: var(--muted); margin-top: 5px;" data-i18n="warehouse.subtitle">Manage lab supplies, chemicals, and instruments</p>
+                        </div>
+                        
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                            <button class="btn ghost" style="border-color: var(--warn); color: var(--warn);" onclick="openBillsHistoryModal()">
+                                🧾 Bills History
+                            </button>
+                            <button class="btn ghost" style="border-color: var(--gold); color: var(--gold);" onclick="openWorkOrdersHistoryModal()">
+                                📋 Work Orders
+                            </button>
+                            <button class="btn ghost" style="border-color: var(--danger); color: var(--danger);" onclick="openBulkBillModal()">
+                                🧾 New Bill
+                            </button>
+                            <button id="new-work-order-btn" class="btn ghost" style="border-color: var(--teal); color: var(--teal); display: none;" onclick="openWorkOrderModal()">
+                                📦 New Work Order
+                            </button>
+                            <button id="bulk-delete-warehouse-btn" class="btn btn-danger" onclick="handleBulkDeleteWarehouse()" style="display: none;">Delete Selected</button>
+
+                            <input type="file" id="import-warehouse-excel" accept=".xlsx, .xls, .csv" style="display: none;" onchange="processWarehouseExcelImport(event)">
+                            
+                            <button class="btn ghost" style="border-color: #3b82f6; color: #3b82f6;" onclick="document.getElementById('import-warehouse-excel').click()">
+                                📤 Import Excel
+                            </button>
+                            <button class="btn ghost" style="border-color: var(--ok); color: var(--ok);" onclick="exportTableToCSV(this, 'warehouse_inventory')">
+                                📥 Export Excel
+                            </button>
+                            
+                            <button class="btn" style="background: var(--teal); color: #04121d; font-weight: bold;" onclick="openWarehouseModal()">+ Add New Item</button>
+                        </div>
+                    </div>
+                    
+                    <div style="margin-bottom: 20px; display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap;">
+                        <div class="search-box" style="margin: 0; flex: 1; min-width: 250px;">
+                            <span class="search-icon">⌕</span>
+                            <input type="text" id="warehouse-search" placeholder="Search item name..." onkeyup="renderWarehouseTable()">
+                        </div>
+                        <div style="width: 200px;">
+                            <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;">Category</label>
+                            <select id="warehouse-filter-category" onchange="renderWarehouseTable()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                                <option value="">All Categories</option>
+                            </select>
+                        </div>
+                    </div>
+                
+                    <div id="warehouse-list-container"></div>
+                </div>
+                
+                <div id="warehouse-modal" class="modal" style="display: none;">
+                    <div class="modal-content glass-panel" style="max-width: 550px;">
+                        <span class="close" onclick="closeWarehouseModal()">&times;</span>
+                        <h2 id="warehouse-modal-title" style="margin-bottom: 20px; color: var(--text);">Add New Item</h2>
+                        
+                        <form id="warehouse-form" onsubmit="saveWarehouseItem(event)">
+                            <input type="hidden" id="warehouse-id">
+                            
+                            <div style="margin-bottom: 15px;">
+                                <label style="color: var(--muted); font-size: 12px; text-transform: uppercase;">Item Name</label>
+                                <input type="text" id="warehouse-name" required style="width: 100%; margin-top: 5px;">
+                            </div>
+                            
+                            <div style="margin-bottom: 15px;">
+                                <label style="color: var(--muted); font-size: 12px; text-transform: uppercase;">Category</label>
+                                <input type="text" id="warehouse-category" list="warehouse-category-list" required
+                                       placeholder="e.g. Consumables" style="width: 100%; margin-top: 5px;">
+                                <datalist id="warehouse-category-list"></datalist>
+                            </div>
+                            
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 25px;">
+                                <div>
+                                    <label style="color: var(--muted); font-size: 12px; text-transform: uppercase;">Quantity</label>
+                                    <input type="number" id="warehouse-qty" required style="width: 100%; margin-top: 5px;" min="0">
+                                </div>
+                                <div>
+                                    <label style="color: var(--danger); font-size: 12px; text-transform: uppercase;">Critical Level</label>
+                                    <input type="number" id="warehouse-critical" required style="width: 100%; margin-top: 5px;" min="0" value="5">
+                                </div>
+                                <div>
+                                    <label style="color: var(--muted); font-size: 12px; text-transform: uppercase;">Unit</label>
+                                    <input type="text" id="warehouse-unit" required style="width: 100%; margin-top: 5px;" placeholder="e.g. Boxes">
+                                </div>
+                            </div>
+                            
+                            <div style="text-align: right;">
+                                <button type="button" class="btn ghost" onclick="closeWarehouseModal()">Cancel</button>
+                                <button type="submit" class="btn" style="background: var(--teal); color: #04121d; margin-left: 10px;">Save Item</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+                <div id="access-modal" class="modal" style="display: none;">
+                    <div class="modal-content glass-panel" style="max-width: 400px;">
+                        <span class="close" onclick="document.getElementById('access-modal').style.display='none'">&times;</span>
+                        <h2 style="margin-bottom: 20px;">Manage Access</h2>
+                        <input type="hidden" id="access-user-id">
+                        
+                        <div id="permissions-list" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
+                        </div>
+                        
+                        <button class="btn" onclick="savePermissions()">Save Permissions</button>
+                    </div>
+                </div>
+                <div id="transaction-history" class="tab-content">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px;">
+                        <div>
+                            <h1 data-i18n="history.title">Transaction History</h1>
+                            <p style="color: var(--muted)" data-i18n="history.subtitle">View and filter all patient payments</p>
+                        </div>
+                    </div>
+                
+                    <div style="margin-bottom: 20px; display: flex; gap: 10px; align-items: flex-end;">
+                        <div style="width: 140px;">
+                            <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.from_date">From Date</label>
+                            <input type="text" id="trans-filter-date-from" placeholder="dd / mm / yyyy" onfocus="(this.type='date')" onblur="if(!this.value) this.type='text'" onchange="filterTransactions()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                        </div>
+                        
+                        <div style="width: 140px;">
+                            <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.to_date">To Date</label>
+                            <input type="text" id="trans-filter-date-to" placeholder="dd / mm / yyyy" onfocus="(this.type='date')" onblur="if(!this.value) this.type='text'" onchange="filterTransactions()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                        </div>
+                        
+                        <button class="btn ghost" onclick="document.getElementById('trans-filter-date-from').value=''; document.getElementById('trans-filter-date-to').value=''; filterTransactions()" data-i18n="history.clear_filter">Clear Filter</button>
+                    </div>
+                
+                    <div id="transactions-list-container"></div>
+                </div>
+
+                <div id="financial-overview" class="tab-content">
+                    <div style="margin-bottom: 24px;">
+                        <h1 data-i18n="financials.title">Financial Statistics</h1>
+                        <p style="color: var(--muted)" data-i18n="financials.subtitle">Real-time revenue tracking and statistics</p>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 30px;">
+                        <div class="glass-panel" style="padding: 25px; text-align: center; border-radius: 12px;">
+                            <h3 style="color: var(--muted); margin-bottom: 10px; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;" data-i18n="financials.daily_revenue">Today's Revenue</h3>
+                            <div style="font-size: 36px; font-weight: bold; color: var(--ok);"><span id="rev-daily">0.00</span> EGP</div>
+                        </div>
+                        <div class="glass-panel" style="padding: 25px; text-align: center; border-radius: 12px;">
+                            <h3 style="color: var(--muted); margin-bottom: 10px; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;" data-i18n="financials.monthly_revenue">This Month</h3>
+                            <div style="font-size: 36px; font-weight: bold; color: var(--teal);"><span id="rev-monthly">0.00</span> EGP</div>
+                        </div>
+                        <div class="glass-panel" style="padding: 25px; text-align: center; border-radius: 12px;">
+                            <h3 style="color: var(--muted); margin-bottom: 10px; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;" data-i18n="financials.yearly_revenue">This Year</h3>
+                            <div style="font-size: 36px; font-weight: bold; color: #3b82f6;"><span id="rev-yearly">0.00</span> EGP</div>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 20px;">
+                        <div class="glass-panel" style="padding: 20px; border-radius: 12px; height: 350px;">
+                            <h3 style="margin-bottom: 15px; color: var(--text);" data-i18n="financials.revenue_trend">Revenue Trend (Last 7 Days)</h3>
+                            <div style="position: relative; height: 280px; width: 100%;">
+                                <canvas id="revenueLineChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="glass-panel" style="padding: 20px; border-radius: 12px; height: 350px;">
+                            <h3 style="margin-bottom: 15px; color: var(--text);" data-i18n="financials.demographics">Patient Demographics</h3>
+                            <div style="position: relative; height: 280px; width: 100%;">
+                                <canvas id="genderPieChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="glass-panel" style="padding: 20px; border-radius: 12px;">
+                        <h3 style="margin-bottom: 15px; color: var(--text);" data-i18n="financials.top_tests">Top Demanded Tests</h3>
+                        <div style="position: relative; height: 300px; width: 100%;">
+                            <canvas id="testDemandChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="reports" class="tab-content">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px;">
+                        <div>
+                            <h1 data-i18n="reports.title">Master Patient Directory & Reports</h1>
+                            <p style="color: var(--muted)" data-i18n="reports.subtitle">Complete laboratory history for all registered patients</p>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 20px;">
+                        <div class="search-box" style="margin: 0; flex: 1; min-width: 250px;">
+                            <span class="search-icon">⌕</span>
+                            <input type="text" id="report-search" data-i18n="dashboard.search_placeholder" placeholder="Search Patient ID, Name, Phone..." onkeyup="searchReports()">
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <div style="width: 140px;">
+                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.from_date">From Date</label>
+                                <input type="date" id="report-filter-date-from" onchange="searchReports()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                            </div>
+                            <div style="width: 140px;">
+                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.to_date">To Date</label>
+                                <input type="date" id="report-filter-date-to" onchange="searchReports()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                            </div>
+                        </div>
+                        <div style="width: 150px;">
+                            <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.gender">Gender</label>
+                            <select id="report-filter-gender" onchange="searchReports()">
+                                <option value="" data-i18n="filters.all_genders">All Genders</option>
+                                <option value="Male" data-i18n="filters.male">Male</option>
+                                <option value="Female" data-i18n="filters.female">Female</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="reports-list"></div>
+                </div>
+
+                
+
+                <div id="financial" class="tab-content">
+                    <h1 data-i18n="financial_mgt.title">Financial Management</h1>
+                    <div class="bento" style="margin-bottom: 24px;">
+                        <div class="card kpi col-6">
+                            <div class="label" data-i18n="financial_mgt.total_revenue">Total Revenue</div>
+                            <div class="val" id="total-revenue">EGP 0</div>
+                        </div>
+                        <div class="card kpi col-6">
+                            <div class="label" data-i18n="financial_mgt.pending_payments">Pending Payments</div>
+                            <div class="val" id="pending-payments">0</div>
+                        </div>
+                    </div>
+                    <div id="financial-content"></div>
+                </div>
+
+                <div id="settings" class="tab-content">
+                    <div style="margin-bottom: 24px;">
+                        <h1 data-i18n="settings.title">System Settings</h1>
+                        <p style="color: var(--muted)" data-i18n="settings.subtitle">Manage laboratory branding and visual interface</p>
+                    </div>
+
+                    <div class="settings-panel">
+                        <div style="padding: 20px;">
+                            <div class="setting-item">
+                                <span data-i18n="settings.theme_mode">Theme Mode</span>
+                                <button onclick="toggleTheme()" class="btn" data-i18n="settings.toggle_theme">Toggle Light/Dark</button>
+                            </div>
+                            <div style="margin-bottom: 30px; background: rgba(0,0,0,0.2); padding: 20px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+                                <h3 style="color: var(--text); margin-bottom: 15px;">Messaging Settings</h3>
+                                
+                                <!-- Flex container: Checkbox on the left, Dropdown on the right -->
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                                    
+                                    <!-- Left Side: Toggle Checkbox -->
+                                    <label style="display: flex; align-items: center; cursor: pointer; color: var(--text);">
+                                        <input type="checkbox" id="setting-msg-enabled" onchange="toggleMessagingOptions()" style="margin-right: 10px; width: 16px; height: 16px;"> 
+                                        Enable Automatic Notifications
+                                    </label>
+                            
+                                    <!-- Right Side: Dropdown (Hidden by default) -->
+                                    <div id="msg-method-container" style="display: none; align-items: center; gap: 10px;">
+                                        <label style="color: var(--muted); font-size: 12px; margin: 0;">Method:</label>
+                                        <select id="setting-msg-method" onchange="toggleMessagingOptions()" style="padding: 6px 12px; border-radius: 4px; background: rgba(0,0,0,0.3); color: white; border: 1px solid rgba(255,255,255,0.1);">
+                                            <option value="whatsapp">WhatsApp</option>
+                                            <option value="sms">Direct SMS</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            
+                                <!-- Phone Number Input -->
+                                <div style="margin-bottom: 10px;">
+                                    <label style="font-weight: bold; margin-bottom: 5px; display: block; color: var(--muted); font-size: 12px;">Lab Phone Number (Sender)</label>
+                                    <input type="tel" id="setting-msg-phone" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;" placeholder="e.g. +201000000000">
+                                </div>
+                            
+                                <!-- WhatsApp Connection Section (Hidden by default, shown via toggleMessagingOptions) -->
+                                <!-- <div id="wa-connection-section" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); display: none;">
+                                    <h4 style="color: var(--teal); margin-bottom: 10px; font-size: 14px;">WhatsApp Connection Status</h4>
+                                    <button type="button" class="btn ghost" onclick="checkWhatsAppStatus()">Check / Link Device</button>
+                                    
+                                    <div id="wa-status-container" style="margin-top: 15px; display: none; text-align: center; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px;">
+                                        <p id="wa-status-msg" style="color: var(--warn); margin-bottom: 10px; font-weight: bold;"></p>
+                                        
+                                        <div id="wa-qr-container" style="display: none; background: white; padding: 10px; border-radius: 8px; margin: 0 auto; width: fit-content;">
+                                            <img id="wa-qr-img" src="" alt="WhatsApp QR Code" style="width: 220px; height: 220px; display: block;">
+                                        </div>
+                                    </div>
+                                </div> -->
+                            </div>
+                            <div style="margin-bottom: 30px; background: rgba(0,0,0,0.2); padding: 20px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+                                <h3 style="color: var(--text); margin-bottom: 15px;">Lab Identity</h3>
+                                
+                                <label style="font-weight: bold; margin-bottom: 5px; display: block; color: var(--muted); font-size: 12px;">Lab Name</label>
+                                <input type="text" id="setting-lab-name" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white; margin-bottom: 15px;" placeholder="e.g. Helix Lab">
+                                
+                                <label style="font-weight: bold; margin-bottom: 5px; display: block; color: var(--muted); font-size: 12px;">Lab Subtitle</label>
+                                <input type="text" id="setting-lab-subtitle" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;" placeholder="e.g. Diagnostics OS">
+                            </div>
+
+                            <div style="margin-bottom: 30px; background: rgba(0,0,0,0.2); padding: 20px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);">
+                                <h3 style="color: var(--text); margin-bottom: 15px;" data-i18n="settings.report_branding">Report Branding</h3>
+                                <p style="color: var(--muted); font-size: 12px; margin-bottom: 15px;" data-i18n="settings.report_branding_hint">Shown on the header/footer of generated lab reports.</p>
+
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                                    <div>
+                                        <label style="font-weight: bold; margin-bottom: 5px; display: block; color: var(--muted); font-size: 12px;" data-i18n="settings.doctor_name">Doctor Name</label>
+                                        <input type="text" id="setting-lab-director" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;" placeholder="e.g. Dr. Jane Doe">
+                                    </div>
+                                    <div>
+                                        <label style="font-weight: bold; margin-bottom: 5px; display: block; color: var(--muted); font-size: 12px;" data-i18n="settings.doctor_qualification">Doctor Qualification</label>
+                                        <input type="text" id="setting-doctor-qualification" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;" placeholder="e.g. M.B.B.S MD">
+                                    </div>
+                                    <div>
+                                        <label style="font-weight: bold; margin-bottom: 5px; display: block; color: var(--muted); font-size: 12px;" data-i18n="settings.doctor_reg_no">Doctor Reg. No.</label>
+                                        <input type="text" id="setting-doctor-reg-no" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;" placeholder="e.g. 12345">
+                                    </div>
+                                    <div></div>
+                                    <div>
+                                        <label style="font-weight: bold; margin-bottom: 5px; display: block; color: var(--muted); font-size: 12px;" data-i18n="settings.tech_name">Lab Technician Name</label>
+                                        <input type="text" id="setting-tech-name" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;" placeholder="e.g. John Smith">
+                                    </div>
+                                    <div>
+                                        <label style="font-weight: bold; margin-bottom: 5px; display: block; color: var(--muted); font-size: 12px;" data-i18n="settings.tech_qualification">Technician Qualification</label>
+                                        <input type="text" id="setting-tech-qualification" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;" placeholder="e.g. B.M.L.T">
+                                    </div>
+                                    <div>
+                                        <label style="font-weight: bold; margin-bottom: 5px; display: block; color: var(--muted); font-size: 12px;" data-i18n="settings.tech_institute">Technician Institute</label>
+                                        <input type="text" id="setting-tech-institute" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;" placeholder="e.g. Delhi University">
+                                    </div>
+                                    <div></div>
+                                    <div>
+                                        <label style="font-weight: bold; margin-bottom: 5px; display: block; color: var(--muted); font-size: 12px;" data-i18n="settings.lab_phone">Lab Phone</label>
+                                        <input type="tel" id="setting-lab-phone" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;" placeholder="e.g. +201000000000">
+                                    </div>
+                                    <div>
+                                        <label style="font-weight: bold; margin-bottom: 5px; display: block; color: var(--muted); font-size: 12px;" data-i18n="settings.lab_email">Lab Email</label>
+                                        <input type="email" id="setting-lab-email" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;" placeholder="e.g. support@lab.com">
+                                    </div>
+                                    <div style="grid-column: 1 / -1;">
+                                        <label style="font-weight: bold; margin-bottom: 5px; display: block; color: var(--muted); font-size: 12px;" data-i18n="settings.lab_address">Lab Address</label>
+                                        <input type="text" id="setting-lab-address" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;" placeholder="e.g. 123 Street, City">
+                                    </div>
+                                    <div>
+                                        <label style="font-weight: bold; margin-bottom: 5px; display: block; color: var(--muted); font-size: 12px;" data-i18n="settings.social_facebook">Facebook</label>
+                                        <input type="text" id="setting-social-facebook" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;" placeholder="facebook.com/yourlab">
+                                    </div>
+                                    <div>
+                                        <label style="font-weight: bold; margin-bottom: 5px; display: block; color: var(--muted); font-size: 12px;" data-i18n="settings.social_instagram">Instagram</label>
+                                        <input type="text" id="setting-social-instagram" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;" placeholder="instagram.com/yourlab">
+                                    </div>
+                                    <div>
+                                        <label style="font-weight: bold; margin-bottom: 5px; display: block; color: var(--muted); font-size: 12px;" data-i18n="settings.social_twitter">Twitter / X</label>
+                                        <input type="text" id="setting-social-twitter" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;" placeholder="x.com/yourlab">
+                                    </div>
+                                    <div style="grid-column: 1 / -1;">
+                                        <label style="font-weight: bold; margin-bottom: 5px; display: block; color: var(--muted); font-size: 12px;" data-i18n="settings.report_footer_note">Report Footer Note</label>
+                                        <textarea id="setting-report-footer-note" rows="2" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white; resize: vertical;" placeholder="e.g. This report is not valid for medical legal purpose."></textarea>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="user-management-section" style="margin-top: 40px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1);">
+                                <h3 style="color: var(--text); margin-bottom: 15px;" data-i18n="settings.user_mgt">User Management & Permissions</h3>
+                                
+                                <div style="display: flex; gap: 15px; margin-bottom: 20px; align-items: flex-end;">
+                                    <div style="flex: 1;">
+                                        <label style="font-size: 11px; color: var(--muted);" data-i18n="settings.username">Username</label>
+                                        <input type="text" id="new-username" style="width: 100%;">
+                                    </div>
+                                    <div style="flex: 1;">
+                                        <label style="font-size: 11px; color: var(--muted);" data-i18n="settings.password">Password</label>
+                                        <input type="password" id="new-password" style="width: 100%;">
+                                    </div>
+                                    <div style="flex: 1;">
+                                        <label style="font-size: 11px; color: var(--muted);" data-i18n="settings.role">Role</label>
+                                        <select id="new-role" style="width: 100%;">
+                                            <option value="Admin" data-i18n="roles.admin">Admin</option>
+                                            <option value="user" data-i18n="roles.User">User</option>
+                                        </select>
+                                    </div>
+                                    <button class="btn" style="background: var(--teal); color: #04121d;" onclick="createNewUser()" data-i18n="settings.add_user">Add User</button>
+                                </div>
+    
+                                <div class="table-container glass-panel">
+                                    <table style="width: 100%;">
+                                        <thead>
+                                            <tr>
+                                                <th data-i18n="settings.table_username">Username</th>
+                                                <th data-i18n="settings.table_role">Role</th>
+                                                <th style="text-align: right;" data-i18n="table_headers.action">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="settings-users-list"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div style="text-align: center; margin-bottom: 40px; margin-top: 10px;">
+                                <div class="logo-preview-wrapper">
+                                    <img id="settings-logo-preview" src="https://via.placeholder.com/100?text=Lab+Logo" alt="Lab Logo">
+                                </div>
+                                <label for="logo-upload" class="btn ghost" style="cursor: pointer; margin-top: 10px; font-size: 12px; padding: 6px 12px;" data-i18n="settings.change_logo">Change Logo</label>
+                                <input type="file" id="logo-upload" accept="image/*" style="display: none;" onchange="previewImage(this, 'settings-logo-preview')">
+                            </div>
+
+                            <div style="margin-bottom: 0;">
+                                <label style="font-weight: bold; margin-bottom: 10px; display: block; color: #333;" data-i18n="settings.cover">Cover</label>
+                                
+                                <div class="custom-file-input-group">
+                                    <input type="text" id="cover-filename" readonly placeholder="Choose file" data-i18n="settings.choose_file">
+                                    <label for="cover-upload" class="browse-btn" data-i18n="settings.browse">Browse</label>
+                                    <input type="file" id="cover-upload" accept="image/*" style="display: none;" onchange="previewImage(this, 'settings-cover-preview', 'cover-filename')">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="cover-image-container">
+                            <img id="settings-cover-preview" src="https://images.unsplash.com/photo-1579154204601-01588f351e67?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80" alt="Cover Preview">
+                        </div>
+
+                        <div class="settings-footer">
+                            <button class="btn" style="background: #007bff; color: white; border: none; padding: 8px 24px; border-radius: 4px; font-size: 14px;" onclick="saveSettings()" data-i18n="actions.update">Update</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="activity-log" class="tab-content">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px;">
+                        <div>
+                            <h1 data-i18n="activity.title">Activity Log</h1>
+                            <p style="color: var(--muted)" data-i18n="activity.subtitle">Every login, action, and page view across the system</p>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 24px;">
+                        <h3 style="color: var(--text); margin-bottom: 10px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);" data-i18n="activity.online_now">Online Now</h3>
+                        <div id="online-users-list" style="display: flex; gap: 10px; flex-wrap: wrap;"></div>
+                    </div>
+
+                    <div style="display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 20px;">
+                        <div class="search-box" style="margin: 0; flex: 1; min-width: 250px;">
+                            <span class="search-icon">⌕</span>
+                            <input type="text" id="activity-search" placeholder="Search description, user, resource..." onkeyup="searchActivityLog()">
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <div style="width: 140px;">
+                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.from_date">From Date</label>
+                                <input type="date" id="activity-filter-date-from" onchange="searchActivityLog()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                            </div>
+                            <div style="width: 140px;">
+                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.to_date">To Date</label>
+                                <input type="date" id="activity-filter-date-to" onchange="searchActivityLog()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                            </div>
+                        </div>
+                        <div style="width: 170px;">
+                            <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;">User</label>
+                            <select id="activity-filter-username" onchange="searchActivityLog()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                                <option value="">All Users</option>
+                            </select>
+                        </div>
+                        <div style="width: 150px;">
+                            <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;">Event</label>
+                            <select id="activity-filter-event" onchange="searchActivityLog()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                                <option value="">All Events</option>
+                                <option value="login">Login</option>
+                                <option value="login_failed">Failed Login</option>
+                                <option value="logout">Logout</option>
+                                <option value="view">View</option>
+                                <option value="create">Create</option>
+                                <option value="update">Update</option>
+                                <option value="delete">Delete</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
+                        <button class="btn ghost" style="border-color: var(--ok); color: var(--ok); font-size: 12px; padding: 4px 10px;" onclick="exportActivityLogSelected()" title="Exports only the checked rows; exports everything on the current page if none are checked">📥 <span data-i18n="actions.export_excel">Export to Excel</span></button>
+                    </div>
+                    <div id="activity-log-list"></div>
+                </div>
+            </section>
+        </main>
+    </div>
+    <script src="js/script_lab.js"></script>
+    <div id="upload-modal" class="modal" style="display: none;">
+        <div class="modal-content glass-panel" style="max-width: 400px;">
+            <span class="close" onclick="document.getElementById('upload-modal').style.display='none'">&times;</span>
+            <h2 style="margin-bottom: 20px; color: var(--text);" data-i18n="modals.upload_title">Upload PDF Report</h2>
+            
+            <form id="upload-form" onsubmit="handleFileUpload(event)">
+                <div style="margin-bottom: 20px;">
+                    <label style="color: var(--muted); font-size: 12px;" data-i18n="modals.select_pdf">Select PDF File</label>
+                    <input type="file" id="report-file-input" accept="application/pdf" required style="width: 100%; margin-top: 5px;" multiple>
+                </div>
+                <div style="text-align: right;">
+                    <button type="button" class="btn ghost" onclick="document.getElementById('upload-modal').style.display='none'" data-i18n="actions.cancel">Cancel</button>
+                    <button type="submit" class="btn" style="background: var(--teal); color: #04121d; margin-left: 10px;" data-i18n="actions.upload">Upload</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="patient-history-modal" class="modal" style="display: none;">
+        <div class="modal-content glass-panel" style="max-width: 800px;">
+            <span class="close" onclick="closePatientHistoryModal()">&times;</span>
+            <h2 id="history-modal-title" style="margin-bottom: 5px; color: var(--text);" data-i18n="modals.patient_name">Patient Name</h2>
+            <p id="history-modal-subtitle" style="color: var(--muted); margin-bottom: 20px; font-size: 13px;"></p>
+            
+            <h3 style="color: var(--text); margin-bottom: 15px; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;" data-i18n="modals.visit_history">Visit History</h3>
+            <div id="history-modal-table-container"></div>
+        </div>
+    </div>
+
+    <div id="visit-results-modal" class="modal" style="display: none;">
+        <div class="modal-content glass-panel" style="max-width: 960px;">
+            <span class="close" onclick="closeVisitResultsModal()">&times;</span>
+            <h2 id="vr-modal-title" style="margin-bottom: 5px; color: var(--text);">Visit Results</h2>
+            <p id="vr-modal-subtitle" style="color: var(--muted); margin-bottom: 20px; font-size: 13px;"></p>
+            <div id="vr-charts-container"></div>
+            <div id="vr-modal-body"></div>
+        </div>
+    </div>
+    <div id="new-bill-modal" class="modal" style="display: none;">
+        <div class="modal-content glass-panel" style="max-width: 600px;">
+            <span class="close" onclick="document.getElementById('new-bill-modal').style.display='none'">&times;</span>
+            <h2 style="margin-bottom: 20px; color: var(--text);">Create New Order Bill</h2>
+            
+            <form id="new-bill-form" onsubmit="saveWarehouseBill(event)">
+                <input type="hidden" id="bill-item-id">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div><label class="form-label">Order ID</label><input type="text" id="bill-order-id" readonly style="width: 100%; opacity: 0.7;"></div>
+                    <div><label class="form-label">Date & Time</label><input type="text" id="bill-date" readonly style="width: 100%; opacity: 0.7;"></div>
+                    <div><label class="form-label">Ordered By (User)</label><input type="text" id="bill-user" readonly style="width: 100%; opacity: 0.7;"></div>
+                    <div><label class="form-label">Category</label><input type="text" id="bill-category" readonly style="width: 100%; opacity: 0.7;"></div>
+                </div>
+    
+                <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                    <h3 id="bill-item-name" style="margin-bottom: 10px; color: var(--teal);">Item Name</h3>
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>Present Stock: <strong id="bill-present-stock">0</strong> <span id="bill-unit-label"></span></span>
+                    </div>
+                </div>
+    
+                <div style="display: flex; gap: 10px; margin-bottom: 25px;">
+                    <div style="flex: 1;"><label class="form-label">Ordered Qty</label><input type="number" id="bill-ordered-qty" required min="1" style="width: 100%;" oninput="calcBillTotal()"></div>
+                    <div style="flex: 1;"><label class="form-label">Price Per Unit (EGP)</label><input type="number" id="bill-price" step="0.01" required style="width: 100%;" oninput="calcBillTotal()"></div>
+                    <div style="flex: 1;"><label class="form-label">Total Price (EGP)</label><input type="text" id="bill-total" readonly style="width: 100%; background: rgba(92,189,185,0.1); color: var(--ok); font-weight: bold;"></div>
+                </div>
+    
+                <div style="display: flex; justify-content: space-between;">
+                    <button type="button" class="btn ghost" onclick="printBillReceipt()">🖨️ Print Receipt</button>
+                    <div>
+                        <button type="button" class="btn ghost" onclick="document.getElementById('new-bill-modal').style.display='none'">Cancel</button>
+                        <button type="submit" class="btn" style="background: var(--teal); color: #04121d; margin-left: 10px;">💾 Save Bill</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="bulk-bill-modal" class="modal" style="display: none;">
+        <div class="modal-content glass-panel" style="max-width: 800px;">
+            <span class="close" onclick="closeBulkBillModal()">&times;</span>
+            <h2 style="margin-bottom: 5px; color: var(--text);">🧾 Create New Bill</h2>
+            <p style="color: var(--muted); margin-bottom: 20px; font-size: 13px;">
+                Items currently at or below their critical stock level. Uncheck any you don't want to include, and set the quantity to order for the rest.
+            </p>
+            <div id="bulk-bill-items-container"></div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
+                <button type="button" class="btn ghost" onclick="closeBulkBillModal()">Cancel</button>
+                <button type="button" class="btn" style="background: var(--teal); color: #04121d;" onclick="submitBulkBill()">🚨 Order Stock</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="bulk-bill-detail-modal" class="modal" style="display: none;">
+        <div class="modal-content glass-panel" style="max-width: 700px;">
+            <span class="close" onclick="document.getElementById('bulk-bill-detail-modal').style.display='none'">&times;</span>
+            <h2 id="bb-detail-title" style="margin-bottom: 5px; color: var(--text);">New Bill</h2>
+            <p id="bb-detail-subtitle" style="color: var(--muted); margin-bottom: 20px; font-size: 13px;"></p>
+            <div id="bb-detail-body"></div>
+            <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
+                <button type="button" class="btn ghost" onclick="printBulkBill()">🖨️ Print Bill</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="work-order-modal" class="modal" style="display: none;">
+        <div class="modal-content glass-panel" style="max-width: 800px;">
+            <span class="close" onclick="closeWorkOrderModal()">&times;</span>
+            <h2 style="margin-bottom: 5px; color: var(--text);">📦 Create Work Order</h2>
+            <p style="color: var(--muted); margin-bottom: 20px; font-size: 13px;">
+                Choose how many of each selected item to take out of warehouse stock.
+            </p>
+            <div id="work-order-items-container"></div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
+                <button type="button" class="btn ghost" onclick="closeWorkOrderModal()">Cancel</button>
+                <button type="button" class="btn" style="background: var(--teal); color: #04121d;" onclick="submitWorkOrder()">✅ Submit</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="work-order-detail-modal" class="modal" style="display: none;">
+        <div class="modal-content glass-panel" style="max-width: 700px;">
+            <span class="close" onclick="document.getElementById('work-order-detail-modal').style.display='none'">&times;</span>
+            <h2 id="wo-detail-title" style="margin-bottom: 5px; color: var(--text);">Work Order</h2>
+            <p id="wo-detail-subtitle" style="color: var(--muted); margin-bottom: 20px; font-size: 13px;"></p>
+            <div id="wo-detail-body"></div>
+            <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
+                <button type="button" class="btn ghost" onclick="printWorkOrder()">🖨️ Print Work Order</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="work-orders-history-modal" class="modal" style="display: none;">
+        <div class="modal-content glass-panel" style="max-width: 900px;">
+            <span class="close" onclick="document.getElementById('work-orders-history-modal').style.display='none'">&times;</span>
+            <h2 style="margin-bottom: 20px; color: var(--text);">Warehouse Work Orders</h2>
+            <div id="work-orders-history-container" style="max-height: 400px; overflow-y: auto;"></div>
+        </div>
+    </div>
+
+    <div id="bills-history-modal" class="modal" style="display: none;">
+        <div class="modal-content glass-panel" style="max-width: 900px;">
+            <span class="close" onclick="document.getElementById('bills-history-modal').style.display='none'">&times;</span>
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="color: var(--text);">Warehouse Bills History</h2>
+                <button class="btn ghost" style="border-color: var(--ok); color: var(--ok); font-size: 12px; padding: 4px 10px;" onclick="exportTableToCSV(this, 'warehouse_bills_history')">📥 Export Excel</button>
+            </div>
+            
+            <div id="bills-history-container" style="max-height: 400px; overflow-y: auto;"></div>
+        </div>
+    </div>
+</body>
+</html>

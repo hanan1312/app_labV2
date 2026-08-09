@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/x-icon" href="/shtk.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Se7atech صـــ7ـــتك — Clinic OS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="app-body">
+    <div class="app">
+        <aside class="sidebar" id="sidebar">
+            <div class="brand">
+                <div class="logo">S7</div>
+                <div>
+                    <div class="brand-name">Se7atech</div>
+                    <div class="brand-sub">Clinic OS</div>
+                </div>
+            </div>
+            <nav class="nav">
+                <button class="nav-tab active" data-tab="dashboard"><span class="dot"></span> Dashboard</button>
+                <button class="nav-tab" data-tab="patients"><span class="dot"></span> Patients</button>
+                <button class="nav-tab" data-tab="add-patient"><span class="dot"></span> Add Patient</button>
+                <button class="nav-tab" data-tab="patient-history"><span class="dot"></span> Patient History</button>
+                <button class="nav-tab" data-tab="reports"><span class="dot"></span> Reports</button>
+                <button class="nav-tab" data-tab="financial" id="financial-tab" style="display: none;"><span class="dot"></span> Financial</button>
+                <button class="nav-tab" data-tab="settings" id="settings-tab" style="display: none;"><span class="dot"></span> Settings</button>
+            </nav>
+        </aside>
+
+        <main class="main">
+            <header class="topbar">
+                <div class="top-actions">
+                    <select id="workspace-selector" class="btn ghost" onchange="changeWorkspace()" style="display: none; padding: 6px 12px; height: 38px;">
+                        <option value="clinic">Clinic Workspace</option>
+                        <option value="lab">Lab Workspace</option>
+                    </select>
+                    <div class="user" id="user-info">
+                        </div>
+                    <button class="btn ghost" onclick="logout()" style="height: 38px;">Logout</button>
+                </div>
+            </header>
+
+            <section class="view" id="view">
+                <div id="alert-container"></div>
+
+                <div id="dashboard" class="tab-content active">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px;">
+                        <div>
+                            <h1>Clinic Overview</h1>
+                            <p style="color: var(--muted)">Your Comfort & Health Are Our Top Priorities</p>
+                        </div>
+                        <button class="btn btn-danger" onclick="performDailyReset()">Daily Reset</button>
+                    </div>
+                    
+                    <div class="bento stats-grid">
+                        <div id="total-patients-card" class="card kpi col-3">
+                            <div class="label">Total Patients</div>
+                            <div class="val" id="total-patients">0</div>
+                        </div>
+                        <div id="new-patients-card" class="card kpi col-3">
+                            <div class="label">New This Month</div>
+                            <div class="val" id="new-patients">0</div>
+                        </div>
+                        <div id="avg-age-card" class="card kpi col-3">
+                            <div class="label">Average Age</div>
+                            <div class="val" id="avg-age">0</div>
+                        </div>
+                        <div id="today-patients-card" class="card kpi col-3">
+                            <div class="label">Today's Patients</div>
+                            <div class="val" id="today-patients">0</div>
+                        </div>
+                    </div>
+
+                    <div id="today-patients-expanded" class="card col-12" style="display: none; margin-top: 18px;">
+                        <h3>Today's Patients Details</h3>
+                        <div id="today-patients-list"></div>
+                    </div>
+
+                    <div class="bento" style="margin-top: 24px;">
+                        <div class="card col-3" style="text-align: center; cursor: pointer;" onclick="showTab('new-reservation')">
+                            <h2 style="margin-bottom: 0;">📅</h2>
+                            <h3 style="font-size: 14px; margin-top: 8px;">New Reservation</h3>
+                        </div>
+                        <div class="card col-3" style="text-align: center; cursor: pointer;" onclick="showTab('awaiting-hall')">
+                            <h2 style="margin-bottom: 0;">⏳</h2>
+                            <h3 style="font-size: 14px; margin-top: 8px;">Awaiting Hall</h3>
+                        </div>
+                        <div class="card col-3" style="text-align: center; cursor: pointer;" onclick="showTab('hall-status-manager')">
+                            <h2 style="margin-bottom: 0;">🏥</h2>
+                            <h3 style="font-size: 14px; margin-top: 8px;">Hall Status</h3>
+                        </div>
+                        <div class="card col-3" style="text-align: center; cursor: pointer;" onclick="showTab('finished-reservations')">
+                            <h2 style="margin-bottom: 0;">✅</h2>
+                            <h3 style="font-size: 14px; margin-top: 8px;">Finished</h3>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="new-reservation" class="tab-content">
+                    <h1>New Reservation</h1>
+                    <div class="search-box">
+                        <span class="search-icon">⌕</span>
+                        <input type="text" id="reservation-patient-search" placeholder="Search for existing patient..." onkeyup="searchPatientsForReservation()">
+                    </div>
+                    <div id="reservation-patient-results" style="margin-bottom: 20px;"></div>
+                    
+                    <div class="card">
+                        <form id="reservation-form" style="display: none;">
+                            <input type="hidden" id="reservation-patient-id" name="patient_id">
+                            <div class="form-row">
+                                <div class="form-group"><label>Visit Date *</label><input type="date" id="visit-date" name="visit_date" required></div>
+                                <div class="form-group"><label>Visit Time *</label><input type="time" id="visit-time" name="visit_time" required></div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group"><label>Visit Type *</label>
+                                    <select id="visit-type" name="visit_type" required>
+                                        <option value="">Select Visit Type</option>
+                                        <option value="examination">Examination</option>
+                                        <option value="fast examination">Fast Examination</option>
+                                        <option value="consultation">Consultation</option>
+                                    </select>
+                                </div>
+                                <div class="form-group"><label>Hall Status</label>
+                                    <select id="hall-status" name="hall_status">
+                                        <option value="Out">Out</option>
+                                        <option value="In">In</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <button type="submit" class="btn">Create Reservation</button>
+                            <button type="button" class="btn ghost" onclick="cancelReservation()">Cancel</button>
+                        </form>
+                    </div>
+                </div>
+
+                <div id="patients" class="tab-content">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px;">
+                        <div>
+                            <h1>Patient Directory</h1>
+                        </div>
+                        <button id="bulk-delete-btn" class="btn btn-danger" onclick="handleBulkDelete()" style="display: none;">Delete Selected</button>
+                    </div>
+                    <div class="search-box">
+                        <span class="search-icon">⌕</span>
+                        <input type="text" id="patient-search" placeholder="Search by ID, Name, or Phone..." onkeyup="searchPatients()">
+                    </div>
+                    <div class="table-container">
+                        <table id="patients-table">
+                            <thead>
+                                <tr>
+                                    <th><input type="checkbox" id="select-all-patients" onclick="toggleSelectAll(this)"></th>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>Gender</th>
+                                    <th>Phone</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="patients-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="add-patient" class="tab-content">
+                    <h1>Add New Patient</h1>
+                    <div class="card">
+                        <form id="patient-form">
+                            <div class="form-row">
+                                <div class="form-group"><label>First Name *</label><input type="text" id="first-name" name="first_name" required></div>
+                                <div class="form-group"><label>Last Name *</label><input type="text" id="last-name" name="last_name" required></div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group"><label>Date of Birth *</label><input type="date" id="date-of-birth" name="date_of_birth" required></div>
+                                <div class="form-group"><label>Gender *</label>
+                                    <select id="gender" name="gender" required>
+                                        <option value="">Select Gender</option><option value="Male">Male</option><option value="Female">Female</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group"><label>Parent Name *</label><input type="text" id="parent-name" name="parent_name" required></div>
+                                <div class="form-group"><label>Phone *</label><input type="tel" id="phone" name="phone" required></div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group"><label>Patient Phone</label><input type="tel" id="patient-phone" name="patient_phone"></div>
+                                <div class="form-group"><label>Blood Type</label>
+                                    <select id="blood-type" name="blood_type">
+                                        <option value="">Select Blood Type</option><option value="A+">A+</option><option value="O+">O+</option><option value="B+">B+</option><option value="AB+">AB+</option><option value="A-">A-</option><option value="O-">O-</option><option value="B-">B-</option><option value="AB-">AB-</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group"><label>City</label><input type="text" id="city" name="city"></div>
+                                <div class="form-group"><label>Area</label><input type="text" id="area" name="area"></div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group"><label>Street</label><input type="text" id="street" name="street"></div>
+                                <div class="form-group"><label>Apartment</label><input type="text" id="apartment" name="apartment"></div>
+                            </div>
+                            <div class="form-group"><label>Allergies</label><textarea id="allergies" name="allergies" rows="2"></textarea></div>
+                            <div class="form-group"><label>Medical History</label><textarea id="medical-history" name="medical_history" rows="3"></textarea></div>
+                            <button type="submit" class="btn">Save Patient</button>
+                        </form>
+                    </div>
+                </div>
+
+                <div id="awaiting-hall" class="tab-content">
+                    <h1>Awaiting Hall</h1>
+                    <div id="awaiting-patients-list" class="bento"></div>
+                </div>
+                
+                <div id="finished-reservations" class="tab-content">
+                    <h1>Finished Reservations</h1>
+                    <div id="finished-patients-list" class="bento"></div>
+                </div>
+                
+                <div id="patient-history" class="tab-content">
+                    <h1>Patient History</h1>
+                    <div class="search-box">
+                        <span class="search-icon">⌕</span>
+                        <input type="text" id="history-search" placeholder="Search history..." onkeyup="searchPatientHistory()">
+                    </div>
+                    <div id="patient-history-list" class="bento"></div>
+                </div>
+                
+                <div id="hall-status-manager" class="tab-content">
+                    <h1>Hall Status Manager</h1>
+                    <div id="hall-status-list"></div>
+                </div>
+
+                <div id="reports" class="tab-content">
+                    <h1>Reports</h1>
+                    <div class="bento">
+                        <div class="card col-4" style="cursor:pointer;" onclick="generatePatientReport()">
+                            <h3 style="margin-bottom: 4px;">Patient Report</h3>
+                            <p style="color: var(--muted); font-size: 12px;">Generate comprehensive patient statistics</p>
+                        </div>
+                        <div class="card col-4" style="cursor:pointer;" onclick="generateFinancialReport()">
+                            <h3 style="margin-bottom: 4px;">Financial Report</h3>
+                            <p style="color: var(--muted); font-size: 12px;">Generate financial summary and analytics</p>
+                        </div>
+                        <div class="card col-4" style="cursor:pointer;" onclick="generateVisitReport()">
+                            <h3 style="margin-bottom: 4px;">Visit Report</h3>
+                            <p style="color: var(--muted); font-size: 12px;">Generate visit statistics and trends</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="financial" class="tab-content">
+                    <h1>Financial Dashboard</h1>
+                    <div class="bento stats-grid" style="margin-bottom: 24px;">
+                        <div class="card kpi col-3">
+                            <div class="label">Today's Revenue</div>
+                            <div class="val" id="revenue-today">$0.00</div>
+                        </div>
+                        <div class="card kpi col-3">
+                            <div class="label">This Month</div>
+                            <div class="val" id="revenue-month">$0.00</div>
+                        </div>
+                        <div class="card kpi col-3">
+                            <div class="label">Transactions</div>
+                            <div class="val" id="transactions-count">0</div>
+                        </div>
+                        <div class="card kpi col-3">
+                            <div class="label">Avg Transaction</div>
+                            <div class="val" id="avg-transaction">$0.00</div>
+                        </div>
+                    </div>
+                    <div class="bento">
+                        <div class="card col-8">
+                            <h3>Revenue Trend</h3>
+                            <canvas id="revenue-chart"></canvas>
+                        </div>
+                        <div class="card col-4">
+                            <h3>Service Revenue</h3>
+                            <canvas id="service-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="settings" class="tab-content">
+                    <h1>Settings</h1>
+                    <div class="card standard-settings-view">
+                        <form id="clinic-config-form">
+                            <div class="form-row">
+                                <div class="form-group"><label>Doctor Name</label><input type="text" id="doctor-name-config" name="doctor_name"></div>
+                                <div class="form-group"><label>Clinic Name</label><input type="text" id="clinic-name-config" name="clinic_name"></div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group"><label>Clinic Phone</label><input type="tel" id="clinic-phone-config" name="clinic_phone"></div>
+                            </div>
+                            <button type="submit" class="btn">Update Settings</button>
+                        </form>
+                    </div>
+
+                    <div id="master-settings-view" class="card" style="display: none; text-align: center; padding: 40px;">
+                        <h3 style="color: var(--danger);">Master Administrative Controls</h3>
+                        <p style="color: var(--muted); margin-bottom: 24px;">Select a workspace to manage its clients, users, and features.</p>
+                        <div style="display: flex; justify-content: center; gap: 20px;">
+                            <button class="btn" onclick="openMasterModal('clinic')">Manage CLINIC</button>
+                            <button class="btn ghost" onclick="openMasterModal('lab')">Manage LAB</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="master-management-modal" class="modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100;">
+        <div class="modal-content card" style="max-width: 600px; margin: 10vh auto; background: var(--bg); padding: 30px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 id="master-modal-title">Manage Workspace</h2>
+                <span class="close" style="cursor: pointer; font-size: 24px;" onclick="closeMasterModal()">&times;</span>
+            </div>
+            <div style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 20px;">
+                <button class="btn ghost" onclick="showMasterView('add-client')">Add User</button>
+                <button class="btn ghost" onclick="showMasterView('configure-features')">Configure Features</button>
+            </div>
+            <div id="master-view-add-client" style="display: none;">
+                <h3>Create New Account</h3>
+                <p style="color: var(--muted); font-size: 13px; margin-bottom: 15px;">Prefix <strong id="master-prefix-display" style="color:var(--text)"></strong> will be added.</p>
+                <form id="master-create-user-form">
+                    <div class="form-row">
+                        <div class="form-group"><label>Raw Username</label><input type="text" id="master-new-username" required></div>
+                        <div class="form-group"><label>Password</label><input type="password" id="master-new-password" required></div>
+                    </div>
+                    <div class="form-group"><label>Account Role</label>
+                        <select id="master-new-role">
+                            <option value="admin">Administrator</option><option value="user">Standard User</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn">Generate Account</button>
+                </form>
+            </div>
+            <div id="master-view-configure-features" style="display: none;">
+                <h3>Toggle Features</h3>
+                <form id="master-features-form">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                        <label style="display:flex; gap:8px;"><input type="checkbox" name="feature" value="dashboard"> Dashboard</label>
+                        <label style="display:flex; gap:8px;"><input type="checkbox" name="feature" value="new-reservation"> Reservations</label>
+                        <label style="display:flex; gap:8px;"><input type="checkbox" name="feature" value="patients"> Patients</label>
+                        <label style="display:flex; gap:8px;"><input type="checkbox" name="feature" value="add-patient"> Add Patient</label>
+                        <label style="display:flex; gap:8px;"><input type="checkbox" name="feature" value="awaiting-hall"> Awaiting Hall</label>
+                        <label style="display:flex; gap:8px;"><input type="checkbox" name="feature" value="hall-status-manager"> Hall Workflow</label>
+                        <label style="display:flex; gap:8px;"><input type="checkbox" name="feature" value="finished-reservations"> Finished List</label>
+                        <label style="display:flex; gap:8px;"><input type="checkbox" name="feature" value="patient-history"> History</label>
+                        <label style="display:flex; gap:8px;"><input type="checkbox" name="feature" value="reports"> Reports</label>
+                        <label style="display:flex; gap:8px;"><input type="checkbox" name="feature" value="financial"> Financial</label>
+                    </div>
+                    <button type="submit" class="btn">Save Configuration</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div id="stats-modal" class="modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100;">
+        <div class="modal-content card" style="max-width: 600px; margin: 10vh auto; background: var(--bg); padding: 30px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 id="stats-modal-title"></h2>
+                <span class="close" style="cursor: pointer; font-size: 24px;" onclick="closeStatsModal()">&times;</span>
+            </div>
+            <div id="stats-modal-content"></div>
+        </div>
+    </div>
+
+    <div id="transaction-modal" class="modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100;">
+        <div class="modal-content card" style="max-width: 600px; margin: 5vh auto; background: var(--bg); padding: 30px; max-height: 90vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2>Add Transaction</h2>
+                <span class="close" style="cursor: pointer; font-size: 24px;" onclick="closeTransactionModal()">&times;</span>
+            </div>
+            <form id="transaction-form">
+                <div class="form-group">
+                    <label>Search Patient</label>
+                    <input type="text" id="transaction-patient-search" placeholder="Search for patient..." onkeyup="searchPatientsForTransaction()">
+                    <div id="transaction-patient-results" style="margin-top: 10px;"></div>
+                    <input type="hidden" id="transaction-patient-id" name="patient_id">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Service Type</label>
+                        <div id="service-type-display" style="padding: 12px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 10px;">Not Selected</div>
+                        <input type="hidden" id="service-type-hidden" name="service_type_id">
+                    </div>
+                    <div class="form-group">
+                        <label>Amount to Pay *</label>
+                        <input type="number" id="amount" name="amount" step="0.01" required oninput="checkAmountDifference()">
+                        <div id="comment-section" style="display:none; margin-top:10px;">
+                            <label style="color: var(--danger);">Reason for partial payment *</label>
+                            <textarea id="price_comment" name="price_comment" rows="2"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>Payment Method *</label>
+                        <select id="payment-method" name="payment_method" required>
+                            <option value="">Select Method</option><option value="cash">Cash</option><option value="card">Card</option><option value="insurance">Insurance</option>
+                        </select>
+                    </div>
+                    <div class="form-group"><label>Transaction Date</label><input type="datetime-local" id="transaction-date" name="transaction_date"></div>
+                </div>
+                <div id="card-details-section" style="display:none; padding: 15px; background: var(--bg-2); border-left: 4px solid var(--teal); border-radius: 8px; margin-bottom: 15px;">
+                    <div class="form-row">
+                        <div class="form-group"><label>Card Number</label><input type="text" name="card_number"></div>
+                        <div class="form-group"><label>Transaction Number</label><input type="text" name="transaction_number"></div>
+                    </div>
+                </div>
+                <div id="insurance-details-section" style="display:none; padding: 15px; background: var(--bg-2); border-left: 4px solid var(--ok); border-radius: 8px; margin-bottom: 15px;">
+                    <div class="form-row">
+                        <div class="form-group"><label>Insurance Number</label><input type="text" name="insurance_number"></div>
+                        <div class="form-group"><label>Company Name</label><input type="text" name="company_name"></div>
+                    </div>
+                </div>
+                <div class="form-group"><label>Description</label><textarea id="description" name="description" rows="2"></textarea></div>
+                <button type="submit" class="btn">Add Transaction</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="patient-details-modal" class="modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100;">
+        <div class="modal-content card" style="max-width: 600px; margin: 10vh auto; background: var(--bg); padding: 30px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 id="patient-details-title">Patient Details</h2>
+                <span class="close" style="cursor: pointer; font-size: 24px;" onclick="closePatientDetailsModal()">&times;</span>
+            </div>
+            <div id="patient-details-content" style="margin-bottom: 24px; font-size: 13px;"></div>
+            <div style="display: flex; gap: 10px;">
+                <button class="btn ghost" onclick="editPatient()">Edit Patient</button>
+                <button class="btn" onclick="generatePatientPDF()">Generate PDF</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/script.js"></script>
+</body>
+</html>

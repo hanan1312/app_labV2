@@ -1,0 +1,15 @@
+{
+    "name": "Helix Lab Management",
+    "short_name": "Helix Lab",
+    "start_url": "/index_lab.html",
+    "display": "standalone",
+    "background_color": "#04121d",
+    "theme_color": "#5cbdb9",
+    "icons": [
+      {
+        "src": "/static/icons/icon-192.png",
+        "type": "image/png",
+        "sizes": "192x192"
+      }
+    ]
+  }

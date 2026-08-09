@@ -1,0 +1,58 @@
+2025-09-11 21:06:00,059 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:7000
+ * Running on http://169.254.0.21:7000
+2025-09-11 21:06:00,059 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-09-11 21:06:00,062 - werkzeug - INFO -  * Restarting with stat
+2025-09-11 21:06:00,445 - werkzeug - WARNING -  * Debugger is active!
+2025-09-11 21:06:00,446 - werkzeug - INFO -  * Debugger PIN: 121-728-816
+2025-09-11 21:06:35,981 - src.utils.error_handlers - INFO - GET / - IP: 127.0.0.1
+2025-09-11 21:06:35,981 - werkzeug - INFO - 127.0.0.1 - - [11/Sep/2025 21:06:35] "[32mGET / HTTP/1.1[0m" 302 -
+2025-09-11 21:06:35,989 - src.utils.error_handlers - INFO - GET /login - IP: 127.0.0.1
+2025-09-11 21:06:35,992 - werkzeug - INFO - 127.0.0.1 - - [11/Sep/2025 21:06:35] "GET /login HTTP/1.1" 200 -
+2025-09-11 21:06:36,009 - src.utils.error_handlers - INFO - GET /shtk.png - IP: 127.0.0.1
+2025-09-11 21:06:36,010 - werkzeug - INFO - 127.0.0.1 - - [11/Sep/2025 21:06:36] "[32mGET /shtk.png HTTP/1.1[0m" 302 -
+2025-09-11 21:06:36,018 - src.utils.error_handlers - INFO - GET /login - IP: 127.0.0.1
+2025-09-11 21:06:36,019 - werkzeug - INFO - 127.0.0.1 - - [11/Sep/2025 21:06:36] "[36mGET /login HTTP/1.1[0m" 304 -
+2025-09-11 21:06:36,161 - src.utils.error_handlers - INFO - GET /api/auth/check-session - IP: 127.0.0.1
+2025-09-11 21:06:36,162 - werkzeug - INFO - 127.0.0.1 - - [11/Sep/2025 21:06:36] "GET /api/auth/check-session HTTP/1.1" 200 -
+2025-09-11 21:06:36,200 - src.utils.error_handlers - INFO - GET /favicon.ico - IP: 127.0.0.1
+2025-09-11 21:06:36,200 - werkzeug - INFO - 127.0.0.1 - - [11/Sep/2025 21:06:36] "[32mGET /favicon.ico HTTP/1.1[0m" 302 -
+2025-09-11 21:06:36,209 - src.utils.error_handlers - INFO - GET /login - IP: 127.0.0.1
+2025-09-11 21:06:36,210 - werkzeug - INFO - 127.0.0.1 - - [11/Sep/2025 21:06:36] "[36mGET /login HTTP/1.1[0m" 304 -
+2025-09-11 21:07:05,039 - src.utils.error_handlers - INFO - POST /api/auth/login - IP: 127.0.0.1
+2025-09-11 21:07:05,039 - src.utils.error_handlers - INFO - Request data: {'username': 'admin'}
+2025-09-11 21:07:05,166 - werkzeug - INFO - 127.0.0.1 - - [11/Sep/2025 21:07:05] "[31m[1mPOST /api/auth/login HTTP/1.1[0m" 401 -
+2025-09-11 21:07:29,451 - src.utils.error_handlers - INFO - POST /api/auth/login - IP: 127.0.0.1
+2025-09-11 21:07:29,451 - src.utils.error_handlers - INFO - Request data: {'username': 'admin'}
+2025-09-11 21:07:29,563 - werkzeug - INFO - 127.0.0.1 - - [11/Sep/2025 21:07:29] "[31m[1mPOST /api/auth/login HTTP/1.1[0m" 401 -
+2025-09-11 21:07:57,983 - src.utils.error_handlers - INFO - POST /api/auth/login - IP: 127.0.0.1
+2025-09-11 21:07:57,983 - src.utils.error_handlers - INFO - Request data: {'username': 'admin'}
+2025-09-11 21:07:58,168 - werkzeug - INFO - 127.0.0.1 - - [11/Sep/2025 21:07:58] "POST /api/auth/login HTTP/1.1" 200 -
+2025-09-11 21:07:59,186 - src.utils.error_handlers - INFO - GET / - IP: 127.0.0.1
+2025-09-11 21:07:59,187 - werkzeug - INFO - 127.0.0.1 - - [11/Sep/2025 21:07:59] "GET / HTTP/1.1" 200 -
+2025-09-11 21:07:59,214 - src.utils.error_handlers - INFO - GET /css/style.css - IP: 127.0.0.1
+2025-09-11 21:07:59,215 - werkzeug - INFO - 127.0.0.1 - - [11/Sep/2025 21:07:59] "GET /css/style.css HTTP/1.1" 200 -
+2025-09-11 21:07:59,217 - src.utils.error_handlers - INFO - GET /shtk.png - IP: 127.0.0.1
+2025-09-11 21:07:59,218 - werkzeug - INFO - 127.0.0.1 - - [11/Sep/2025 21:07:59] "GET /shtk.png HTTP/1.1" 200 -
+2025-09-11 21:07:59,219 - src.utils.error_handlers - INFO - GET /js/script.js - IP: 127.0.0.1
+2025-09-11 21:07:59,219 - werkzeug - INFO - 127.0.0.1 - - [11/Sep/2025 21:07:59] "GET /js/script.js HTTP/1.1" 200 -
+2025-09-11 21:07:59,319 - src.utils.error_handlers - INFO - GET /api/auth/check-session - IP: 127.0.0.1
+2025-09-11 21:07:59,321 - werkzeug - INFO - 127.0.0.1 - - [11/Sep/2025 21:07:59] "GET /api/auth/check-session HTTP/1.1" 200 -
+2025-09-11 21:07:59,389 - src.utils.error_handlers - INFO - GET /css/background_image.jpg - IP: 127.0.0.1
+2025-09-11 21:07:59,390 - werkzeug - INFO - 127.0.0.1 - - [11/Sep/2025 21:07:59] "GET /css/background_image.jpg HTTP/1.1" 200 -
+2025-09-11 21:07:59,422 - src.utils.error_handlers - INFO - GET /api/patients - IP: 127.0.0.1
+2025-09-11 21:07:59,427 - werkzeug - INFO - 127.0.0.1 - - [11/Sep/2025 21:07:59] "[35m[1mGET /api/patients HTTP/1.1[0m" 500 -
+2025-09-11 21:07:59,427 - src.utils.error_handlers - INFO - GET /api/financial/service-types - IP: 127.0.0.1
+2025-09-11 21:07:59,428 - src.utils.error_handlers - INFO - GET /api/clinic/config - IP: 127.0.0.1
+2025-09-11 21:07:59,429 - src.utils.error_handlers - INFO - GET /shtk.png - IP: 127.0.0.1
+2025-09-11 21:07:59,432 - werkzeug - INFO - 127.0.0.1 - - [11/Sep/2025 21:07:59] "GET /api/financial/service-types HTTP/1.1" 200 -
+2025-09-11 21:07:59,434 - werkzeug - INFO - 127.0.0.1 - - [11/Sep/2025 21:07:59] "[36mGET /shtk.png HTTP/1.1[0m" 304 -
+2025-09-11 21:07:59,436 - werkzeug - INFO - 127.0.0.1 - - [11/Sep/2025 21:07:59] "GET /api/clinic/config HTTP/1.1" 200 -
+2025-09-11 21:09:37,770 - src.utils.error_handlers - INFO - POST /api/patients - IP: 127.0.0.1
+2025-09-11 21:09:37,771 - src.utils.error_handlers - INFO - Request data: {'first_name': 'Ahmed', 'last_name': 'Ali', 'date_of_birth': '0515-02-02', 'gender': 'Male', 'parent_name': 'Mohammad Ali', 'phone': '+1234567890', 'patient_phone': '', 'blood_type': '', 'city': '', 'area': '', 'street': '', 'apartment': '', 'allergies': [''], 'medical_history': ''}
+2025-09-11 21:09:37,776 - src.utils.error_handlers - ERROR - Database error in create_patient: (sqlite3.OperationalError) table patients has no column named visit_date
+[SQL: INSERT INTO patients (first_name, last_name, date_of_birth, gender, parent_name, phone, patient_phone, city, area, street, apartment, blood_type, allergies, medical_history, temperature, blood_pressure_systolic, blood_pressure_diastolic, weight, height, visit_date, visit_time, visit_datetime, visit_type, hall_status, doctor_comments, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)]
+[parameters: ('Ahmed', 'Ali', '0515-02-02', 'Male', 'Mohammad Ali', '+1234567890', '', '', '', '', '', '', '[""]', '', None, None, None, None, None, None, None, None, None, 'Out', None, 'registered', '2025-09-12 01:09:37.776129', '2025-09-12 01:09:37.776132')]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+2025-09-11 21:09:37,777 - werkzeug - INFO - 127.0.0.1 - - [11/Sep/2025 21:09:37] "[35m[1mPOST /api/patients HTTP/1.1[0m" 500 -

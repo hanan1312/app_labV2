@@ -1,0 +1,4 @@
+{
+  "clnc_master": "pbkdf2:sha256:600000$VskZde0ppoMNEV73$9e763660331e429c9d930d23e227d9a4f306a5829cf07d6c9965606e28feb801",
+  "lab_master": "pbkdf2:sha256:600000$PyZ7FG5ywvrvmyDd$75b083245ab7ad74a639f703e16b1b3ab1131f7b219a02611a5763dbed899e7a"
+}

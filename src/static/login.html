@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Medical Analysis Laboratory Management System</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Poppins', sans-serif;
+        }
+
+        :root {
+            --lamp-off-bg: #121417;
+            --lamp-on-bg: #1c1f24;
+            --gold: #e8c07a;
+            --gold-dark: #b8893f;
+            --card-bg: rgba(30, 33, 39, 0.55);
+            --card-border: rgba(255, 255, 255, 0.08);
+            --text: #e6e6e6;
+            --muted: #8f97a3;
+        }
+
+        html, body { height: 100%; }
+
+        body {
+            min-height: 100vh;
+            background: var(--lamp-off-bg);
+            transition: background-color 0.6s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        body.lamp-on { background: var(--lamp-on-bg); }
+
+        /* Ambient glow behind the lamp, fades in when the lamp is "on" */
+        .ambient-glow {
+            position: absolute;
+            top: 15%;
+            left: 8%;
+            width: 420px;
+            height: 420px;
+            background: radial-gradient(circle, rgba(232, 192, 122, 0.35), transparent 70%);
+            opacity: 0;
+            transition: opacity 0.6s ease;
+            pointer-events: none;
+        }
+        body.lamp-on .ambient-glow { opacity: 1; }
+
+        .scene {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 60px;
+            max-width: 900px;
+            width: 100%;
+            padding: 20px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* --- Decorative desk lamp, click to toggle the ambiance --- */
+        .lamp {
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            user-select: none;
+            flex-shrink: 0;
+        }
+        .lamp-shade {
+            width: 130px;
+            height: 70px;
+            background: linear-gradient(180deg, #f5f0e6, #d8cfba);
+            border-radius: 50% 50% 40% 40% / 70% 70% 30% 30%;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            transition: box-shadow 0.6s ease, filter 0.6s ease;
+            filter: grayscale(0.6) brightness(0.7);
+        }
+        body.lamp-on .lamp-shade {
+            filter: grayscale(0) brightness(1.1);
+            box-shadow: 0 0 60px 20px rgba(232, 192, 122, 0.55), 0 10px 30px rgba(0, 0, 0, 0.4);
+        }
+        .lamp-pole { width: 6px; height: 90px; background: #3a3d42; }
+        .lamp-base { width: 70px; height: 10px; background: #3a3d42; border-radius: 4px; }
+        .lamp-hint {
+            margin-top: 14px;
+            font-size: 11px;
+            color: var(--muted);
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        /* --- Login card --- */
+        .login-container {
+            width: 100%;
+            max-width: 360px;
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            padding: 36px 32px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        }
+
+        .logo { text-align: center; margin-bottom: 24px; }
+        .logo img { height: 56px; width: 56px; border-radius: 50%; margin-bottom: 10px; }
+        .logo h1 { color: var(--text); font-size: 1.6rem; font-weight: 600; margin-bottom: 4px; }
+        .logo p { color: var(--muted); font-size: 0.85rem; }
+
+        .form-group { margin-bottom: 18px; text-align: left; }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.75rem;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(0, 0, 0, 0.25);
+            color: var(--text);
+            border-radius: 10px;
+            font-size: 0.95rem;
+            transition: all 0.25s ease;
+        }
+        input::placeholder { color: rgba(255, 255, 255, 0.3); }
+        input:focus {
+            outline: none;
+            border-color: var(--gold);
+            box-shadow: 0 0 0 3px rgba(232, 192, 122, 0.2);
+        }
+
+        .btn {
+            width: 100%;
+            padding: 13px 24px;
+            border: none;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            margin-bottom: 6px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--gold), var(--gold-dark));
+            color: #2a1f0c;
+        }
+        .btn-primary:hover { filter: brightness(1.08); box-shadow: 0 8px 24px rgba(232, 192, 122, 0.35); }
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; box-shadow: none; }
+
+        .alert {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-weight: 600;
+            text-align: center;
+            font-size: 0.85rem;
+        }
+        .alert-error { background: rgba(197, 48, 48, 0.15); border: 1px solid #c53030; color: #fed7d7; }
+        .alert-success { background: rgba(39, 103, 73, 0.15); border: 1px solid #276749; color: #c6f6d5; }
+
+        .loading {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(0, 0, 0, 0.25);
+            border-top: 2px solid #2a1f0c;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .role-toggle { text-align: center; margin-top: 16px; }
+        .role-toggle summary { cursor: pointer; font-size: 0.75rem; color: var(--muted); list-style: none; }
+        .role-toggle summary::-webkit-details-marker { display: none; }
+        .role-info {
+            margin-top: 10px;
+            padding: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            text-align: left;
+        }
+        .role-info li { list-style: none; padding: 3px 0; color: var(--muted); font-size: 0.78rem; }
+        .role-info li strong { color: var(--text); }
+
+        @media (max-width: 720px) {
+            .scene { flex-direction: column; gap: 24px; }
+            .lamp { transform: scale(0.8); }
+        }
+    </style>
+</head>
+<body>
+    <div class="ambient-glow"></div>
+
+    <div class="scene">
+        <div class="lamp" id="lamp-toggle" title="Click to toggle the light">
+            <div class="lamp-shade"></div>
+            <div class="lamp-pole"></div>
+            <div class="lamp-base"></div>
+            <div class="lamp-hint">tap the lamp</div>
+        </div>
+
+        <div class="login-container">
+            <div class="logo">
+                <img src="/shtk.png" alt="Lab Logo" onerror="this.style.display='none'">
+                <h1>Welcome</h1>
+                <p>Medical Analysis Laboratory</p>
+            </div>
+
+            <div id="alert-container"></div>
+
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="username">Username</label>
+                    <input type="text" id="username" name="username" placeholder="Enter name" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" name="password" placeholder="Enter Password" required>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="login-btn">
+                    <span id="login-loading" class="loading" style="display: none;"></span>
+                    Sign In
+                </button>
+            </form>
+
+            <details class="role-toggle">
+                <summary>What can each role do?</summary>
+                <ul class="role-info">
+                    <li><strong>Admin:</strong> Full access to all features, user management</li>
+                    <li><strong>Technician:</strong> Client management, sample collection, test entry</li>
+                    <li><strong>Pathologist:</strong> Test result analysis and reporting</li>
+                </ul>
+            </details>
+        </div>
+    </div>
+
+    <script>
+        // Decorative lamp toggle — mirrors the reference's on/off ambiance crossfade.
+        // Purely cosmetic, doesn't touch the login logic below.
+        const lampToggle = document.getElementById('lamp-toggle');
+        let lampOn = true;
+        document.body.classList.add('lamp-on');
+        lampToggle.addEventListener('click', () => {
+            lampOn = !lampOn;
+            document.body.classList.toggle('lamp-on', lampOn);
+        });
+
+        // Check if already logged in
+        document.addEventListener('DOMContentLoaded', function() {
+            checkSession();
+        });
+
+        async function checkSession() {
+            try {
+                const response = await fetch('/api/auth/check-session');
+                const data = await response.json();
+
+                if (data.authenticated) {
+                    // Redirect to main app if already logged in
+                    window.location.href = '/';
+                }
+            } catch (error) {
+                console.log('Session check failed:', error);
+            }
+        }
+
+        // Handle login form submission
+        document.getElementById('login-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const loadingSpinner = document.getElementById('login-loading');
+            const loginBtn = document.getElementById('login-btn');
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            // Show loading state
+            loadingSpinner.style.display = 'inline-block';
+            loginBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert('Login successful! Redirecting...', 'success');
+
+                    // Redirect to main app after short delay
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1000);
+                } else {
+                    showAlert(data.error || 'Login failed', 'error');
+                }
+            } catch (error) {
+                showAlert('Network error. Please try again.', 'error');
+                console.error('Login error:', error);
+            } finally {
+                loadingSpinner.style.display = 'none';
+                loginBtn.disabled = false;
+            }
+        });
+
+        function showAlert(message, type) {
+            const alertContainer = document.getElementById('alert-container');
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type}`;
+            alertDiv.textContent = message;
+
+            alertContainer.innerHTML = '';
+            alertContainer.appendChild(alertDiv);
+
+            // Auto-remove alert after 5 seconds
+            setTimeout(() => {
+                alertDiv.remove();
+            }, 5000);
+        }
+
+        // Handle Enter key in form fields
+        document.getElementById('username').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                document.getElementById('password').focus();
+            }
+        });
+
+        document.getElementById('password').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                document.getElementById('login-form').dispatchEvent(new Event('submit'));
+            }
+        });
+    </script>
+</body>
+</html>
