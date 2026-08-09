@@ -3,3 +3,4 @@ src/static/js/config.js
 lab_app/
 src/static/js/.wwebjs_auth/
 src/static/js/.wwebjs_cache/
+database/
