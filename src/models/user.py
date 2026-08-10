@@ -116,9 +116,13 @@ class WarehouseBill(db.Model):
 
 # Warehouse "Work Order": issuing/using up stock (as opposed to WarehouseBill, which is
 # stock coming IN via purchase). One row per item, grouped by a shared work_order_id — same
-# flat, no-separate-header-row shape as WarehouseBill's bulk-order grouping. Quantities are
-# deducted from WarehouseItem.quantity immediately on creation (see create_work_order() in
-# main.py); there's no pending/delivered lifecycle like bills have.
+# flat, no-separate-header-row shape as WarehouseBill's bulk-order grouping.
+#
+# Lifecycle (status): 'requested' (created, stock untouched) -> 'approved' (admin sign-off,
+# still untouched) -> 'completed' (quantity_fulfilled reached quantity via barcode scans) or
+# 'rejected' (admin declined, no stock effect ever). Stock is only ever decremented one unit
+# at a time, via a successful scan against a WarehouseBatch (see /work-orders/<id>/scan in
+# main.py) — never at creation/approval time.
 class WarehouseWorkOrder(db.Model):
     __tablename__ = 'warehouse_work_orders'
     id = db.Column(db.Integer, primary_key=True)
@@ -130,6 +134,49 @@ class WarehouseWorkOrder(db.Model):
     category = db.Column(db.String(50))
     user = db.Column(db.String(100))
     date_time = db.Column(db.String(50))
+    status = db.Column(db.String(20), default='requested')
+    quantity_fulfilled = db.Column(db.Integer, default=0)
+    approved_by = db.Column(db.String(100), nullable=True)
+    approved_at = db.Column(db.DateTime, nullable=True)
+
+
+# A physical delivery batch of a WarehouseItem, received via the "Receive into Warehouse"
+# step (see /warehouse/bills/<id>/receive in main.py) once its bill is marked delivered.
+# This is the unit expiry-dates and barcodes attach to — WarehouseItem.quantity is just the
+# aggregate total across all of an item's active batches. "Expired" is deliberately NOT a
+# stored status: it's derived as (status=='active' and expiry_date < today), computed at
+# query time, so it can never go stale the way a stored flag would without a nightly job.
+class WarehouseBatch(db.Model):
+    __tablename__ = 'warehouse_batches'
+    id = db.Column(db.Integer, primary_key=True)
+    item_id = db.Column(db.Integer, db.ForeignKey('warehouse_items.id'), nullable=False)
+    bill_id = db.Column(db.Integer, db.ForeignKey('warehouse_bills.id'), nullable=True)
+    item_name = db.Column(db.String(150))
+    unit = db.Column(db.String(50))
+    category = db.Column(db.String(50))
+    barcode = db.Column(db.String(64), unique=True, nullable=False)
+    expiry_date = db.Column(db.Date, nullable=False)
+    quantity_received = db.Column(db.Integer, nullable=False)
+    quantity_remaining = db.Column(db.Integer, nullable=False)
+    status = db.Column(db.String(20), nullable=False, default='active')  # active, exhausted, disposed
+    received_by = db.Column(db.String(100))
+    received_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    disposed_by = db.Column(db.String(100), nullable=True)
+    disposed_at = db.Column(db.DateTime, nullable=True)
+    disposal_reason = db.Column(db.String(255), nullable=True)
+
+
+# Per-scan audit trail for work-order fulfillment — separate from
+# WarehouseWorkOrder.quantity_fulfilled (the fast "how far along" counter updated in lockstep)
+# so every individual scan (who, when, whether it broke FEFO order) stays inspectable.
+class WarehouseWorkOrderScan(db.Model):
+    __tablename__ = 'warehouse_work_order_scans'
+    id = db.Column(db.Integer, primary_key=True)
+    work_order_line_id = db.Column(db.Integer, db.ForeignKey('warehouse_work_orders.id'), nullable=False)
+    batch_id = db.Column(db.Integer, db.ForeignKey('warehouse_batches.id'), nullable=False)
+    scanned_by = db.Column(db.String(100))
+    scanned_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    fefo_violation = db.Column(db.Boolean, default=False)
 
 
 class Employee(db.Model):

@@ -4548,6 +4548,22 @@ function renderFinancialCharts(revData, genderData, testData) {
 // WAREHOUSE MANAGEMENT SYSTEM
 // ==========================================
 
+// Mirrors the exact admin/master check setupUIForRole() already uses to decide tab
+// visibility — used here to gate warehouse actions that are admin-only server-side too
+// (bill status changes, work-order approve/reject, batch disposal).
+function isAdminUser() {
+    return currentUser?.role === 'admin' || currentUser?.role === 'lab_master';
+}
+
+let warehouseExpiredFilterActive = false;
+
+function toggleExpiredFilter() {
+    warehouseExpiredFilterActive = !warehouseExpiredFilterActive;
+    const btn = document.getElementById('warehouse-expired-filter-btn');
+    if (btn) btn.style.background = warehouseExpiredFilterActive ? 'var(--danger)' : 'transparent';
+    renderWarehouseTable();
+}
+
 async function fetchWarehouseData() {
     try {
         const response = await apiFetch('/api/warehouse');
@@ -4559,6 +4575,9 @@ async function fetchWarehouseData() {
     } catch (error) {
         console.error("Failed to load warehouse data", error);
     }
+
+    const reviewBtn = document.getElementById('expired-batches-review-btn');
+    if (reviewBtn) reviewBtn.style.display = isAdminUser() ? 'inline-block' : 'none';
 }
 
 // Category options used to be a hardcoded Chemical/Instruments/Housekeeping list that
@@ -4606,10 +4625,11 @@ function renderWarehouseTable() {
     const filterCat = document.getElementById('warehouse-filter-category').value;
     
     let filtered = warehouseItems;
-    
+
     if (filterCat) filtered = filtered.filter(i => i.category === filterCat);
     if (searchTerm) filtered = filtered.filter(i => i.name.toLowerCase().includes(searchTerm));
-    
+    if (warehouseExpiredFilterActive) filtered = filtered.filter(i => i.has_expired_batch);
+
     if (filtered.length === 0) {
         container.innerHTML = '<div class="table-container"><table style="width:100%;"><tr><td style="text-align:center; padding: 30px; color: var(--muted);">No items found in warehouse.</td></tr></table></div>';
         return;
@@ -4623,20 +4643,25 @@ function renderWarehouseTable() {
         let qtyColor = isCritical ? 'var(--danger)' : 'var(--text)'; 
         
         // Add the Order button if critical
-        let orderBtn = isCritical 
-            ? `<button class="btn ghost" style="border-color: var(--danger); color: var(--danger); padding: 4px 8px; font-size: 11px; margin-right: 5px;" onclick="openNewBillModal(${item.id})">🚨 Order Stock</button>` 
+        let orderBtn = isCritical
+            ? `<button class="btn ghost" style="border-color: var(--danger); color: var(--danger); padding: 4px 8px; font-size: 11px; margin-right: 5px;" onclick="openNewBillModal(${item.id})">🚨 Order Stock</button>`
             : '';
-        
+
+        let expiredBadge = item.has_expired_batch
+            ? `<span class="pill" style="color: var(--danger); border: 1px solid var(--danger); background: transparent; margin-left: 6px;" title="One or more batches of this item have expired">🚩 Expired batch</span>`
+            : '';
+
         return `
         <tr>
             <td><input type="checkbox" class="warehouse-checkbox" data-id="${item.id}" onchange="updateBulkWarehouseBtn()"></td>
             <td>${index + 1}</td>
-            <td><strong>${item.name}</strong></td>
+            <td><strong>${item.name}</strong>${expiredBadge}</td>
             <td><span class="pill" style="color: ${catColor}; border: 1px solid ${catColor}; background: transparent;">${item.category}</span></td>
             <td style="color: ${qtyColor}; font-weight: bold;">${item.quantity} <span style="font-size: 11px; color: var(--muted); font-weight: normal;">${item.unit}</span></td>
             <td style="color: var(--muted);">${item.updated_at}</td>
             <td style="text-align: right;">
                 ${orderBtn}
+                <button type="button" class="btn ghost" style="padding: 4px 8px; font-size: 11px; margin-right: 5px;" onclick="openItemBatchesModal(${item.id})">🏷 Batches</button>
                 <button type="button" class="btn ghost" style="padding: 4px 10px; font-size: 12px;" onclick="openWarehouseModal(${item.id})">Edit</button>
             </td>
         </tr>
@@ -4721,6 +4746,201 @@ async function saveWarehouseItem(event) {
         }
     } catch (error) {
         showAlert('Failed to save item', 'error');
+    }
+}
+
+// --- Batches (expiry-dated stock) ---
+function batchStatusPillClass(batch) {
+    if (batch.is_expired) return 'danger';
+    if (batch.status === 'disposed') return 'muted';
+    if (batch.status === 'exhausted') return 'muted';
+    return 'ok';
+}
+
+function batchStatusLabel(batch) {
+    if (batch.is_expired) return '🚩 Expired';
+    if (batch.status === 'disposed') return 'Disposed';
+    if (batch.status === 'exhausted') return 'Exhausted';
+    return 'Active';
+}
+
+async function openItemBatchesModal(itemId) {
+    const item = warehouseItems.find(i => i.id === itemId);
+    document.getElementById('item-batches-title').textContent = `🏷 Batches — ${item ? item.name : ''}`;
+    document.getElementById('item-batches-modal').style.display = 'block';
+    const container = document.getElementById('item-batches-container');
+    container.innerHTML = '<p style="text-align:center; padding:20px; color:var(--muted);">Loading…</p>';
+
+    try {
+        const response = await apiFetch(`/api/warehouse/batches?item_id=${itemId}`);
+        if (!response.ok) throw new Error('Failed to load batches');
+        const batches = await response.json();
+        if (batches.length === 0) {
+            container.innerHTML = '<p style="text-align:center; padding:20px; color:var(--muted);">No batches received yet — receive a delivered bill to create one.</p>';
+            return;
+        }
+        const rows = batches.map(b => `
+            <tr>
+                <td style="color: ${b.is_expired ? 'var(--danger)' : 'var(--text)'}; font-weight: ${b.is_expired ? 'bold' : 'normal'};">${b.expiry_date}</td>
+                <td>${b.quantity_received}</td>
+                <td>${b.quantity_remaining} <span style="font-size: 11px; color: var(--muted);">${b.unit || ''}</span></td>
+                <td><span class="pill" style="color: var(--${batchStatusPillClass(b)}); border: 1px solid var(--${batchStatusPillClass(b)}); background: transparent;">${batchStatusLabel(b)}</span></td>
+                <td style="color: var(--muted); font-size: 11px;">${b.received_at}</td>
+                <td><button type="button" class="btn ghost" style="padding: 4px 8px; font-size: 11px;" onclick='printBatchBarcode(${JSON.stringify(b.barcode)}, ${JSON.stringify(b.item_name)}, ${JSON.stringify(b.expiry_date)})'>🖨️ Print</button></td>
+            </tr>
+        `).join('');
+        container.innerHTML = `
+            <div class="table-container">
+                <table style="width:100%; font-size: 12px;">
+                    <thead><tr><th>Expiry</th><th>Received</th><th>Remaining</th><th>Status</th><th>Received At</th><th></th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        `;
+    } catch (error) {
+        container.innerHTML = '<p style="text-align:center; padding:20px; color:var(--danger);">Failed to load batches.</p>';
+    }
+}
+
+function printBatchBarcode(barcode, itemName, expiryDate) {
+    const barcodeImg = generateBarcodeImage(barcode);
+    const printWindow = window.open('', '_blank', 'width=500,height=400');
+    const html = `
+        <html><head><title>Batch Label — ${itemName}</title><style>
+            body { font-family: Arial, sans-serif; padding: 20px; color: #000; text-align: center; }
+            img { margin-top: 15px; }
+        </style></head><body>
+            <h3>${itemName}</h3>
+            <p>Expiry: <strong>${expiryDate}</strong></p>
+            <img src="${barcodeImg}">
+            <script>window.onload=()=>{setTimeout(()=>{window.print();window.close();},200)}</script>
+        </body></html>
+    `;
+    printWindow.document.write(html);
+    printWindow.document.close();
+}
+
+// --- Receive into Warehouse (bill -> dated batch + barcode) ---
+let currentReceiveBillId = null;
+let lastReceivedBatch = null;
+
+function openReceiveBatchModal(billId) {
+    const bill = warehouseBills.find(b => b.id === billId);
+    if (!bill) return;
+    currentReceiveBillId = billId;
+    lastReceivedBatch = null;
+
+    document.getElementById('receive-batch-summary').textContent =
+        `${bill.item_name} — ${bill.ordered_stock} ${bill.unit || ''} ordered`;
+    document.getElementById('receive-quantity').value = bill.ordered_stock;
+    document.getElementById('receive-expiry-date').value = '';
+    document.getElementById('receive-batch-form').style.display = 'block';
+    document.getElementById('receive-batch-result').style.display = 'none';
+    document.getElementById('receive-batch-modal').style.display = 'block';
+}
+
+function closeReceiveBatchModal() {
+    document.getElementById('receive-batch-modal').style.display = 'none';
+    currentReceiveBillId = null;
+    // Refresh whatever's behind this modal so "Receive" flips to "Received" / stock updates.
+    fetchWarehouseData();
+    if (document.getElementById('bills-history-modal').style.display === 'block') openBillsHistoryModal();
+}
+
+async function submitReceiveBatch() {
+    const expiryDate = document.getElementById('receive-expiry-date').value;
+    const quantity = parseInt(document.getElementById('receive-quantity').value) || 0;
+    if (!expiryDate) {
+        showAlert('Expiry date is required.', 'error');
+        return;
+    }
+    if (quantity <= 0) {
+        showAlert('Quantity received must be greater than zero.', 'error');
+        return;
+    }
+
+    try {
+        const response = await apiFetch(`/api/warehouse/bills/${currentReceiveBillId}/receive`, {
+            method: 'POST',
+            body: JSON.stringify({ expiry_date: expiryDate, quantity_received: quantity }),
+        });
+        const body = await response.json();
+        if (response.ok && body.success) {
+            lastReceivedBatch = body;
+            document.getElementById('receive-batch-form').style.display = 'none';
+            document.getElementById('receive-batch-result').style.display = 'block';
+            document.getElementById('receive-batch-barcode-img').src = generateBarcodeImage(body.barcode);
+        } else {
+            showAlert(body.error || 'Failed to receive batch', 'error');
+        }
+    } catch (error) {
+        showAlert('Error receiving batch', 'error');
+    }
+}
+
+function printBatchBarcodeFromModal() {
+    if (!lastReceivedBatch) return;
+    printBatchBarcode(lastReceivedBatch.barcode, lastReceivedBatch.item_name, lastReceivedBatch.expiry_date);
+}
+
+// --- Expired batch disposal (admin-only) ---
+async function openExpiredBatchesModal() {
+    document.getElementById('expired-batches-modal').style.display = 'block';
+    const container = document.getElementById('expired-batches-container');
+    container.innerHTML = '<p style="text-align:center; padding:20px; color:var(--muted);">Loading…</p>';
+
+    try {
+        const response = await apiFetch('/api/warehouse/batches?expired_only=true');
+        if (!response.ok) throw new Error('Failed to load expired batches');
+        const batches = await response.json();
+        if (batches.length === 0) {
+            container.innerHTML = '<p style="text-align:center; padding:20px; color:var(--ok);">✅ No expired batches — nothing to review.</p>';
+            return;
+        }
+        const rows = batches.map(b => `
+            <tr>
+                <td>${b.item_name}<div style="font-size: 11px; color: var(--muted);">${b.category || ''}</div></td>
+                <td style="color: var(--danger); font-weight: bold;">${b.expiry_date}</td>
+                <td>${b.quantity_remaining} <span style="font-size: 11px; color: var(--muted);">${b.unit || ''}</span></td>
+                <td><button type="button" class="btn btn-danger" style="padding: 4px 10px; font-size: 12px;" onclick='confirmDisposeBatch(${b.id}, ${JSON.stringify(b.item_name)}, ${b.quantity_remaining})'>🗑 Dispose</button></td>
+            </tr>
+        `).join('');
+        container.innerHTML = `
+            <div class="table-container">
+                <table style="width:100%; font-size: 12px;">
+                    <thead><tr><th>Item</th><th>Expiry</th><th>Remaining</th><th></th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        `;
+    } catch (error) {
+        container.innerHTML = '<p style="text-align:center; padding:20px; color:var(--danger);">Failed to load expired batches.</p>';
+    }
+}
+
+async function confirmDisposeBatch(batchId, itemName, quantityRemaining) {
+    const reason = prompt(`Dispose ${quantityRemaining} unit(s) of "${itemName}" — reason for disposal:`);
+    if (reason === null) return; // cancelled
+    if (!reason.trim()) {
+        showAlert('A disposal reason is required.', 'error');
+        return;
+    }
+
+    try {
+        const response = await apiFetch(`/api/warehouse/batches/${batchId}/dispose`, {
+            method: 'POST',
+            body: JSON.stringify({ reason: reason.trim() }),
+        });
+        const body = await response.json();
+        if (response.ok && body.success) {
+            showAlert(`Disposed ${body.disposed_quantity} unit(s).`, 'success');
+            openExpiredBatchesModal();
+            fetchWarehouseData();
+        } else {
+            showAlert(body.error || 'Failed to dispose batch', 'error');
+        }
+    } catch (error) {
+        showAlert('Error disposing batch', 'error');
     }
 }
 
@@ -5041,10 +5261,16 @@ function billStatusPillClass(status) {
 }
 
 function billStatusOptionsHTML(currentStatus, onChangeAttr) {
+    // Everyone with warehouse access can move a bill between Requested/Delivered — marking
+    // stock as physically delivered is a routine receiving-desk action. "Confirmed" (ordered)
+    // stays admin-only (server-enforced in update_bill_status()) — shown here as a disabled
+    // option rather than hidden, so it's visible as a status this bill can reach without
+    // looking like a broken/missing choice.
+    const isAdmin = isAdminUser();
     return `
         <select onchange="${onChangeAttr}" style="padding: 4px; font-size: 11px; background: transparent; border: 1px solid var(--${billStatusPillClass(currentStatus)}); color: var(--${billStatusPillClass(currentStatus)}); border-radius: 4px;">
             <option value="demanded" ${currentStatus === 'demanded' ? 'selected' : ''}>🔴 Requested</option>
-            <option value="ordered" ${currentStatus === 'ordered' ? 'selected' : ''}>🟡 Confirmed</option>
+            <option value="ordered" ${currentStatus === 'ordered' ? 'selected' : ''} ${isAdmin ? '' : 'disabled'}>🟡 Confirmed${isAdmin ? '' : ' (admin only)'}</option>
             <option value="delivered" ${currentStatus === 'delivered' ? 'selected' : ''}>🟢 Delivered</option>
         </select>
     `;
@@ -5080,6 +5306,11 @@ function renderWarehouseBills() {
     const bulkBillRows = Object.entries(bulkBills).map(([bulkBillId, bills]) => {
         const status = groupStatus(bills);
         const totalPrice = bills.reduce((sum, b) => sum + (b.total_price || 0), 0);
+        const deliveredCount = bills.filter(b => b.status === 'delivered').length;
+        const receivedCount = bills.filter(b => b.received).length;
+        const warehouseSummary = deliveredCount === 0
+            ? '—'
+            : `${receivedCount}/${deliveredCount} received`;
         return `
         <tr style="cursor: pointer;" onclick="openBulkBillDetail('${bulkBillId}')" title="View bill details">
             <td style="color: var(--muted); font-size: 11px;">${bills[0].date_time}</td>
@@ -5091,8 +5322,15 @@ function renderWarehouseBills() {
             <td onclick="event.stopPropagation()">
                 ${billStatusOptionsHTML(status, `updateBulkBillGroupStatus('${bulkBillId}', this.value)`)}
             </td>
+            <td style="color: var(--muted); font-size: 11px;">${warehouseSummary}</td>
         </tr>`;
     });
+
+    const receiveCell = (b) => {
+        if (b.status !== 'delivered') return '—';
+        if (b.received) return '<span style="color: var(--ok); font-size: 11px;">✅ Received</span>';
+        return `<button type="button" class="btn ghost" style="padding: 4px 8px; font-size: 11px;" onclick="openReceiveBatchModal(${b.id})">📥 Receive</button>`;
+    };
 
     const standaloneRows = standaloneBills.map(b => `
         <tr>
@@ -5103,6 +5341,7 @@ function renderWarehouseBills() {
             <td>${b.total_price} EGP</td>
             <td style="color: var(--muted);">${b.user}</td>
             <td>${billStatusOptionsHTML(b.status, `updateBillStatus(${b.id}, this.value)`)}</td>
+            <td>${receiveCell(b)}</td>
         </tr>
     `);
 
@@ -5110,7 +5349,7 @@ function renderWarehouseBills() {
         <div class="table-container">
             <table style="width:100%; font-size: 12px;">
                 <thead>
-                    <tr><th>Date</th><th>Order ID</th><th>Item</th><th>Qty</th><th>Total</th><th>User</th><th>Status</th></tr>
+                    <tr><th>Date</th><th>Order ID</th><th>Item</th><th>Qty</th><th>Total</th><th>User</th><th>Status</th><th>Warehouse</th></tr>
                 </thead>
                 <tbody>${[...bulkBillRows, ...standaloneRows].join('')}</tbody>
             </table>
@@ -5126,11 +5365,10 @@ async function updateBillStatus(billId, newStatus) {
 
         if (response.ok) {
             showAlert('Bill status updated!', 'success');
-            // If delivered, the backend updated the stock. We MUST refetch the warehouse data!
-            if (newStatus === 'delivered') {
-                fetchWarehouseData();
-            }
             openBillsHistoryModal(); // refresh the list so the pill/status shown stays correct
+        } else {
+            const body = await response.json().catch(() => ({}));
+            showAlert(body.error || 'Error updating status', 'error');
         }
     } catch (error) {
         showAlert('Error updating status', 'error');
@@ -5151,14 +5389,23 @@ function openBulkBillDetail(bulkBillId) {
         : bills.some(b => b.status === 'ordered') ? 'ordered' : 'delivered';
     const totalPrice = bills.reduce((sum, b) => sum + (b.total_price || 0), 0);
 
-    const rows = bills.map(b => `
+    const rows = bills.map(b => {
+        let receiveCell = '—';
+        if (b.status === 'delivered') {
+            receiveCell = b.received
+                ? '<span style="color: var(--ok); font-size: 11px;">✅ Received</span>'
+                : `<button type="button" class="btn ghost" style="padding: 4px 8px; font-size: 11px;" onclick="openReceiveBatchModal(${b.id})">📥 Receive</button>`;
+        }
+        return `
         <tr>
             <td>${b.item_name}<div style="font-size: 11px; color: var(--muted);">${b.category}</div></td>
             <td>${b.ordered_stock} <span style="color: var(--muted); font-size: 11px;">${b.unit}</span></td>
             <td>${b.price_per_unit} EGP</td>
             <td>${b.total_price} EGP</td>
+            <td>${receiveCell}</td>
         </tr>
-    `).join('');
+    `;
+    }).join('');
 
     document.getElementById('bb-detail-body').innerHTML = `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
@@ -5167,7 +5414,7 @@ function openBulkBillDetail(bulkBillId) {
         </div>
         <div class="table-container">
             <table style="width: 100%;">
-                <thead><tr><th>Item</th><th>Qty</th><th>Price/Unit</th><th>Subtotal</th></tr></thead>
+                <thead><tr><th>Item</th><th>Qty</th><th>Price/Unit</th><th>Subtotal</th><th>Warehouse</th></tr></thead>
                 <tbody>${rows}</tbody>
             </table>
         </div>
@@ -5187,14 +5434,13 @@ async function updateBulkBillGroupStatus(bulkBillId, newStatus) {
 
         if (response.ok) {
             showAlert('Bill status updated!', 'success');
-            // If delivered, the backend added every item's ordered quantity back to stock.
-            if (newStatus === 'delivered') {
-                fetchWarehouseData();
-            }
             await openBillsHistoryModal(); // refresh the list
             if (document.getElementById('bulk-bill-detail-modal').style.display === 'block') {
                 openBulkBillDetail(bulkBillId); // refresh the open detail view too
             }
+        } else {
+            const body = await response.json().catch(() => ({}));
+            showAlert(body.error || 'Error updating bill status', 'error');
         }
     } catch (error) {
         showAlert('Error updating bill status', 'error');
@@ -5253,18 +5499,21 @@ function openWorkOrderModal() {
     if (selectedItems.length === 0) {
         container.innerHTML = '<div style="text-align: center; padding: 30px; color: var(--muted);">No items selected. Check some items in the warehouse table first.</div>';
     } else {
+        // No max cap here anymore: a request no longer deducts stock at creation — it's just
+        // a request that an admin must approve before any of it can actually be fulfilled
+        // (one unit at a time, via barcode scan), so exceeding current stock is legitimate.
         const rows = selectedItems.map(item => `
             <tr data-item-id="${item.id}">
                 <td>${item.name}<div style="font-size: 11px; color: var(--muted);">${item.category}</div></td>
                 <td>${item.quantity} <span style="color: var(--muted); font-size: 11px;">${item.unit}</span></td>
-                <td><input type="number" class="wo-item-qty" min="1" max="${item.quantity}" value="1" style="width: 90px;"></td>
+                <td><input type="number" class="wo-item-qty" min="1" value="1" style="width: 90px;"></td>
             </tr>`).join('');
 
         container.innerHTML = `
             <div class="table-container">
                 <table>
                     <thead>
-                        <tr><th>Item</th><th>Current Stock</th><th>Quantity to Take</th></tr>
+                        <tr><th>Item</th><th>Current Stock</th><th>Quantity to Request</th></tr>
                     </thead>
                     <tbody>${rows}</tbody>
                 </table>
@@ -5282,21 +5531,14 @@ function closeWorkOrderModal() {
 async function submitWorkOrder() {
     const rows = document.querySelectorAll('#work-order-items-container tr[data-item-id]');
     const items = [];
-    let exceedsStock = false;
     rows.forEach(row => {
         const qtyInput = row.querySelector('.wo-item-qty');
         const qty = parseInt(qtyInput.value) || 0;
-        const max = parseInt(qtyInput.max) || 0;
-        if (qty > max) exceedsStock = true;
         if (qty > 0) items.push({ item_id: parseInt(row.dataset.itemId), quantity: qty });
     });
 
     if (items.length === 0) {
         showAlert('Enter a quantity for at least one item.', 'error');
-        return;
-    }
-    if (exceedsStock) {
-        showAlert('One or more quantities exceed the current stock.', 'error');
         return;
     }
 
@@ -5311,11 +5553,10 @@ async function submitWorkOrder() {
         });
         const body = await response.json();
         if (response.ok && body.success) {
-            showAlert(`Work order created with ${body.items_count} item(s)!`, 'success');
+            showAlert(`Work order requested with ${body.items_count} item(s) — awaiting admin approval.`, 'success');
             closeWorkOrderModal();
             document.querySelectorAll('.warehouse-checkbox:checked').forEach(cb => cb.checked = false);
             updateBulkWarehouseBtn();
-            fetchWarehouseData();
         } else {
             showAlert(body.error || 'Failed to create work order', 'error');
         }
@@ -5338,6 +5579,23 @@ async function openWorkOrdersHistoryModal() {
     }
 }
 
+// A work order's overall status is a derived aggregate over its per-item lines — same
+// approach as groupStatus() for bills above, since there's no separate header/status row.
+function workOrderGroupStatus(items) {
+    if (items.some(i => i.status === 'requested')) return 'requested';
+    if (items.every(i => i.status === 'rejected')) return 'rejected';
+    if (items.some(i => i.status === 'approved')) return 'approved';
+    return 'completed';
+}
+
+const WORK_ORDER_STATUS_PILL = { requested: 'danger', approved: 'warn', completed: 'ok', rejected: 'muted' };
+const WORK_ORDER_STATUS_LABEL = { requested: '🔴 Requested', approved: '🟡 Approved', completed: '🟢 Completed', rejected: '⚪ Rejected' };
+
+function workOrderStatusPill(status) {
+    const cls = WORK_ORDER_STATUS_PILL[status] || 'muted';
+    return `<span class="pill" style="color: var(--${cls}); border: 1px solid var(--${cls}); background: transparent;">${WORK_ORDER_STATUS_LABEL[status] || status}</span>`;
+}
+
 // Each submission shares a work_order_id and collapses into one row here (click it to see
 // every item taken in that work order) instead of showing one row per item.
 function renderWarehouseWorkOrders() {
@@ -5354,23 +5612,69 @@ function renderWarehouseWorkOrders() {
 
     const rows = Object.entries(grouped).map(([workOrderId, items]) => {
         const itemsLabel = items.length === 1 ? items[0].item_name : `${items.length} items`;
+        const status = workOrderGroupStatus(items);
+
+        let actionBtns = '';
+        if (status === 'requested' && isAdminUser()) {
+            actionBtns = `
+                <button type="button" class="btn ghost" style="border-color: var(--ok); color: var(--ok); padding: 4px 8px; font-size: 11px; margin-right: 5px;" onclick="event.stopPropagation(); approveWorkOrder('${workOrderId}')">✅ Approve</button>
+                <button type="button" class="btn ghost" style="border-color: var(--danger); color: var(--danger); padding: 4px 8px; font-size: 11px;" onclick="event.stopPropagation(); rejectWorkOrder('${workOrderId}')">❌ Reject</button>
+            `;
+        } else if (status === 'approved') {
+            actionBtns = `<button type="button" class="btn ghost" style="border-color: var(--teal); color: var(--teal); padding: 4px 8px; font-size: 11px;" onclick="event.stopPropagation(); openFulfillScanModal('${workOrderId}')">🔫 Fulfill via Scan</button>`;
+        }
+
         return `
         <tr style="cursor: pointer;" onclick="openWorkOrderDetail('${workOrderId}')" title="View work order details">
             <td style="color: var(--muted); font-size: 11px;">${items[0].date_time}</td>
             <td><strong>${workOrderId}</strong></td>
             <td>${itemsLabel}</td>
             <td style="color: var(--muted);">${items[0].user}</td>
+            <td>${workOrderStatusPill(status)}</td>
+            <td onclick="event.stopPropagation()">${actionBtns}</td>
         </tr>`;
     });
 
     container.innerHTML = `
         <div class="table-container">
             <table style="width:100%; font-size: 12px;">
-                <thead><tr><th>Date</th><th>ID</th><th>Item/s</th><th>User</th></tr></thead>
+                <thead><tr><th>Date</th><th>ID</th><th>Item/s</th><th>User</th><th>Status</th><th>Action</th></tr></thead>
                 <tbody>${rows.join('')}</tbody>
             </table>
         </div>
     `;
+}
+
+async function approveWorkOrder(workOrderId) {
+    if (!confirm(`Approve work order ${workOrderId}? The technician will then be able to fulfill it by scanning batch barcodes.`)) return;
+    try {
+        const response = await apiFetch(`/api/warehouse/work-orders/${workOrderId}/approve`, { method: 'PUT' });
+        const body = await response.json();
+        if (response.ok && body.success) {
+            showAlert('Work order approved.', 'success');
+            openWorkOrdersHistoryModal();
+        } else {
+            showAlert(body.error || 'Failed to approve work order', 'error');
+        }
+    } catch (error) {
+        showAlert('Error approving work order', 'error');
+    }
+}
+
+async function rejectWorkOrder(workOrderId) {
+    if (!confirm(`Reject work order ${workOrderId}? This cannot be undone.`)) return;
+    try {
+        const response = await apiFetch(`/api/warehouse/work-orders/${workOrderId}/reject`, { method: 'PUT' });
+        const body = await response.json();
+        if (response.ok && body.success) {
+            showAlert('Work order rejected.', 'success');
+            openWorkOrdersHistoryModal();
+        } else {
+            showAlert(body.error || 'Failed to reject work order', 'error');
+        }
+    } catch (error) {
+        showAlert('Error rejecting work order', 'error');
+    }
 }
 
 let currentWorkOrderId = null;
@@ -5387,19 +5691,112 @@ function openWorkOrderDetail(workOrderId) {
         <tr>
             <td>${i.item_name}<div style="font-size: 11px; color: var(--muted);">${i.category}</div></td>
             <td>${i.quantity} <span style="color: var(--muted); font-size: 11px;">${i.unit}</span></td>
+            <td>${i.quantity_fulfilled || 0} / ${i.quantity}</td>
+            <td>${workOrderStatusPill(i.status)}</td>
         </tr>
     `).join('');
 
     document.getElementById('wo-detail-body').innerHTML = `
         <div class="table-container">
             <table style="width: 100%;">
-                <thead><tr><th>Item</th><th>Quantity</th></tr></thead>
+                <thead><tr><th>Item</th><th>Quantity</th><th>Fulfilled</th><th>Status</th></tr></thead>
                 <tbody>${rows}</tbody>
             </table>
         </div>
     `;
 
     document.getElementById('work-order-detail-modal').style.display = 'block';
+}
+
+// --- Fulfill via Scan (approved work order -> barcode-driven stock deduction) ---
+let currentScanWorkOrderId = null;
+let pendingFefoOverrideBarcode = null;
+
+function fulfillScanFocusInput() {
+    const input = document.getElementById('scan-input');
+    if (input && document.getElementById('fulfill-scan-modal').style.display === 'block') input.focus();
+}
+
+async function openFulfillScanModal(workOrderId) {
+    currentScanWorkOrderId = workOrderId;
+    pendingFefoOverrideBarcode = null;
+    document.getElementById('fulfill-scan-title').textContent = `🔫 Fulfill via Scan — ${workOrderId}`;
+    document.getElementById('scan-feedback').innerHTML = '';
+    document.getElementById('scan-input').value = '';
+    document.getElementById('fulfill-scan-modal').style.display = 'block';
+    renderFulfillScanProgress();
+
+    const input = document.getElementById('scan-input');
+    input.onblur = () => setTimeout(fulfillScanFocusInput, 50);
+    input.focus();
+}
+
+function renderFulfillScanProgress() {
+    const items = warehouseWorkOrders.filter(r => r.work_order_id === currentScanWorkOrderId);
+    const rows = items.map(i => `
+        <tr>
+            <td>${i.item_name}</td>
+            <td>${i.quantity_fulfilled || 0} / ${i.quantity} ${i.unit || ''}</td>
+            <td>${workOrderStatusPill(i.status)}</td>
+        </tr>
+    `).join('');
+    document.getElementById('fulfill-scan-progress').innerHTML = `
+        <div class="table-container">
+            <table style="width:100%; font-size: 12px;">
+                <thead><tr><th>Item</th><th>Progress</th><th>Status</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>
+    `;
+}
+
+async function submitBatchScan(overrideBarcode, confirmOverride) {
+    const input = document.getElementById('scan-input');
+    const barcode = overrideBarcode || input.value.trim();
+    input.value = ''; // clear immediately so the physical scanner can fire again right away
+
+    if (!barcode) return;
+
+    const feedback = document.getElementById('scan-feedback');
+    try {
+        const response = await apiFetch(`/api/warehouse/work-orders/${currentScanWorkOrderId}/scan`, {
+            method: 'POST',
+            body: JSON.stringify({ barcode, confirm_fefo_override: !!confirmOverride }),
+        });
+        const body = await response.json();
+
+        if (response.ok && body.success) {
+            feedback.innerHTML = `<div style="padding: 10px; margin-top: 10px; border-radius: 6px; background: rgba(16,185,129,0.15); color: var(--ok);">
+                ✅ Scanned ${body.item_name} — ${body.line_fulfilled}/${body.line_requested} fulfilled${body.line_complete ? ' — line complete!' : ''}
+            </div>`;
+            // Refresh the underlying work-orders list so progress/status reflect the scan.
+            const woResponse = await apiFetch('/api/warehouse/work-orders');
+            if (woResponse.ok) warehouseWorkOrders = await woResponse.json();
+            renderFulfillScanProgress();
+            fetchWarehouseData();
+        } else if (response.status === 409 && body.fefo_warning) {
+            feedback.innerHTML = `<div style="padding: 10px; margin-top: 10px; border-radius: 6px; background: rgba(245,158,11,0.15); color: var(--warn);">
+                ⚠️ ${body.message}
+                <div style="margin-top: 8px;">
+                    <button type="button" class="btn ghost" style="border-color: var(--warn); color: var(--warn); padding: 4px 10px; font-size: 12px;" onclick="submitBatchScan(${JSON.stringify(barcode)}, true)">Scan Anyway</button>
+                </div>
+            </div>`;
+        } else {
+            feedback.innerHTML = `<div style="padding: 10px; margin-top: 10px; border-radius: 6px; background: rgba(239,68,68,0.15); color: var(--danger);">❌ ${body.error || 'Scan failed'}</div>`;
+        }
+    } catch (error) {
+        feedback.innerHTML = `<div style="padding: 10px; margin-top: 10px; border-radius: 6px; background: rgba(239,68,68,0.15); color: var(--danger);">❌ Error submitting scan</div>`;
+    }
+
+    input.focus();
+}
+
+function closeFulfillScanModal() {
+    const input = document.getElementById('scan-input');
+    if (input) input.onblur = null;
+    document.getElementById('fulfill-scan-modal').style.display = 'none';
+    currentScanWorkOrderId = null;
+    openWorkOrdersHistoryModal();
 }
 
 function printWorkOrder() {
@@ -6055,7 +6452,7 @@ window.onerror = function(message, source, lineno, colno, error) {
 
 let heartbeatTimer;
 let lastActivityTime = Date.now();
-const IDLE_TIMEOUT_MS = 1 * 60 * 1000; // 15 minutes of no movement
+const IDLE_TIMEOUT_MS = 1 * 60 * 1000; // 1 minute of no activity
 const HEARTBEAT_MS = 30 * 1000;     // 5 minute heartbeat
 let currentPresenceState = 'offline';
 
@@ -6108,10 +6505,24 @@ function initializePresenceTracker() {
     activityEvents.forEach(evt => {
         document.addEventListener(evt, updateActivity, { passive: true });
     });
-    
+
+    // Mobile browsers suspend a backgrounded tab's timers (screen lock, app switch) — so
+    // the checkPresence() heartbeat below never runs while that's the case, and 'idle' never
+    // gets sent; the status sits stuck on 'online' until the server's own offline timeout
+    // fires directly and logs them out, skipping 'idle' entirely. visibilitychange fires
+    // synchronously even when other timers are suspended, so use it to report the state
+    // change immediately instead of waiting on the polling loop.
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+            sendPresenceUpdate('idle', true);
+        } else {
+            updateActivity();
+        }
+    });
+
     // Initial ping
     updateActivity();
-    
+
     // Start the endless heartbeat
     heartbeatTimer = setInterval(checkPresence, HEARTBEAT_MS);
 }

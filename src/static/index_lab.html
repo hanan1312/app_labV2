@@ -901,6 +901,12 @@
                             <button id="new-work-order-btn" class="btn ghost" style="border-color: var(--teal); color: var(--teal); display: none;" onclick="openWorkOrderModal()">
                                 📦 New Work Order
                             </button>
+                            <button id="warehouse-expired-filter-btn" class="btn ghost" style="border-color: var(--danger); color: var(--danger);" onclick="toggleExpiredFilter()">
+                                🚩 Expired Only
+                            </button>
+                            <button id="expired-batches-review-btn" class="btn ghost" style="border-color: var(--danger); color: var(--danger); display: none;" onclick="openExpiredBatchesModal()">
+                                🚩 Review Expired
+                            </button>
                             <button id="bulk-delete-warehouse-btn" class="btn btn-danger" onclick="handleBulkDeleteWarehouse()" style="display: none;">Delete Selected</button>
 
                             <input type="file" id="import-warehouse-excel" accept=".xlsx, .xls, .csv" style="display: none;" onchange="processWarehouseExcelImport(event)">
@@ -1498,13 +1504,78 @@
     <div id="bills-history-modal" class="modal" style="display: none;">
         <div class="modal-content glass-panel" style="max-width: 900px;">
             <span class="close" onclick="document.getElementById('bills-history-modal').style.display='none'">&times;</span>
-            
+
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <h2 style="color: var(--text);">Warehouse Bills History</h2>
                 <button class="btn ghost" style="border-color: var(--ok); color: var(--ok); font-size: 12px; padding: 4px 10px;" onclick="exportTableToCSV(this, 'warehouse_bills_history')">📥 Export Excel</button>
             </div>
-            
+
             <div id="bills-history-container" style="max-height: 400px; overflow-y: auto;"></div>
+        </div>
+    </div>
+
+    <div id="item-batches-modal" class="modal" style="display: none;">
+        <div class="modal-content glass-panel" style="max-width: 800px;">
+            <span class="close" onclick="document.getElementById('item-batches-modal').style.display='none'">&times;</span>
+            <h2 id="item-batches-title" style="margin-bottom: 5px; color: var(--text);">🏷 Batches</h2>
+            <p style="color: var(--muted); margin-bottom: 20px; font-size: 13px;">Sorted oldest expiry first — withdraw from the top (FEFO).</p>
+            <div id="item-batches-container" style="max-height: 450px; overflow-y: auto;"></div>
+        </div>
+    </div>
+
+    <div id="receive-batch-modal" class="modal" style="display: none;">
+        <div class="modal-content glass-panel" style="max-width: 480px;">
+            <span class="close" onclick="closeReceiveBatchModal()">&times;</span>
+            <h2 style="margin-bottom: 5px; color: var(--text);">📥 Receive into Warehouse</h2>
+            <p id="receive-batch-summary" style="color: var(--muted); margin-bottom: 20px; font-size: 13px;"></p>
+
+            <div id="receive-batch-form">
+                <input type="hidden" id="receive-bill-id">
+                <div style="margin-bottom: 15px;">
+                    <label style="color: var(--muted); font-size: 12px; text-transform: uppercase;">Quantity Received</label>
+                    <input type="number" id="receive-quantity" min="1" style="width: 100%; margin-top: 5px;">
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label style="color: var(--muted); font-size: 12px; text-transform: uppercase;">Expiry Date</label>
+                    <input type="date" id="receive-expiry-date" required style="width: 100%; margin-top: 5px;">
+                </div>
+                <div style="display: flex; justify-content: flex-end; margin-top: 20px;">
+                    <button type="button" class="btn" style="background: var(--teal); color: #04121d; font-weight: bold;" onclick="submitReceiveBatch()">✅ Receive &amp; Generate Barcode</button>
+                </div>
+            </div>
+
+            <div id="receive-batch-result" style="display: none; text-align: center;">
+                <p style="color: var(--ok); font-weight: bold;">✅ Batch received into warehouse!</p>
+                <div style="background: white; padding: 12px; border-radius: 6px; margin: 15px 0; display: inline-block;">
+                    <img id="receive-batch-barcode-img" style="display: block;">
+                </div>
+                <div style="display: flex; justify-content: center; gap: 10px; margin-top: 10px;">
+                    <button type="button" class="btn ghost" onclick="printBatchBarcodeFromModal()">🖨️ Print Label</button>
+                    <button type="button" class="btn" style="background: var(--teal); color: #04121d;" onclick="closeReceiveBatchModal()">Done</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="expired-batches-modal" class="modal" style="display: none;">
+        <div class="modal-content glass-panel" style="max-width: 800px;">
+            <span class="close" onclick="document.getElementById('expired-batches-modal').style.display='none'">&times;</span>
+            <h2 style="margin-bottom: 5px; color: var(--danger);">🚩 Review Expired Batches</h2>
+            <p style="color: var(--muted); margin-bottom: 20px; font-size: 13px;">Expired batches are excluded from FEFO withdrawal. Confirm disposal to remove them from stock.</p>
+            <div id="expired-batches-container" style="max-height: 450px; overflow-y: auto;"></div>
+        </div>
+    </div>
+
+    <div id="fulfill-scan-modal" class="modal" style="display: none;">
+        <div class="modal-content glass-panel" style="max-width: 700px;">
+            <span class="close" onclick="closeFulfillScanModal()">&times;</span>
+            <h2 id="fulfill-scan-title" style="margin-bottom: 5px; color: var(--text);">🔫 Fulfill via Scan</h2>
+            <p style="color: var(--muted); margin-bottom: 15px; font-size: 13px;">Scan each item's batch barcode with the handheld scanner — it submits automatically.</p>
+            <div id="fulfill-scan-progress"></div>
+            <input type="text" id="scan-input" autocomplete="off" placeholder="Scan barcode..."
+                   style="width: 100%; padding: 12px; font-size: 16px; margin: 15px 0; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15); background: rgba(0,0,0,0.3); color: white;"
+                   onkeydown="if(event.key==='Enter'){event.preventDefault(); submitBatchScan();}">
+            <div id="scan-feedback"></div>
         </div>
     </div>
 </body>

@@ -3,8 +3,9 @@ import sys
 from functools import wraps
 from sqlalchemy import create_engine, text, event, or_
 from sqlalchemy.engine import Engine
-from datetime import datetime
+from datetime import datetime, date
 import time
+import secrets
 from dotenv import load_dotenv
 
 # Loads .env into os.environ before anything reads config from it (SMTP_* for HR email —
@@ -27,7 +28,7 @@ from flask import Flask, send_from_directory, redirect, session, request, jsonif
 from flask_cors import CORS
 
 from config import DevelopmentConfig, ProductionConfig, DB_DIR 
-from src.models.user import db, User, LabTest, TransactionList, PatientVisit, WarehouseItem, WarehouseBill,Employee, WarehouseWorkOrder
+from src.models.user import db, User, LabTest, TransactionList, PatientVisit, WarehouseItem, WarehouseBill,Employee, WarehouseWorkOrder, WarehouseBatch, WarehouseWorkOrderScan
 from src.models.client import Client
 from src.models.test_result import TestResult
 from src.models.test_parameter import TestParameterTemplate
@@ -148,6 +149,39 @@ with app.app_context():
         db.Model.metadata.create_all(bind=engine, tables=[WarehouseWorkOrder.__table__])
         # New table for the activity/audit log.
         db.Model.metadata.create_all(bind=engine, tables=[ActivityLog.__table__])
+        # New tables for warehouse batch/expiry tracking and per-scan fulfillment audit.
+        db.Model.metadata.create_all(bind=engine, tables=[WarehouseBatch.__table__])
+        db.Model.metadata.create_all(bind=engine, tables=[WarehouseWorkOrderScan.__table__])
+
+        # Guarded, one-time backfill for the new WarehouseWorkOrder lifecycle columns — NOT
+        # folded into the blind per-statement ALTER loops above. Those loops backfill every
+        # existing row with the DEFAULT (here, status='requested'), but every work-order row
+        # that already existed before this feature was created under the OLD immediate-
+        # deduction model — its stock is already gone. Coming back as 'requested' would let an
+        # admin "approve" a year-old row and a tech scan against it, double-deducting stock
+        # that was already removed at creation time. So: add the columns, then explicitly mark
+        # every pre-existing row 'completed' in the same guarded block, before any genuinely
+        # new 'requested' row can exist to be confused with one of these.
+        db.session.bind = engine
+        needs_backfill = False
+        try:
+            db.session.execute(text("SELECT status FROM warehouse_work_orders LIMIT 1"))
+        except Exception:
+            db.session.rollback()
+            needs_backfill = True
+
+        if needs_backfill:
+            try:
+                db.session.execute(text("ALTER TABLE warehouse_work_orders ADD COLUMN status VARCHAR(20) DEFAULT 'requested'"))
+                db.session.execute(text("ALTER TABLE warehouse_work_orders ADD COLUMN quantity_fulfilled INTEGER DEFAULT 0"))
+                db.session.execute(text("ALTER TABLE warehouse_work_orders ADD COLUMN approved_by VARCHAR(100)"))
+                db.session.execute(text("ALTER TABLE warehouse_work_orders ADD COLUMN approved_at DATETIME"))
+                db.session.execute(text(
+                    "UPDATE warehouse_work_orders SET status='completed', quantity_fulfilled=quantity"
+                ))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
 
 # Requests to these /api/* paths are allowed without a logged-in session — login itself,
 # logout (a no-op if there's no session to clear anyway), and the feature-flag endpoint the
@@ -196,6 +230,18 @@ def before_request_interceptor():
     # (same exemption as the scheduled-lockout check below), since attendance-style presence
     # policies were never meant to apply to them. Ignore the login/logout routes to prevent
     # infinite loops.
+    #
+    # Enforcement is time-based ONLY (no heartbeat in the last PRESENCE_TIMEOUT_SECONDS) —
+    # it deliberately does NOT treat an explicit status=='offline' report as an instant kill
+    # anymore. That used to be possible: the beforeunload handler reports 'offline' via
+    # navigator.sendBeacon, which the browser can deliver later than expected (e.g. queued
+    # while the network is down, delivered only once it's back) — carrying whatever session
+    # cookie is current *at delivery time*. If a user's connection drops, then comes back and
+    # they log back in before that queued beacon finally lands, it would arrive tagged with
+    # the brand-new session and immediately overwrite its fresh 'online' status back to
+    # 'offline', killing the new session on its very next request. A stale report can't do
+    # that under a purely time-based check, since a session that's actually being used keeps
+    # its own last_seen fresh regardless of what any old queued signal claims.
     if request.path.startswith('/api/') and request.path not in ['/api/auth/login', '/api/auth/logout']:
         role = (session.get('role') or '').lower()
         user_id = str(session.get('user_id', ''))
@@ -206,8 +252,7 @@ def before_request_interceptor():
             user_data = PRESENCE_STORE[username]
             time_offline = time.time() - user_data['last_seen']
 
-            # If they timed out OR their status is explicitly 'offline' (from closing the tab)
-            if time_offline > PRESENCE_TIMEOUT_SECONDS or user_data.get('status') == 'offline':
+            if time_offline > PRESENCE_TIMEOUT_SECONDS:
                 # Destroy their backend session completely
                 session.clear()
                 return jsonify({'error': 'Session ended due to offline status'}), 401
@@ -963,19 +1008,27 @@ def upload_report():
 
 
 @app.route('/api/warehouse', methods=['GET'])
+@require_permission('warehouse')
 def get_warehouse():
     items = WarehouseItem.query.all()
+    today = date.today()
+    expired_item_ids = {
+        b.item_id for b in WarehouseBatch.query.filter_by(status='active').all()
+        if b.expiry_date < today
+    }
     return jsonify([{
-        'id': i.id, 'name': i.name, 'category': i.category, 
+        'id': i.id, 'name': i.name, 'category': i.category,
         'quantity': i.quantity, 'critical_level': i.critical_level, 'unit': i.unit,
-        'updated_at': i.updated_at.strftime("%Y-%m-%d") if i.updated_at else ""
+        'updated_at': i.updated_at.strftime("%Y-%m-%d") if i.updated_at else "",
+        'has_expired_batch': i.id in expired_item_ids,
     } for i in items])
 
 @app.route('/api/warehouse', methods=['POST'])
+@require_permission('warehouse')
 def save_warehouse_item():
     data = request.json
     item_id = data.get('id')
-    
+
     if item_id:
         item = WarehouseItem.query.get(item_id)
         if not item: return jsonify({'error': 'Item not found'}), 404
@@ -986,8 +1039,8 @@ def save_warehouse_item():
         item.unit = data.get('unit', '')
     else:
         item = WarehouseItem(
-            name=data['name'], category=data['category'], 
-            quantity=int(data['quantity']), critical_level=int(data.get('critical_level', 5)), 
+            name=data['name'], category=data['category'],
+            quantity=int(data['quantity']), critical_level=int(data.get('critical_level', 5)),
             unit=data.get('unit', '')
         )
         db.session.add(item)
@@ -995,6 +1048,7 @@ def save_warehouse_item():
     return jsonify({'success': True})
 
 @app.route('/api/warehouse/<int:item_id>', methods=['DELETE'])
+@require_permission('warehouse')
 def delete_warehouse_item(item_id):
     item = WarehouseItem.query.get(item_id)
     if item:
@@ -1005,17 +1059,23 @@ def delete_warehouse_item(item_id):
 
 # --- WAREHOUSE BILLS ROUTES ---
 @app.route('/api/warehouse/bills', methods=['GET'])
+@require_permission('warehouse')
 def get_warehouse_bills():
     bills = WarehouseBill.query.order_by(WarehouseBill.id.desc()).all()
+    received_bill_ids = {
+        b.bill_id for b in WarehouseBatch.query.filter(WarehouseBatch.bill_id.isnot(None)).all()
+    }
     return jsonify([{
         'id': b.id, 'order_id': b.order_id, 'item_id': b.item_id, 'item_name': b.item_name,
         'present_stock': b.present_stock, 'ordered_stock': b.ordered_stock, 'unit': b.unit,
         'price_per_unit': b.price_per_unit, 'total_price': b.total_price, 'category': b.category,
         'user': b.user, 'date_time': b.date_time, 'status': b.status,
         'work_order_id': b.work_order_id,
+        'received': b.id in received_bill_ids,
     } for b in bills])
 
 @app.route('/api/warehouse/bills', methods=['POST'])
+@require_permission('warehouse')
 def create_warehouse_bill():
     data = request.json
     bill = WarehouseBill(
@@ -1028,24 +1088,35 @@ def create_warehouse_bill():
     db.session.commit()
     return jsonify({'success': True})
 
+WAREHOUSE_BILL_STATUSES = {'demanded', 'ordered', 'delivered'}
+
+def _is_admin_or_master():
+    role = (session.get('role') or '').lower()
+    user_id = str(session.get('user_id', ''))
+    return role == 'admin' or user_id.startswith('master_')
+
 @app.route('/api/warehouse/bills/<int:bill_id>/status', methods=['PUT'])
+@require_permission('warehouse')
 def update_bill_status(bill_id):
-    data = request.json
+    """Any warehouse user can move a bill to 'demanded' or 'delivered' — marking stock as
+    physically delivered is a routine receiving-desk action. 'ordered' ("Confirmed") stays
+    admin-only: it's the actual purchase sign-off, the one step in this lifecycle someone
+    other than an admin shouldn't be able to grant themselves."""
+    data = request.json or {}
     new_status = data.get('status')
+    if new_status not in WAREHOUSE_BILL_STATUSES:
+        return jsonify({'error': f"Invalid status — must be one of {sorted(WAREHOUSE_BILL_STATUSES)}"}), 400
+    if new_status == 'ordered' and not _is_admin_or_master():
+        return jsonify({'error': 'Only admins can confirm (mark as ordered) a bill'}), 403
     bill = WarehouseBill.query.get(bill_id)
     if not bill: return jsonify({'error': 'Bill not found'}), 404
-
-    # The Magic: If marked as delivered, update the actual warehouse stock!
-    if new_status == 'delivered' and bill.status != 'delivered':
-        item = WarehouseItem.query.get(bill.item_id)
-        if item:
-            item.quantity += bill.ordered_stock
 
     bill.status = new_status
     db.session.commit()
     return jsonify({'success': True})
 
 @app.route('/api/warehouse/bulk-bills', methods=['POST'])
+@require_permission('warehouse')
 def create_bulk_bill():
     """Bulk-creates one WarehouseBill per selected item, all sharing one work_order_id, so
     they display/print together in Bills History as a single "New Bill — N items" record
@@ -1091,43 +1162,160 @@ def create_bulk_bill():
     return jsonify({'success': True, 'work_order_id': work_order_id, 'items_count': len(created)})
 
 @app.route('/api/warehouse/bulk-bills/<bulk_bill_id>/status', methods=['PUT'])
+@require_permission('warehouse')
 def update_bulk_bill_status(bulk_bill_id):
-    """Updates every bill in a bulk bill at once (see update_bill_status() for the
-    per-bill equivalent) — so marking a whole bulk bill "Delivered" adds every one of its
-    items' ordered quantities back to warehouse stock in one action."""
+    """Updates every bill in a bulk bill at once — see update_bill_status() for the
+    per-bill equivalent and the demanded/delivered-vs-ordered permission split."""
     data = request.json or {}
     new_status = data.get('status')
+    if new_status not in WAREHOUSE_BILL_STATUSES:
+        return jsonify({'error': f"Invalid status — must be one of {sorted(WAREHOUSE_BILL_STATUSES)}"}), 400
+    if new_status == 'ordered' and not _is_admin_or_master():
+        return jsonify({'error': 'Only admins can confirm (mark as ordered) a bill'}), 403
     bills = WarehouseBill.query.filter_by(work_order_id=bulk_bill_id).all()
     if not bills:
         return jsonify({'error': 'Bill not found'}), 404
 
     for bill in bills:
-        if new_status == 'delivered' and bill.status != 'delivered':
-            item = WarehouseItem.query.get(bill.item_id)
-            if item:
-                item.quantity += bill.ordered_stock
         bill.status = new_status
 
     db.session.commit()
     return jsonify({'success': True, 'items_updated': len(bills)})
 
+# --- WAREHOUSE BATCHES (expiry-dated stock received against a delivered bill) ---
+@app.route('/api/warehouse/bills/<int:bill_id>/receive', methods=['POST'])
+@require_permission('warehouse')
+def receive_warehouse_bill(bill_id):
+    """Logs a delivered bill into the warehouse as a dated batch: the technician enters the
+    expiry date once for the whole delivered quantity, a barcode is minted for that batch,
+    and only now does WarehouseItem.quantity actually increase — this replaces the old
+    auto-increment that used to fire the instant a bill was marked 'delivered'."""
+    data = request.json or {}
+    bill = WarehouseBill.query.get(bill_id)
+    if not bill:
+        return jsonify({'error': 'Bill not found'}), 404
+    if bill.status != 'delivered':
+        return jsonify({'error': 'Bill must be marked Delivered before receiving into warehouse'}), 400
+    if WarehouseBatch.query.filter_by(bill_id=bill.id).first():
+        return jsonify({'error': 'This bill has already been received into warehouse'}), 400
+
+    expiry_raw = data.get('expiry_date')
+    if not expiry_raw:
+        return jsonify({'error': 'Expiry date is required'}), 400
+    try:
+        expiry_date = datetime.strptime(expiry_raw, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'error': 'Expiry date must be in YYYY-MM-DD format'}), 400
+
+    quantity_received = int(data.get('quantity_received') or bill.ordered_stock or 0)
+    if quantity_received <= 0:
+        return jsonify({'error': 'Quantity received must be greater than zero'}), 400
+
+    item = WarehouseItem.query.get(bill.item_id)
+    if not item:
+        return jsonify({'error': 'Warehouse item not found'}), 404
+
+    batch = WarehouseBatch(
+        item_id=item.id, bill_id=bill.id, item_name=item.name, unit=item.unit, category=item.category,
+        barcode='PENDING', expiry_date=expiry_date, quantity_received=quantity_received,
+        quantity_remaining=quantity_received, status='active',
+        received_by=session.get('username'),
+    )
+    db.session.add(batch)
+    db.session.flush()  # populates batch.id for the barcode token
+    batch.barcode = f"WB-{batch.id:06d}-{secrets.token_hex(3)}"
+
+    item.quantity += quantity_received
+    db.session.commit()
+
+    return jsonify({
+        'success': True, 'batch_id': batch.id, 'barcode': batch.barcode,
+        'item_name': item.name, 'expiry_date': expiry_date.isoformat(),
+        'quantity_received': quantity_received,
+    })
+
+@app.route('/api/warehouse/batches', methods=['GET'])
+@require_permission('warehouse')
+def get_warehouse_batches():
+    query = WarehouseBatch.query
+    item_id = request.args.get('item_id')
+    if item_id:
+        query = query.filter_by(item_id=int(item_id))
+    if request.args.get('expired_only') == 'true':
+        query = query.filter_by(status='active').filter(WarehouseBatch.expiry_date < date.today())
+    batches = query.order_by(WarehouseBatch.expiry_date.asc()).all()
+    today = date.today()
+    return jsonify([{
+        'id': b.id, 'item_id': b.item_id, 'item_name': b.item_name, 'unit': b.unit, 'category': b.category,
+        'barcode': b.barcode, 'expiry_date': b.expiry_date.isoformat(),
+        'quantity_received': b.quantity_received, 'quantity_remaining': b.quantity_remaining,
+        'status': b.status, 'is_expired': b.status == 'active' and b.expiry_date < today,
+        'received_by': b.received_by,
+        'received_at': b.received_at.strftime('%Y-%m-%d %H:%M') if b.received_at else '',
+    } for b in batches])
+
+@app.route('/api/warehouse/batches/<int:batch_id>/dispose', methods=['POST'])
+@admin_required
+def dispose_warehouse_batch(batch_id):
+    """Admin-confirmed disposal for an expired, quarantined batch — the only way an expired
+    batch's remaining quantity leaves stock (expired batches are already hard-excluded from
+    normal FEFO withdrawal availability; see scan_work_order_batch() below)."""
+    data = request.json or {}
+    batch = WarehouseBatch.query.get(batch_id)
+    if not batch:
+        return jsonify({'error': 'Batch not found'}), 404
+    if batch.status != 'active':
+        return jsonify({'error': 'Batch is not active'}), 400
+    if batch.expiry_date >= date.today():
+        return jsonify({'error': 'This batch has not expired yet'}), 400
+    reason = (data.get('reason') or '').strip()
+    if not reason:
+        return jsonify({'error': 'A disposal reason is required'}), 400
+
+    item = WarehouseItem.query.get(batch.item_id)
+    disposed_qty = batch.quantity_remaining
+    if item:
+        item.quantity -= disposed_qty
+
+    batch.status = 'disposed'
+    batch.quantity_remaining = 0
+    batch.disposed_by = session.get('username')
+    batch.disposed_at = datetime.utcnow()
+    batch.disposal_reason = reason
+    db.session.commit()
+
+    log_activity(
+        'update', resource='warehouse_batch', resource_id=batch.id,
+        description=(
+            f"Disposed {disposed_qty} {batch.unit or ''} of {batch.item_name} "
+            f"(batch {batch.barcode}, expired {batch.expiry_date}) — reason: {reason}"
+        ),
+    )
+    return jsonify({'success': True, 'disposed_quantity': disposed_qty})
+
 # --- WAREHOUSE WORK ORDERS (issuing/using up stock, not purchasing more of it) ---
 @app.route('/api/warehouse/work-orders', methods=['GET'])
+@require_permission('warehouse')
 def get_work_orders():
     rows = WarehouseWorkOrder.query.order_by(WarehouseWorkOrder.id.desc()).all()
     return jsonify([{
         'id': r.id, 'work_order_id': r.work_order_id, 'item_id': r.item_id, 'item_name': r.item_name,
         'quantity': r.quantity, 'unit': r.unit, 'category': r.category,
         'user': r.user, 'date_time': r.date_time,
+        'status': r.status, 'quantity_fulfilled': r.quantity_fulfilled,
+        'approved_by': r.approved_by,
+        'approved_at': r.approved_at.strftime('%Y-%m-%d %H:%M') if r.approved_at else '',
     } for r in rows])
 
 @app.route('/api/warehouse/work-orders', methods=['POST'])
+@require_permission('warehouse')
 def create_work_order():
-    """Issues the given quantities out of warehouse stock right away (no pending/delivered
-    lifecycle — unlike a bill, a work order takes the stock immediately) and records one
-    WarehouseWorkOrder row per item, all sharing one work_order_id, so they display/print
-    together as a single record. All quantities are validated against current stock before
-    anything is deducted, so a bad request never partially applies."""
+    """Records a request to issue the given quantities out of warehouse stock — stock is NOT
+    touched here. An admin must approve the request (see approve_work_order()) before any of
+    it can be fulfilled, and fulfillment only ever happens one unit at a time via a
+    successful barcode scan against a WarehouseBatch (see scan_work_order_batch()). A
+    requested quantity may legitimately exceed current stock — that's not a constraint until
+    scan time, so it isn't validated here."""
     data = request.json or {}
     items = data.get('items', [])
     if not items:
@@ -1141,8 +1329,6 @@ def create_work_order():
         quantity = int(entry.get('quantity', 0))
         if quantity <= 0:
             continue
-        if quantity > item.quantity:
-            return jsonify({'error': f'Not enough stock for "{item.name}" (have {item.quantity} {item.unit or ""})'}), 400
         resolved.append((item, quantity))
 
     if not resolved:
@@ -1154,15 +1340,116 @@ def create_work_order():
     date_time = data.get('date_time') or now.strftime('%Y-%m-%d %H:%M:%S')
 
     for item, quantity in resolved:
-        item.quantity -= quantity
         db.session.add(WarehouseWorkOrder(
             work_order_id=work_order_id, item_id=item.id, item_name=item.name,
             quantity=quantity, unit=item.unit, category=item.category,
-            user=user, date_time=date_time,
+            user=user, date_time=date_time, status='requested', quantity_fulfilled=0,
         ))
 
     db.session.commit()
     return jsonify({'success': True, 'work_order_id': work_order_id, 'items_count': len(resolved)})
+
+@app.route('/api/warehouse/work-orders/<work_order_id>/approve', methods=['PUT'])
+@admin_required
+def approve_work_order(work_order_id):
+    lines = WarehouseWorkOrder.query.filter_by(work_order_id=work_order_id, status='requested').all()
+    if not lines:
+        return jsonify({'error': 'No requested lines found for this work order'}), 404
+    for line in lines:
+        line.status = 'approved'
+        line.approved_by = session.get('username')
+        line.approved_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'success': True, 'items_updated': len(lines)})
+
+@app.route('/api/warehouse/work-orders/<work_order_id>/reject', methods=['PUT'])
+@admin_required
+def reject_work_order(work_order_id):
+    lines = WarehouseWorkOrder.query.filter_by(work_order_id=work_order_id, status='requested').all()
+    if not lines:
+        return jsonify({'error': 'No requested lines found for this work order'}), 404
+    for line in lines:
+        line.status = 'rejected'
+        line.approved_by = session.get('username')
+        line.approved_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'success': True, 'items_updated': len(lines)})
+
+@app.route('/api/warehouse/work-orders/<work_order_id>/scan', methods=['POST'])
+@require_permission('warehouse')
+def scan_work_order_batch(work_order_id):
+    """Fulfills one unit of an approved work-order line by scanning a batch barcode.
+    Two independent rules are enforced before any stock is touched:
+    (1) an expired batch is hard-blocked, never just warned — it's already excluded from
+        normal availability and should go through the disposal flow instead;
+    (2) a FEFO violation (an older, still-available batch of the same item exists) is a soft
+        warning: returns 409 without mutating anything unless the caller explicitly resends
+        with confirm_fefo_override=true, in which case it's allowed through but flagged on
+        the scan's audit row."""
+    data = request.json or {}
+    barcode = (data.get('barcode') or '').strip()
+    confirm_override = bool(data.get('confirm_fefo_override'))
+    if not barcode:
+        return jsonify({'error': 'Barcode is required'}), 400
+
+    batch = WarehouseBatch.query.filter_by(barcode=barcode).first()
+    if not batch:
+        return jsonify({'error': 'Unknown barcode'}), 404
+    if batch.status != 'active':
+        return jsonify({'error': f'This batch is {batch.status} and cannot be used'}), 400
+
+    today = date.today()
+    if batch.expiry_date < today:
+        return jsonify({'error': 'This batch is expired — flagged for disposal review, not usable for fulfillment'}), 400
+
+    line = WarehouseWorkOrder.query.filter_by(
+        work_order_id=work_order_id, item_id=batch.item_id, status='approved'
+    ).first()
+    if not line:
+        return jsonify({'error': 'No approved work-order line for this item on this work order'}), 400
+    if line.quantity_fulfilled >= line.quantity:
+        return jsonify({'error': 'This line is already fully fulfilled'}), 400
+
+    older_available_batch = WarehouseBatch.query.filter(
+        WarehouseBatch.item_id == batch.item_id,
+        WarehouseBatch.id != batch.id,
+        WarehouseBatch.status == 'active',
+        WarehouseBatch.quantity_remaining > 0,
+        WarehouseBatch.expiry_date >= today,
+        WarehouseBatch.expiry_date < batch.expiry_date,
+    ).first()
+
+    fefo_violation = older_available_batch is not None
+    if fefo_violation and not confirm_override:
+        return jsonify({
+            'fefo_warning': True,
+            'message': 'check shelf for older item of the same name please!',
+            'older_batch_expiry': older_available_batch.expiry_date.isoformat(),
+        }), 409
+
+    item = WarehouseItem.query.get(batch.item_id)
+    batch.quantity_remaining -= 1
+    if batch.quantity_remaining <= 0:
+        batch.status = 'exhausted'
+    if item:
+        item.quantity -= 1
+    line.quantity_fulfilled += 1
+    line_complete = line.quantity_fulfilled >= line.quantity
+    if line_complete:
+        line.status = 'completed'
+
+    db.session.add(WarehouseWorkOrderScan(
+        work_order_line_id=line.id, batch_id=batch.id,
+        scanned_by=session.get('username'), fefo_violation=fefo_violation,
+    ))
+    db.session.commit()
+
+    return jsonify({
+        'success': True, 'item_name': batch.item_name,
+        'quantity_remaining_in_batch': batch.quantity_remaining,
+        'line_fulfilled': line.quantity_fulfilled, 'line_requested': line.quantity,
+        'line_complete': line_complete,
+    })
 
 @app.route('/api/hr/employees', methods=['GET'])
 @require_permission('hr-management')
