@@ -224,6 +224,51 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--t
 
 .table-container { overflow: visible !important; }
 
+/* Result Parameters modal — near-full-screen, with a properly scrolling table and a footer
+   that stays fixed in place. The blanket ".table-container { overflow: visible !important; }"
+   rule above (needed elsewhere so row-action dropdowns aren't clipped) was also defeating
+   this modal's own "scroll the table, not the whole modal" intent: with overflow forced
+   visible, the table's real content (more rows than the capped box) spilled out past its
+   container and visually overlapped the Add Parameter/Save/Cancel buttons positioned right
+   after it in the DOM. Scoped to #parameters-modal only — the blanket rule everywhere else
+   is untouched.
+   .modal-content becomes a flex column so the table area is the only thing that scrolls;
+   header text and the two button rows are pinned via flex-shrink:0 instead of flowing past
+   an overflowing table. */
+#parameters-modal .modal-content {
+    position: relative;
+    width: 95vw;
+    max-width: 1100px;
+    height: 90vh;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+}
+#parameters-modal .close {
+    /* float:right has no effect once the parent is a flex column — pull it out of flow
+       entirely instead of letting it become a stray flex item at the top of the column. */
+    position: absolute;
+    top: 20px;
+    right: 25px;
+}
+#parameters-modal .modal-content > h2,
+#parameters-modal .modal-content > p {
+    flex-shrink: 0;
+}
+#parameters-modal .table-container {
+    flex: 1 1 auto;
+    /* Flex items default to min-height:auto, which floors them at their content's natural
+       size regardless of flex-shrink — without this, the table-container still wouldn't
+       actually shrink/scroll despite overflow-y:auto now being correctly set above. */
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto !important;
+    margin-bottom: 15px;
+}
+#parameters-modal .modal-content > div:not(.table-container) {
+    flex-shrink: 0;
+}
+
 /* =========================================
    SETTINGS PAGE STYLES
    ========================================= */
