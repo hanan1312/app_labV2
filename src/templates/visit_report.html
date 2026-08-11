@@ -6,7 +6,7 @@
     <title>{{ config.lab_name or 'Lab Report' }} — {{ visit.visit_id }}</title>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f7f6; margin: 0; padding: 20px; color: #222; }
-        .sheet { max-width: 800px; margin: 0 auto; background: white; border-radius: 10px; padding: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.08); }
+        .sheet { position: relative; max-width: 800px; margin: 0 auto; background: white; border-radius: 10px; padding: 30px; box-shadow: 0 4px 6px rgba(0,0,0,0.08); }
         .header { display: flex; align-items: center; gap: 15px; border-bottom: 2px solid #667eea; padding-bottom: 15px; margin-bottom: 15px; }
         .header img { width: 60px; height: 60px; object-fit: contain; }
         .header h1 { margin: 0; color: #2d3748; font-size: 22px; }
@@ -18,10 +18,16 @@
         table { width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 13px; }
         th { background: #667eea; color: white; text-align: left; padding: 8px; }
         td { padding: 8px; border-bottom: 1px solid #eee; }
-        .abnormal { color: #c0392b; font-weight: bold; }
+        .hl-high { color: #c0392b; font-weight: bold; margin-left: 4px; }
+        .hl-low { color: #1d4ed8; font-weight: bold; margin-left: 4px; }
         .interpretation { border: 1px solid #ddd; border-radius: 6px; padding: 15px; font-size: 13px; background: #fffaf0; }
+        .comments { border: 1px solid #ddd; border-radius: 6px; padding: 15px; font-size: 13px; background: #f7faff; margin-top: 15px; }
         .footer { margin-top: 25px; font-size: 11px; color: #888; border-top: 1px solid #eee; padding-top: 10px; }
         .no-results { color: #888; font-style: italic; text-align: center; padding: 20px; }
+        .page-title { color: #2d3748; font-size: 18px; margin: 25px 0 4px; }
+        .page-subtitle { color: #667eea; font-size: 13px; margin: 0 0 15px; }
+        .page-break { border-top: 1px dashed #ccc; margin: 30px 0; page-break-before: always; }
+        .signature { position: absolute; bottom: 20px; left: 30px; width: 100px; }
     </style>
 </head>
 <body>
@@ -49,27 +55,43 @@
             <strong>Patient:</strong> {{ patient.first_name }} {{ patient.last_name }} &nbsp;|&nbsp;
             <strong>Report ID:</strong> {{ visit.visit_id }}<br>
             <strong>Age/Sex:</strong> {{ age if age is not none else '-' }} / {{ patient.gender if patient else '-' }} &nbsp;|&nbsp;
-            <strong>Referred By:</strong> {{ visit.referred_by or 'Self' }}<br>
+            <strong>Physician:</strong> {{ visit.referred_by or 'Self' }}<br>
             <strong>Collection Date:</strong> {{ visit.date }} &nbsp;|&nbsp;
             <strong>Report Date:</strong> {{ report_date.strftime('%Y-%m-%d %H:%M') }}
         </div>
 
-        {% if tests %}
-            {% for test in tests %}
-            <div class="test-title">{{ test.name }}</div>
-            <table>
-                <thead><tr><th>Investigation</th><th>Result</th><th>Ref. Range</th><th>Unit</th></tr></thead>
-                <tbody>
-                    {% for row in test.rows %}
-                    <tr>
-                        <td>{{ row.name }}{% if row.method %}<br><em style="color:#888; font-size:11px;">Method: {{ row.method }}</em>{% endif %}</td>
-                        <td class="{{ 'abnormal' if row.abnormal else '' }}">{{ row.result_value or '-' }}</td>
-                        <td>{{ row.reference_range or '-' }}</td>
-                        <td>{{ row.unit or '-' }}</td>
-                    </tr>
+        {% if report_pages %}
+            {% for page in report_pages %}
+                {% if not loop.first %}<div class="page-break"></div>{% endif %}
+                {% if page.title %}<div class="page-title">{{ page.title }}</div>{% endif %}
+                {% if page.subtitle %}<div class="page-subtitle">{{ page.subtitle }}</div>{% endif %}
+                {% for test in page.tests %}
+                <div class="test-title">{{ test.name }}</div>
+                <table>
+                    <thead><tr><th>Investigation</th><th>Result</th><th>Ref. Range</th><th>Unit</th></tr></thead>
+                    <tbody>
+                        {% for row in test.rows %}
+                        <tr>
+                            <td>{{ row.name }}</td>
+                            <td>{{ row.result_value or '-' }}
+                                {% if row.hl == 'high' %}<span class="hl-high">H</span>{% elif row.hl == 'low' %}<span class="hl-low">L</span>{% endif %}
+                            </td>
+                            <td>{{ row.reference_range or '-' }}</td>
+                            <td>{{ row.unit or '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% endfor %}
+
+                {% if page.comments %}
+                <div class="comments">
+                    <strong>Comments:</strong><br>
+                    {% for item in page.comments %}
+                        <strong>{{ item.test_name }}:</strong> {{ item.comment }}<br>
                     {% endfor %}
-                </tbody>
-            </table>
+                </div>
+                {% endif %}
             {% endfor %}
         {% else %}
             <div class="no-results">Results for this visit aren't available yet.</div>
@@ -87,6 +109,13 @@
         <div class="footer">
             {{ config.report_footer_note or 'This report is not valid for medical legal purposes.' }}
         </div>
+
+        {% if config.signature_path %}
+        <img class="signature" src="{{ config.signature_path if config.signature_path.startswith('data:') else '/' + config.signature_path.lstrip('/') }}" alt="Signature">
+        <p style="position: absolute; bottom: 8px; left: 30px; font-size: 10px; color: #555; margin: 0;">
+            {{ config.signature_title or config.tech_name or config.lab_director or 'Authorized Signatory' }}
+        </p>
+        {% endif %}
     </div>
 </body>
 </html>

@@ -135,6 +135,20 @@ class VisitTest(db.Model):
     visit_id = db.Column(db.Integer, db.ForeignKey('patient_visits.id', ondelete='CASCADE'), primary_key=True)
     lab_test_id = db.Column(db.Integer, db.ForeignKey('lab_tests.id', ondelete='RESTRICT'), primary_key=True)
     position = db.Column(db.Integer, nullable=False, default=0)
+    comment = db.Column(db.Text)  # technician's note for this test, entered at results-entry time; shown in the report footer
+    page_number = db.Column(db.Integer)  # which custom report page this test is assigned to; NULL = default single-flow layout
+
+
+class VisitReportPage(db.Model):
+    """A user-defined report page grouping for one visit (per-visit, one-off — not a
+    reusable template). Presence of any row for a visit switches build_report_context()
+    from the default single-flow layout to this page-grouped one."""
+    __tablename__ = 'visit_report_pages'
+    id = db.Column(db.Integer, primary_key=True)
+    visit_id = db.Column(db.Integer, db.ForeignKey('patient_visits.id', ondelete='CASCADE'), nullable=False)
+    page_number = db.Column(db.Integer, nullable=False)
+    title = db.Column(db.String(200))
+    subtitle = db.Column(db.String(200))
 
 
 class VisitReport(db.Model):

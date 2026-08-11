@@ -37,12 +37,13 @@ from src.models.audit import ActivityLog
 # Junction tables (docs/schema_migration_plan.md) — imported so create_all() sees them;
 # sync_*/add_* helpers keep them live from the write sites below (Phase 2)
 from src.models.junctions import (
-    UserPermission, ClientAllergy, VisitTest, VisitReport, TransactionLineItem,
+    UserPermission, ClientAllergy, VisitTest, VisitReport, VisitReportPage, TransactionLineItem,
     sync_user_permissions, sync_visit_tests, add_visit_reports, sync_transaction_line_items,
     get_visit_test_names, get_visit_report_url, get_transaction_test_names,
     get_completed_test_names,
     DEFAULT_PERMISSIONS,
 )
+from src.models.test_panel import TestPanel, TestPanelItem
 from src.routes.user import user_bp, admin_required
 from src.routes.patient import patient_bp
 from src.routes.clinic import clinic_bp
@@ -152,6 +153,54 @@ with app.app_context():
         # New tables for warehouse batch/expiry tracking and per-scan fulfillment audit.
         db.Model.metadata.create_all(bind=engine, tables=[WarehouseBatch.__table__])
         db.Model.metadata.create_all(bind=engine, tables=[WarehouseWorkOrderScan.__table__])
+
+        # Report enhancements — pathologist signature, gender-specific reference ranges,
+        # per-test comments/page-layout, and test panels/physician-name filtering.
+        db.session.bind = engine
+        for statement in [
+            "ALTER TABLE lab_config ADD COLUMN signature_path TEXT",
+            "ALTER TABLE test_parameter_templates ADD COLUMN gender_specific BOOLEAN DEFAULT 0",
+            "ALTER TABLE test_parameter_templates ADD COLUMN ref_low_male FLOAT",
+            "ALTER TABLE test_parameter_templates ADD COLUMN ref_high_male FLOAT",
+            "ALTER TABLE test_parameter_templates ADD COLUMN ref_low_female FLOAT",
+            "ALTER TABLE test_parameter_templates ADD COLUMN ref_high_female FLOAT",
+            "ALTER TABLE visit_tests ADD COLUMN comment TEXT",
+            "ALTER TABLE visit_tests ADD COLUMN page_number INTEGER",
+        ]:
+            try:
+                db.session.execute(text(statement))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+        db.Model.metadata.create_all(bind=engine, tables=[VisitReportPage.__table__])
+        db.Model.metadata.create_all(bind=engine, tables=[TestPanel.__table__])
+        db.Model.metadata.create_all(bind=engine, tables=[TestPanelItem.__table__])
+
+        # Report/payment refinements round 2 — signature caption, partial payments.
+        db.session.bind = engine
+        for statement in [
+            "ALTER TABLE lab_config ADD COLUMN signature_title VARCHAR(200)",
+            "ALTER TABLE transactions_list ADD COLUMN amount_paid FLOAT",
+            "ALTER TABLE transactions_list ADD COLUMN remaining_fees FLOAT DEFAULT 0",
+        ]:
+            try:
+                db.session.execute(text(statement))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+        # Guarded backfill: every transaction that existed before partial payments were
+        # possible was, by definition, paid in full — a blind column DEFAULT would instead
+        # read as "$0 paid" for every historical transaction. Runs once (amount_paid stays
+        # NULL only for rows that predate the ALTER above); any genuinely new partial payment
+        # always has amount_paid set explicitly by save_transaction(), so it can never be
+        # confused with one of these.
+        db.session.bind = engine
+        try:
+            db.session.execute(text(
+                "UPDATE transactions_list SET amount_paid = final_payment WHERE amount_paid IS NULL"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
 
         # Guarded, one-time backfill for the new WarehouseWorkOrder lifecycle columns — NOT
         # folded into the blind per-statement ALTER loops above. Those loops backfill every
@@ -418,6 +467,8 @@ def save_lab_settings():
     config.lab_subtitle = data.get('lab_subtitle', config.lab_subtitle)
     config.logo_path = data.get('logo_path', config.logo_path)
     config.cover_path = data.get('cover_path', config.cover_path)
+    config.signature_path = data.get('signature_path', config.signature_path)
+    config.signature_title = data.get('signature_title', config.signature_title)
     # --- REPORT BRANDING (doctor/tech credentials, contact, social) ---
     for field in ('lab_director', 'lab_phone', 'lab_address', 'lab_email',
                   'doctor_qualification', 'doctor_reg_no', 'tech_name',
@@ -647,13 +698,93 @@ def delete_test(test_id):
         print(f"Error deleting test: {e}")
         return jsonify({'error': 'Failed to delete test from database'}), 500
 
+
+# --- TEST PANELS (e.g. "Lipid Profile") — quick-select bundles for the Book Tests modal.
+# Purely a UI convenience: member tests are just regular VisitTest rows, same as if checked
+# one at a time. Starts empty; admin creates/edits/deletes freely (no seeded defaults). ---
+
+@app.route('/api/panels', methods=['GET'])
+def get_all_panels():
+    panels = TestPanel.query.all()
+    items = (TestPanelItem.query
+             .filter(TestPanelItem.panel_id.in_([p.id for p in panels]))
+             .order_by(TestPanelItem.position).all()) if panels else []
+    tests_by_panel = {}
+    for it in items:
+        tests_by_panel.setdefault(it.panel_id, []).append(it.lab_test_id)
+    lab_tests_by_id = {t.id: t.name for t in LabTest.query.all()}
+    return jsonify([{
+        'id': p.id,
+        'name': p.name,
+        'lab_test_ids': tests_by_panel.get(p.id, []),
+        'tests': [{'id': tid, 'name': lab_tests_by_id.get(tid)} for tid in tests_by_panel.get(p.id, [])],
+    } for p in panels])
+
+
+@app.route('/api/panels', methods=['POST'])
+def create_panel():
+    data = request.json or {}
+    if not data.get('name'):
+        return jsonify({'error': 'Missing required field: name'}), 400
+    panel = TestPanel(name=data['name'])
+    db.session.add(panel)
+    db.session.commit()
+    for i, test_id in enumerate(data.get('lab_test_ids', [])):
+        db.session.add(TestPanelItem(panel_id=panel.id, lab_test_id=test_id, position=i))
+    db.session.commit()
+    return jsonify({'success': True, 'id': panel.id}), 201
+
+
+@app.route('/api/panels/<int:panel_id>', methods=['PUT'])
+def update_panel(panel_id):
+    panel = TestPanel.query.get(panel_id)
+    if not panel:
+        return jsonify({'error': 'Panel not found'}), 404
+    data = request.json or {}
+    panel.name = data.get('name', panel.name)
+    TestPanelItem.query.filter_by(panel_id=panel_id).delete()
+    for i, test_id in enumerate(data.get('lab_test_ids', [])):
+        db.session.add(TestPanelItem(panel_id=panel_id, lab_test_id=test_id, position=i))
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+@app.route('/api/panels/<int:panel_id>', methods=['DELETE'])
+def delete_panel(panel_id):
+    panel = TestPanel.query.get(panel_id)
+    if not panel:
+        return jsonify({'error': 'Panel not found'}), 404
+    db.session.delete(panel)
+    db.session.commit()
+    return jsonify({'success': True})
+
+
 import json
+
+@app.route('/api/physicians', methods=['GET'])
+def get_physicians():
+    """Distinct previously-used referring-physician names, for the booking/dashboard/
+    statistics autocomplete datalists. 'Self' (the default when no physician is entered)
+    is excluded — it's a placeholder, not a real name to suggest."""
+    rows = (db.session.query(PatientVisit.referred_by)
+            .filter(PatientVisit.referred_by.isnot(None), PatientVisit.referred_by != '',
+                    PatientVisit.referred_by != 'Self')
+            .distinct()
+            .order_by(PatientVisit.referred_by)
+            .all())
+    return jsonify([r[0] for r in rows])
+
 
 @app.route('/api/transactions', methods=['POST'])
 def save_transaction():
     data = request.json
-    
+
     # 1. Save to TransactionList (Billing info)
+    final_payment = float(data['final_payment'])
+    # amount_paid defaults to the full due amount (fully paid) when the field is omitted;
+    # remaining_fees is always computed here, never trusted from the client.
+    amount_paid = float(data.get('amount_paid', final_payment))
+    remaining_fees = max(0, final_payment - amount_paid)
     new_transaction = TransactionList(
         transaction_id=data['transaction_id'],
         patient_id=data['patient_id'],
@@ -663,7 +794,9 @@ def save_transaction():
         total_price=data['total_price'],
         discount_percentage=data['discount_percentage'],
         payment_method=data['payment_method'],
-        final_payment=float(data['final_payment'])
+        final_payment=final_payment,
+        amount_paid=amount_paid,
+        remaining_fees=remaining_fees,
     )
     db.session.add(new_transaction)
 
@@ -673,7 +806,8 @@ def save_transaction():
         patient_name=data['patient_name'],
         visit_id=data['transaction_id'],
         date=data['date'],
-        status='pending' # Explicitly set this to pending
+        status='pending', # Explicitly set this to pending
+        referred_by=data.get('physician_name') or 'Self',
     )
     db.session.add(new_visit)
 
@@ -701,9 +835,9 @@ def get_all_visits():
     ~5k visits). This does the same job in a handful of queries regardless of row count.
 
     Supports optional pagination + filtering via ?page=&per_page=&status=&date_from=&
-    date_to=&gender=&search= — omit `page` to get the full unfiltered list exactly as
-    before (still used by loadInitialData() for dashboard KPI counts, the demand chart, and
-    per-patient visit history, all of which need the complete dataset).
+    date_to=&gender=&search=&physician= — omit `page` to get the full unfiltered list
+    exactly as before (still used by loadInitialData() for dashboard KPI counts, the demand
+    chart, and per-patient visit history, all of which need the complete dataset).
     """
     query = PatientVisit.query
 
@@ -731,6 +865,10 @@ def get_all_visits():
                 PatientVisit.patient_name.ilike(like),
                 Client.phone.ilike(like),
             ))
+
+    physician = request.args.get('physician')
+    if physician:
+        query = query.filter(PatientVisit.referred_by.ilike(f'%{physician}%'))
 
     query = query.order_by(PatientVisit.id.desc())
 
@@ -793,6 +931,7 @@ def get_all_visits():
             'status': getattr(v, 'status', 'pending') or 'pending',
             'phone': patient.phone if patient else 'N/A',
             'report_url': ','.join(report_paths) if report_paths else None,
+            'physician_name': v.referred_by,
         })
 
     if page is not None:
@@ -832,6 +971,13 @@ def get_all_transactions():
     if date_to:
         query = query.filter(TransactionList.date <= date_to + ' 23:59:59')
 
+    if request.args.get('unpaid_only') in ('true', '1'):
+        query = query.filter(TransactionList.remaining_fees > 0)
+
+    # Sum of remaining_fees across every row matching the filters above, not just the
+    # current page — computed from the same query before pagination narrows it down.
+    total_remaining = query.with_entities(db.func.sum(TransactionList.remaining_fees)).scalar() or 0
+
     query = query.order_by(TransactionList.id.desc())
 
     page = request.args.get('page', type=int)
@@ -865,6 +1011,8 @@ def get_all_transactions():
         'discount_percentage': t.discount_percentage,
         'payment_method': t.payment_method,
         'final_payment': t.final_payment,
+        'amount_paid': t.amount_paid if t.amount_paid is not None else t.final_payment,
+        'remaining_fees': t.remaining_fees or 0,
     } for t in transactions]
 
     if page is not None:
@@ -874,10 +1022,40 @@ def get_all_transactions():
             'per_page': per_page,
             'total': total,
             'total_pages': max(1, (total + per_page - 1) // per_page),
+            'total_remaining': total_remaining,
         })
     return jsonify(t_data)
 
-    return jsonify(results)
+
+@app.route('/api/transactions/<int:transaction_id>/payment', methods=['PUT'])
+def record_transaction_payment(transaction_id):
+    """Records an additional payment against an existing transaction (Transaction History's
+    "Complete Payment" action) — lets staff settle an outstanding balance later, in full or
+    in part, rather than only at the moment of booking. amount_paid is clamped to
+    final_payment (can't "overpay" past the total due); remaining_fees is always
+    recomputed server-side from that, same as at booking time."""
+    transaction = TransactionList.query.get(transaction_id)
+    if not transaction:
+        return jsonify({'error': 'Transaction not found'}), 404
+
+    data = request.json or {}
+    try:
+        additional = float(data.get('amount', 0))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Invalid amount'}), 400
+    if additional <= 0:
+        return jsonify({'error': 'Amount must be greater than zero'}), 400
+
+    current_paid = transaction.amount_paid or 0
+    transaction.amount_paid = min(transaction.final_payment, current_paid + additional)
+    transaction.remaining_fees = max(0, transaction.final_payment - transaction.amount_paid)
+    db.session.commit()
+
+    return jsonify({
+        'success': True,
+        'amount_paid': transaction.amount_paid,
+        'remaining_fees': transaction.remaining_fees,
+    })
 
 
 @app.route('/patient-history/')

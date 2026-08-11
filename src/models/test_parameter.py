@@ -17,6 +17,15 @@ class TestParameterTemplate(db.Model):
     display_order = db.Column(db.Integer, nullable=False, default=0)
     abnormal_note = db.Column(db.Text)  # shown in the report's Interpretation box when out of range
 
+    # Optional gender-specific ranges — some parameters (e.g. Hemoglobin, Creatinine) differ
+    # between male/female. When gender_specific is False, ref_low/ref_high above are used for
+    # everyone (unchanged legacy behavior).
+    gender_specific = db.Column(db.Boolean, default=False)
+    ref_low_male = db.Column(db.Float)
+    ref_high_male = db.Column(db.Float)
+    ref_low_female = db.Column(db.Float)
+    ref_high_female = db.Column(db.Float)
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -29,4 +38,9 @@ class TestParameterTemplate(db.Model):
             'reference_range_text': self.reference_range_text,
             'display_order': self.display_order,
             'abnormal_note': self.abnormal_note,
+            'gender_specific': bool(self.gender_specific),
+            'ref_low_male': self.ref_low_male,
+            'ref_high_male': self.ref_high_male,
+            'ref_low_female': self.ref_low_female,
+            'ref_high_female': self.ref_high_female,
         }

@@ -67,6 +67,10 @@ class TransactionList(db.Model):
     discount_percentage = db.Column(db.Integer)
     payment_method = db.Column(db.String(50))
     final_payment = db.Column(db.Float)
+    # Partial payment tracking — amount_paid defaults to final_payment (fully paid) when
+    # omitted; remaining_fees is always server-computed, never trusted from the client.
+    amount_paid = db.Column(db.Float)
+    remaining_fees = db.Column(db.Float, default=0)
 
 
 class PatientVisit(db.Model):

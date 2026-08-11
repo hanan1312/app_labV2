@@ -1,16 +1,20 @@
 import base64
 import os
+import re
 from datetime import datetime
 from io import BytesIO
+from xml.sax.saxutils import escape as xml_escape
 
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, Response
 
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
+from reportlab.lib.utils import ImageReader
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
 from reportlab.graphics.barcode import createBarcodeDrawing
+from reportlab.graphics import renderPDF
 import qrcode
 from PIL import Image as PILImage
 
@@ -19,7 +23,7 @@ from src.models.client import Client
 from src.models.test_result import TestResult
 from src.models.test_parameter import TestParameterTemplate
 from src.models.lab_config import LabConfig
-from src.models.junctions import VisitTest, add_visit_reports, get_visit_test_names, get_completed_test_names
+from src.models.junctions import VisitTest, VisitReportPage, add_visit_reports, get_visit_test_names, get_completed_test_names
 
 reports_bp = Blueprint('reports_bp', __name__)
 
@@ -59,6 +63,11 @@ def create_test_parameter(lab_test_id):
         reference_range_text=data.get('reference_range_text'),
         abnormal_note=data.get('abnormal_note'),
         display_order=(max_order + 1) if max_order is not None else 0,
+        gender_specific=bool(data.get('gender_specific')),
+        ref_low_male=data.get('ref_low_male'),
+        ref_high_male=data.get('ref_high_male'),
+        ref_low_female=data.get('ref_low_female'),
+        ref_high_female=data.get('ref_high_female'),
     )
     db.session.add(row)
     db.session.commit()
@@ -73,7 +82,9 @@ def update_test_parameter(param_id):
 
     data = request.json or {}
     for field in ('name', 'unit', 'method', 'ref_low', 'ref_high',
-                  'reference_range_text', 'abnormal_note', 'display_order'):
+                  'reference_range_text', 'abnormal_note', 'display_order',
+                  'gender_specific', 'ref_low_male', 'ref_high_male',
+                  'ref_low_female', 'ref_high_female'):
         if field in data:
             setattr(row, field, data[field])
 
@@ -94,14 +105,37 @@ def delete_test_parameter(param_id):
 
 # --- RESULTS ENTRY (the "🧪 Enter Results" window) ---
 
+def _booked_visit_tests(visit_id):
+    """(LabTest, VisitTest) pairs for a visit, in booking order."""
+    return (db.session.query(LabTest, VisitTest)
+            .join(VisitTest, VisitTest.lab_test_id == LabTest.id)
+            .filter(VisitTest.visit_id == visit_id)
+            .order_by(VisitTest.position)
+            .all())
+
+
 def _booked_tests(visit_id):
     """Booked tests for a visit, in booking order, as LabTest rows."""
-    visit_tests = VisitTest.query.filter_by(visit_id=visit_id).order_by(VisitTest.position).all()
-    lab_test_ids = [vt.lab_test_id for vt in visit_tests]
-    if not lab_test_ids:
-        return []
-    tests_by_id = {t.id: t for t in LabTest.query.filter(LabTest.id.in_(lab_test_ids)).all()}
-    return [tests_by_id[vt.lab_test_id] for vt in visit_tests if vt.lab_test_id in tests_by_id]
+    return [lt for lt, vt in _booked_visit_tests(visit_id)]
+
+
+def _effective_ref_range(template, gender):
+    """(ref_low, ref_high, display_text) resolved against a client's gender when the
+    template has separate male/female ranges configured. Falls back to the generic
+    ref_low/ref_high/reference_range_text if gender is missing/unrecognized or that
+    side isn't configured."""
+    if not template:
+        return None, None, None
+    if template.gender_specific:
+        if gender == 'Female' and template.ref_low_female is not None:
+            lo, hi = template.ref_low_female, template.ref_high_female
+        elif gender == 'Male' and template.ref_low_male is not None:
+            lo, hi = template.ref_low_male, template.ref_high_male
+        else:
+            lo, hi = template.ref_low, template.ref_high
+        text = f'{lo:g} - {hi:g}' if lo is not None and hi is not None else template.reference_range_text
+        return lo, hi, text
+    return template.ref_low, template.ref_high, template.reference_range_text
 
 
 @reports_bp.route('/visits/<int:visit_id>/results-schema', methods=['GET'])
@@ -110,6 +144,7 @@ def get_results_schema(visit_id):
     if not visit:
         return jsonify({'error': 'Visit not found'}), 404
     patient = Client.query.get(visit.patient_id)
+    gender = patient.gender if patient else None
 
     existing_results = {
         (r.lab_test_id, r.parameter_name): r
@@ -117,7 +152,7 @@ def get_results_schema(visit_id):
     }
 
     tests_payload = []
-    for test in _booked_tests(visit.id):
+    for test, visit_test in _booked_visit_tests(visit.id):
         templates = (TestParameterTemplate.query
                      .filter_by(lab_test_id=test.id)
                      .order_by(TestParameterTemplate.display_order)
@@ -125,19 +160,21 @@ def get_results_schema(visit_id):
         params_payload = []
         for tpl in templates:
             existing = existing_results.get((test.id, tpl.name))
+            ref_low, ref_high, ref_text = _effective_ref_range(tpl, gender)
             params_payload.append({
                 'template_id': tpl.id,
                 'name': tpl.name,
                 'unit': tpl.unit,
                 'method': tpl.method,
-                'ref_low': tpl.ref_low,
-                'ref_high': tpl.ref_high,
-                'reference_range_text': tpl.reference_range_text,
+                'ref_low': ref_low,
+                'ref_high': ref_high,
+                'reference_range_text': ref_text,
                 'result_value': existing.result_value if existing else '',
             })
         tests_payload.append({
             'lab_test_id': test.id,
             'test_name': test.name,
+            'comment': visit_test.comment or '',
             'parameters': params_payload,
         })
 
@@ -162,6 +199,8 @@ def save_results(visit_id):
     visit = PatientVisit.query.get(visit_id)
     if not visit:
         return jsonify({'error': 'Visit not found'}), 404
+    patient = Client.query.get(visit.patient_id)
+    gender = patient.gender if patient else None
 
     data = request.json or {}
     entries = data.get('results', [])
@@ -177,15 +216,14 @@ def save_results(visit_id):
 
         template = TestParameterTemplate.query.get(entry['template_id']) if entry.get('template_id') else None
         status = 'completed'
-        reference_range = entry.get('reference_range_text')
-        if template:
-            reference_range = reference_range or template.reference_range_text
-            if template.ref_low is not None and template.ref_high is not None:
-                try:
-                    numeric = float(result_value)
-                    status = 'normal' if template.ref_low <= numeric <= template.ref_high else 'abnormal'
-                except ValueError:
-                    pass
+        ref_low, ref_high, ref_text = _effective_ref_range(template, gender)
+        reference_range = entry.get('reference_range_text') or ref_text
+        if ref_low is not None and ref_high is not None:
+            try:
+                numeric = float(result_value)
+                status = 'normal' if ref_low <= numeric <= ref_high else 'abnormal'
+            except ValueError:
+                pass
 
         db.session.add(TestResult(
             client_id=visit.patient_id,
@@ -199,6 +237,17 @@ def save_results(visit_id):
             status=status,
             test_completion_date=datetime.utcnow(),
         ))
+
+    # Per-test technician comments (shown in the report footer) — independent of whether
+    # that test has any saved numeric results this round, so a standalone comment sticks.
+    for lab_test_id_str, comment_text in (data.get('comments') or {}).items():
+        try:
+            lab_test_id = int(lab_test_id_str)
+        except (TypeError, ValueError):
+            continue
+        visit_test = VisitTest.query.filter_by(visit_id=visit.id, lab_test_id=lab_test_id).first()
+        if visit_test:
+            visit_test.comment = (comment_text or '').strip() or None
 
     db.session.commit()
 
@@ -229,7 +278,6 @@ def save_results(visit_id):
     messaging = None
     if is_complete:
         config = LabConfig.get_config()
-        patient = Client.query.get(visit.patient_id)
         messaging = {
             'enabled': bool(config.msg_enabled),
             'method': config.msg_method,
@@ -248,6 +296,23 @@ def save_results(visit_id):
     }), 200
 
 
+@reports_bp.route('/visits/<int:visit_id>/results/preview', methods=['POST'])
+def preview_results(visit_id):
+    """Non-destructive preview of the report a Save right now would produce — same payload
+    shape as POST .../results, but nothing is written to TestResult/VisitTest.comment, the
+    visit's status never changes, and no WhatsApp/SMS message is ever sent. Lets a
+    technician preview (and re-preview after adjusting the report layout) before committing
+    with the real Save."""
+    data = request.json or {}
+    ctx = build_preview_context(visit_id, data.get('results', []), data.get('comments') or {})
+    if not ctx:
+        return jsonify({'error': 'Visit not found'}), 404
+    pdf_bytes, _filename = _render_pdf_from_context(ctx, request.host_url)
+    if not pdf_bytes:
+        return jsonify({'error': 'Could not generate preview'}), 500
+    return Response(pdf_bytes, mimetype='application/pdf')
+
+
 # --- VIEW RESULTS (read-only per-visit results, for the Dashboard's "click a record" popup) ---
 
 @reports_bp.route('/visits/<int:visit_id>/results-view', methods=['GET'])
@@ -256,6 +321,7 @@ def get_results_view(visit_id):
     if not visit:
         return jsonify({'error': 'Visit not found'}), 404
     patient = Client.query.get(visit.patient_id)
+    gender = patient.gender if patient else None
 
     existing_results = {
         (r.lab_test_id, r.parameter_name): r
@@ -271,13 +337,14 @@ def get_results_view(visit_id):
         params_payload = []
         for tpl in templates:
             existing = existing_results.get((test.id, tpl.name))
+            _, _, ref_text = _effective_ref_range(tpl, gender)
             params_payload.append({
                 'name': tpl.name,
                 'unit': tpl.unit,
                 'method': tpl.method,
-                'reference_range_text': tpl.reference_range_text,
+                'reference_range_text': ref_text,
                 'result_value': existing.result_value if existing else '',
-                'status': _param_status(existing, tpl),
+                'status': _param_status(existing, tpl, gender),
             })
         # A test counts as delivered once any of its parameters has a saved result — same
         # "at least one result" rule get_completed_test_names() uses for the visit-level
@@ -358,18 +425,20 @@ def get_client_test_history(client_id):
     return jsonify({'tests': tests_payload}), 200
 
 
-def _param_status(result, template):
+def _param_status(result, template, gender=None):
     """normal / high / low / abnormal / entered / pending — derived at read time so it
-    always reflects the current parameter template's reference range, even if that range
-    was edited after the result was saved."""
+    always reflects the current parameter template's reference range (and the client's
+    gender, for gender-specific ranges), even if that range was edited after the result
+    was saved."""
     if not result or not result.result_value:
         return 'pending'
-    if template and template.ref_low is not None and template.ref_high is not None:
+    ref_low, ref_high, _ = _effective_ref_range(template, gender)
+    if ref_low is not None and ref_high is not None:
         try:
             numeric = float(result.result_value)
-            if numeric < template.ref_low:
+            if numeric < ref_low:
                 return 'low'
-            if numeric > template.ref_high:
+            if numeric > ref_high:
                 return 'high'
             return 'normal'
         except ValueError:
@@ -406,6 +475,10 @@ def get_statistics_results():
     if gender:
         query = query.filter(Client.gender == gender)
 
+    physician = request.args.get('physician')
+    if physician:
+        query = query.filter(PatientVisit.referred_by.ilike(f'%{physician}%'))
+
     search = request.args.get('search')
     if search:
         like = f'%{search}%'
@@ -427,20 +500,22 @@ def get_statistics_results():
                                      .filter_by(lab_test_id=result.lab_test_id, name=result.parameter_name)
                                      .first())
         tpl = templates_cache.get(key)
+        gender_value = patient.gender if patient else None
 
         payload.append({
             'visit_id': visit.id,
             'patient_id': visit.patient_id,
             'patient_name': f'{patient.first_name} {patient.last_name}' if patient else visit.patient_name,
-            'gender': patient.gender if patient else None,
+            'gender': gender_value,
             'phone': patient.phone if patient else None,
+            'physician_name': visit.referred_by,
             'date': visit.date,
             'test_name': result.test_name,
             'parameter_name': result.parameter_name,
             'result_value': result.result_value,
             'unit': result.unit,
             'reference_range': result.reference_range,
-            'status': _param_status(result, tpl),
+            'status': _param_status(result, tpl, gender_value),
         })
 
     status = request.args.get('status')
@@ -467,12 +542,74 @@ def get_statistics_results():
 
 # --- REPORT CONTEXT + PDF GENERATION ---
 
+def _build_test_dict(test, results_by_test, templates_by_key, gender, interpretations):
+    """Per-test {'lab_test_id', 'name', 'rows'} dict for the report, or None if it has no
+    saved results yet. Gender-resolves each row's reference range (Unit 5) and classifies
+    it high/low (Unit 6); appends to the shared `interpretations` list as a side effect,
+    matching the original inline-loop behavior this was extracted from."""
+    rows = []
+    for r in results_by_test.get(test.id, []):
+        tpl = templates_by_key.get((test.id, r.parameter_name))
+        ref_low, ref_high, ref_text = _effective_ref_range(tpl, gender)
+        hl = None
+        if r.result_value:
+            try:
+                numeric = float(r.result_value)
+                if ref_low is not None and numeric < ref_low:
+                    hl = 'low'
+                elif ref_high is not None and numeric > ref_high:
+                    hl = 'high'
+            except ValueError:
+                pass
+        rows.append({
+            'name': r.parameter_name,
+            'result_value': r.result_value,
+            'unit': r.unit,
+            'reference_range': ref_text or r.reference_range,
+            'abnormal': r.status == 'abnormal',
+            'hl': hl,
+        })
+        if r.status == 'abnormal' and tpl and tpl.abnormal_note:
+            interpretations.append({'parameter': r.parameter_name, 'note': tpl.abnormal_note})
+    return {'lab_test_id': test.id, 'name': test.name, 'rows': rows} if rows else None
+
+
+def _group_tests_into_pages(visit_id, visit_tests, build_test_dict_fn):
+    """Shared page-grouping logic used by both build_report_context (saved TestResult rows)
+    and build_preview_context (submitted-but-unsaved rows). build_test_dict_fn(test) ->
+    {'lab_test_id', 'name', 'rows'} dict, or None if that test has nothing to show. A visit
+    with any custom VisitReportPage rows uses that page-grouped, user-arranged layout (Unit
+    7); otherwise every booked test flows in booking order on one implicit page, exactly as
+    before this feature existed."""
+    page_rows = VisitReportPage.query.filter_by(visit_id=visit_id).order_by(VisitReportPage.page_number).all()
+    if page_rows:
+        tests_by_page = {}
+        unassigned_tests = []
+        for test, vt in visit_tests:
+            test_dict = build_test_dict_fn(test)
+            if not test_dict:
+                continue
+            (tests_by_page.setdefault(vt.page_number, []) if vt.page_number is not None
+             else unassigned_tests).append(test_dict)
+        report_pages = [
+            {'title': p.title, 'subtitle': p.subtitle, 'tests': tests_by_page.get(p.page_number, [])}
+            for p in page_rows
+        ]
+        if unassigned_tests:
+            report_pages.append({'title': None, 'subtitle': None, 'tests': unassigned_tests})
+        return [p for p in report_pages if p['tests']]
+
+    all_test_dicts = [d for d in (build_test_dict_fn(test) for test, _vt in visit_tests) if d]
+    return [{'title': None, 'subtitle': None, 'tests': all_test_dicts}] if all_test_dicts else []
+
+
 def build_report_context(visit_id):
     """Data needed by both the generated PDF and the public /report/<id> page."""
     visit = PatientVisit.query.get(visit_id)
     if not visit:
         return None
     patient = Client.query.get(visit.patient_id)
+    gender = patient.gender if patient else None
     config = LabConfig.get_config()
 
     results = TestResult.query.filter_by(visit_id=visit.id).all()
@@ -480,30 +617,21 @@ def build_report_context(visit_id):
     for r in results:
         results_by_test.setdefault(r.lab_test_id, []).append(r)
 
-    booked = _booked_tests(visit.id)
+    visit_tests = _booked_visit_tests(visit.id)
     templates_by_key = {}
-    for test in booked:
+    for test, _vt in visit_tests:
         for tpl in TestParameterTemplate.query.filter_by(lab_test_id=test.id).all():
             templates_by_key[(test.id, tpl.name)] = tpl
 
-    tests = []
     interpretations = []
-    for test in booked:
-        rows = []
-        for r in results_by_test.get(test.id, []):
-            tpl = templates_by_key.get((test.id, r.parameter_name))
-            rows.append({
-                'name': r.parameter_name,
-                'method': tpl.method if tpl else None,
-                'result_value': r.result_value,
-                'unit': r.unit,
-                'reference_range': r.reference_range,
-                'abnormal': r.status == 'abnormal',
-            })
-            if r.status == 'abnormal' and tpl and tpl.abnormal_note:
-                interpretations.append({'parameter': r.parameter_name, 'note': tpl.abnormal_note})
-        if rows:
-            tests.append({'name': test.name, 'rows': rows})
+    report_pages = _group_tests_into_pages(
+        visit.id, visit_tests,
+        lambda test: _build_test_dict(test, results_by_test, templates_by_key, gender, interpretations),
+    )
+
+    comments = [{'lab_test_id': test.id, 'test_name': test.name, 'comment': vt.comment}
+                for test, vt in visit_tests if vt.comment]
+    _attach_page_comments(report_pages, comments)
 
     age = None
     if patient and patient.date_of_birth:
@@ -516,142 +644,342 @@ def build_report_context(visit_id):
         'visit': visit,
         'patient': patient,
         'age': age,
-        'tests': tests,
+        'report_pages': report_pages,
         'interpretations': interpretations,
+        'comments': comments,
         'report_date': datetime.utcnow(),
     }
 
 
-def _load_image_flowable(image_ref, max_width):
-    """LabConfig.logo_path/cover_path is either a data: URI (uploaded via Settings) or a
-    static-relative path (the shipped defaults). Returns None rather than raising if it
-    can't be loaded — a missing logo shouldn't block report generation."""
+def _attach_page_comments(report_pages, comments):
+    """Scopes each page's `comments` key (req 3) to only the comments of tests that appear
+    on that page, so a technician's note about a Chemistry test doesn't show up under a
+    Hematology page just because they share a visit. Mutates report_pages in place."""
+    for page in report_pages:
+        page_ids = {t['lab_test_id'] for t in page['tests']}
+        page['comments'] = [c for c in comments if c['lab_test_id'] in page_ids]
+
+
+def build_preview_context(visit_id, entries, comments_map):
+    """Same shape as build_report_context, but sourced from submitted-but-unsaved data —
+    `entries` (identical shape to POST .../results' `results` list) and `comments_map`
+    ({lab_test_id: text}) — instead of querying TestResult/VisitTest.comment. Nothing here
+    is persisted; used only to render a non-destructive preview PDF. VisitReportPage/
+    VisitTest.page_number ARE read from the DB, since a layout the technician already saved
+    via the Organize Report Layout modal is real, intentionally-persisted state."""
+    visit = PatientVisit.query.get(visit_id)
+    if not visit:
+        return None
+    patient = Client.query.get(visit.patient_id)
+    gender = patient.gender if patient else None
+    config = LabConfig.get_config()
+
+    rows_by_test = {}
+    interpretations = []
+    template_cache = {}
+    for entry in entries:
+        result_value = (entry.get('result_value') or '').strip()
+        if not result_value:
+            continue
+        lab_test_id = entry.get('lab_test_id')
+        template_id = entry.get('template_id')
+        if template_id not in template_cache:
+            template_cache[template_id] = TestParameterTemplate.query.get(template_id) if template_id else None
+        template = template_cache[template_id]
+        ref_low, ref_high, ref_text = _effective_ref_range(template, gender)
+        hl = None
+        try:
+            numeric = float(result_value)
+            if ref_low is not None and numeric < ref_low:
+                hl = 'low'
+            elif ref_high is not None and numeric > ref_high:
+                hl = 'high'
+        except ValueError:
+            pass
+        abnormal = hl is not None  # preview approximation of save_results()'s normal/abnormal status
+        row = {
+            'name': entry.get('name', ''),
+            'result_value': result_value,
+            'unit': entry.get('unit'),
+            'reference_range': entry.get('reference_range_text') or ref_text,
+            'abnormal': abnormal,
+            'hl': hl,
+        }
+        rows_by_test.setdefault(lab_test_id, []).append(row)
+        if abnormal and template and template.abnormal_note:
+            interpretations.append({'parameter': row['name'], 'note': template.abnormal_note})
+
+    visit_tests = _booked_visit_tests(visit.id)
+
+    def build_test_dict(test):
+        rows = rows_by_test.get(test.id)
+        return {'lab_test_id': test.id, 'name': test.name, 'rows': rows} if rows else None
+
+    report_pages = _group_tests_into_pages(visit.id, visit_tests, build_test_dict)
+
+    comments_map = comments_map or {}
+    comments = []
+    for test, _vt in visit_tests:
+        text = comments_map.get(str(test.id)) or comments_map.get(test.id)
+        if text:
+            comments.append({'lab_test_id': test.id, 'test_name': test.name, 'comment': text})
+    _attach_page_comments(report_pages, comments)
+
+    age = None
+    if patient and patient.date_of_birth:
+        today = datetime.utcnow().date()
+        dob = patient.date_of_birth
+        age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+
+    return {
+        'config': config,
+        'visit': visit,
+        'patient': patient,
+        'age': age,
+        'report_pages': report_pages,
+        'interpretations': interpretations,
+        'comments': comments,
+        'report_date': datetime.utcnow(),
+    }
+
+
+def _decode_image_bytes(image_ref):
+    """LabConfig.logo_path/cover_path/signature_path is either a data: URI (uploaded via
+    Settings) or a static-relative path (the shipped defaults). Returns None rather than
+    raising if it can't be loaded — a missing image shouldn't block report generation."""
     if not image_ref:
         return None
     try:
         if image_ref.startswith('data:'):
             _, b64data = image_ref.split(',', 1)
-            img_bytes = base64.b64decode(b64data)
-        else:
-            path = os.path.join(STATIC_DIR, image_ref.lstrip('/'))
-            if not os.path.exists(path):
-                return None
-            with open(path, 'rb') as f:
-                img_bytes = f.read()
-
-        pil_img = PILImage.open(BytesIO(img_bytes)).convert('RGBA')
-        ratio = (pil_img.height / pil_img.width) if pil_img.width else 1
-        out_buffer = BytesIO()
-        pil_img.save(out_buffer, format='PNG')
-        out_buffer.seek(0)
-        return RLImage(out_buffer, width=max_width, height=max_width * ratio)
+            return base64.b64decode(b64data)
+        path = os.path.join(STATIC_DIR, image_ref.lstrip('/'))
+        if not os.path.exists(path):
+            return None
+        with open(path, 'rb') as f:
+            return f.read()
     except Exception:
         return None
 
 
-def _make_qr_flowable(url, size=1.2 * inch):
+def _load_image_reader(image_ref):
+    """Returns (ImageReader, pixel_width, pixel_height) for direct canvas.drawImage() use
+    (the report background/signature, drawn once per page via onFirstPage/onLaterPages
+    rather than as a flowable), or None if the image can't be loaded."""
+    img_bytes = _decode_image_bytes(image_ref)
+    if not img_bytes:
+        return None
+    try:
+        pil_img = PILImage.open(BytesIO(img_bytes)).convert('RGBA')
+        buf = BytesIO()
+        pil_img.save(buf, format='PNG')
+        buf.seek(0)
+        return ImageReader(buf), pil_img.width, pil_img.height
+    except Exception:
+        return None
+
+
+def _make_qr_reader(url):
+    """Returns an ImageReader for direct canvas.drawImage() use (the header's QR code is
+    drawn on the canvas now, alongside the rest of the repeating per-page header — a
+    Platypus Image flowable can't be used there), or None if it can't be built."""
     try:
         qr_img = qrcode.make(url)
-        buffer = BytesIO()
-        qr_img.save(buffer, format='PNG')
-        buffer.seek(0)
-        return RLImage(buffer, width=size, height=size)
+        buf = BytesIO()
+        qr_img.save(buf, format='PNG')
+        buf.seek(0)
+        return ImageReader(buf)
     except Exception:
         return None
 
 
-def generate_visit_report_pdf(visit_id, base_url):
-    """Returns (pdf_bytes, filename) or (None, None) if the visit doesn't exist."""
-    ctx = build_report_context(visit_id)
-    if not ctx:
-        return None, None
+def _safe_filename_part(text):
+    return re.sub(r'[^A-Za-z0-9]+', '_', (text or '').strip()).strip('_') or 'patient'
 
+
+def _render_pdf_from_context(ctx, base_url):
+    """Returns (pdf_bytes, filename) from a context dict built by either
+    build_report_context (saved results) or build_preview_context (unsaved preview)."""
     config, visit, patient = ctx['config'], ctx['visit'], ctx['patient']
     styles = getSampleStyleSheet()
     small = ParagraphStyle('Small', parent=styles['Normal'], fontSize=8, textColor=colors.HexColor('#555555'))
-    title_style = ParagraphStyle('LabTitle', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#2d3748'))
-    sub_style = ParagraphStyle('LabSub', parent=styles['Normal'], fontSize=10, textColor=colors.HexColor('#667eea'))
+    cell_style = ParagraphStyle('Cell', parent=styles['Normal'], fontSize=9)
+    page_title_style = ParagraphStyle('PageTitle', parent=styles['Heading2'], textColor=colors.HexColor('#2d3748'))
+    page_sub_style = ParagraphStyle('PageSub', parent=styles['Normal'], fontSize=11, textColor=colors.HexColor('#667eea'))
+
+    PAGE_W, PAGE_H = letter
+    MARGIN = 0.5 * inch
+    # Fixed, generous budget for the repeating header drawn in _page_decorations below —
+    # avoids a chicken-and-egg measure-then-build pass (SimpleDocTemplate needs topMargin
+    # up front). Comfortably covers logo/name row + doctor/tech lines + contact/social +
+    # a 6-line patient info box for realistically-sized branding text; see the plan doc for
+    # the line-height budget this was sized against.
+    TOP_MARGIN = 3.4 * inch
+
+    patient_name = f'{patient.first_name} {patient.last_name}' if patient else (visit.patient_name or '')
+
+    def _page_decorations(canvas_obj, _doc_obj):
+        """Draws everything that must repeat identically on every page: the Settings > Cover
+        background wash, the full header (logo, lab name/subtitle, barcode top-right,
+        doctor/tech credentials, contact/social, patient info box + QR), and the pathologist
+        signature bottom-left."""
+        canvas_obj.saveState()
+
+        # --- Background wash ---
+        bg = _load_image_reader(config.cover_path)
+        if bg:
+            reader, iw, ih = bg
+            scale = min(PAGE_W / iw, PAGE_H / ih)  # contain-fit: shrink to fit within the page, no cropping
+            dw, dh = iw * scale, ih * scale
+            canvas_obj.drawImage(reader, (PAGE_W - dw) / 2, (PAGE_H - dh) / 2, width=dw, height=dh, mask='auto')
+            # Legibility wash — a vivid photo background would otherwise fight the text.
+            canvas_obj.setFillColor(colors.Color(1, 1, 1, alpha=0.85))
+            canvas_obj.rect(0, 0, PAGE_W, PAGE_H, fill=1, stroke=0)
+
+        y = PAGE_H - MARGIN  # top-down cursor
+
+        # --- Row 1: logo + lab name/subtitle (left), barcode (top-right) ---
+        logo = _load_image_reader(config.logo_path)
+        logo_h = 0.55 * inch
+        text_x = MARGIN
+        if logo:
+            reader, iw, ih = logo
+            logo_w = logo_h * iw / ih
+            canvas_obj.drawImage(reader, MARGIN, y - logo_h, width=logo_w, height=logo_h, mask='auto')
+            text_x = MARGIN + logo_w + 10
+
+        canvas_obj.setFont('Helvetica-Bold', 15)
+        canvas_obj.setFillColor(colors.HexColor('#2d3748'))
+        canvas_obj.drawString(text_x, y - 14, config.lab_name or 'Laboratory')
+        if config.lab_subtitle:
+            canvas_obj.setFont('Helvetica', 9)
+            canvas_obj.setFillColor(colors.HexColor('#667eea'))
+            canvas_obj.drawString(text_x, y - 28, config.lab_subtitle)
+
+        barcode = createBarcodeDrawing('Code128', value=visit.visit_id, humanReadable=True, barHeight=12)
+        renderPDF.draw(barcode, canvas_obj, PAGE_W - MARGIN - barcode.width, y - barcode.height)
+
+        y -= logo_h + 10
+
+        # --- Row 2: doctor / tech credentials (two columns) ---
+        doctor_lines = filter(None, [config.lab_director, config.doctor_qualification,
+                                      f'Reg. No. {config.doctor_reg_no}' if config.doctor_reg_no else None])
+        tech_lines = filter(None, [config.tech_name, config.tech_qualification, config.tech_institute])
+        avail_w = (PAGE_W - 2 * MARGIN) / 2 - 5
+        doc_p = Paragraph('<br/>'.join(doctor_lines), small)
+        tech_p = Paragraph('<br/>'.join(tech_lines), small)
+        _, doc_h = doc_p.wrap(avail_w, 100)
+        _, tech_h = tech_p.wrap(avail_w, 100)
+        row_h = max(doc_h, tech_h)
+        doc_p.drawOn(canvas_obj, MARGIN, y - row_h)
+        tech_p.drawOn(canvas_obj, MARGIN + avail_w + 10, y - row_h)
+        y -= row_h + 6
+
+        # --- Row 3: contact / social lines ---
+        contact = ' | '.join(filter(None, [config.lab_address, config.lab_phone, config.lab_email]))
+        if contact:
+            p = Paragraph(contact, small)
+            _, h = p.wrap(PAGE_W - 2 * MARGIN, 20)
+            p.drawOn(canvas_obj, MARGIN, y - h)
+            y -= h + 2
+        social = ' | '.join(filter(None, [config.social_facebook, config.social_instagram, config.social_twitter]))
+        if social:
+            p = Paragraph(social, small)
+            _, h = p.wrap(PAGE_W - 2 * MARGIN, 20)
+            p.drawOn(canvas_obj, MARGIN, y - h)
+            y -= h + 2
+        y -= 8
+
+        # --- Row 4: patient info box + QR ---
+        box_w = PAGE_W - 2 * MARGIN
+        qr_size = 1.0 * inch
+        text_w = box_w - qr_size - 30
+        info_lines = [
+            f'<b>Patient:</b> {patient_name}',
+            f'<b>Report ID:</b> {visit.visit_id}',
+            f"<b>Age/Sex:</b> {ctx['age'] if ctx['age'] is not None else '-'} / {patient.gender if patient else '-'}",
+            f'<b>Physician:</b> {visit.referred_by or "Self"}',
+            f'<b>Collection Date:</b> {visit.date}',
+            f"<b>Report Date:</b> {ctx['report_date'].strftime('%Y-%m-%d %H:%M')}",
+        ]
+        info_p = Paragraph('<br/>'.join(info_lines), styles['Normal'])
+        _, info_h = info_p.wrap(text_w, 200)
+        box_h = info_h + 20
+        canvas_obj.setStrokeColor(colors.HexColor('#cccccc'))
+        canvas_obj.rect(MARGIN, y - box_h, box_w, box_h, fill=0, stroke=1)
+        info_p.drawOn(canvas_obj, MARGIN + 10, y - box_h + 10)
+        qr = _make_qr_reader(f"{base_url.rstrip('/')}/report/{visit.id}")
+        if qr:
+            canvas_obj.drawImage(qr, MARGIN + box_w - qr_size - 10, y - box_h + (box_h - qr_size) / 2,
+                                  width=qr_size, height=qr_size, mask='auto')
+
+        # --- Signature, bottom-left ---
+        sig = _load_image_reader(config.signature_path)
+        if sig:
+            reader, iw, ih = sig
+            sig_w = 1.3 * inch
+            canvas_obj.drawImage(reader, MARGIN, 0.5 * inch, width=sig_w, height=sig_w * ih / iw, mask='auto')
+            canvas_obj.setFont('Helvetica', 7)
+            canvas_obj.setFillColor(colors.black)
+            canvas_obj.drawString(MARGIN, 0.5 * inch - 9,
+                                   config.signature_title or config.tech_name or config.lab_director
+                                   or 'Authorized Signatory')
+
+        canvas_obj.restoreState()
 
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5 * inch, bottomMargin=0.5 * inch)
+    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=TOP_MARGIN, bottomMargin=0.5 * inch)
     elements = []
 
-    # --- Header: logo + name/subtitle, doctor/tech credentials, contact ---
-    logo = _load_image_flowable(config.logo_path, max_width=0.8 * inch)
-    name_block = [Paragraph(config.lab_name or 'Laboratory', title_style)]
-    if config.lab_subtitle:
-        name_block.append(Paragraph(config.lab_subtitle, sub_style))
-    header_table = Table([[logo or '', name_block]], colWidths=[1 * inch, 5.9 * inch])
-    header_table.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'MIDDLE')]))
-    elements.append(header_table)
+    # --- Per-page, per-test result tables, each with only that page's own comments (Unit 7
+    # layout, Unit 6 H/L marks) ---
+    for page_index, page in enumerate(ctx['report_pages']):
+        if page_index > 0:
+            elements.append(PageBreak())
+        if page['title']:
+            elements.append(Paragraph(xml_escape(page['title']), page_title_style))
+        if page['subtitle']:
+            elements.append(Paragraph(xml_escape(page['subtitle']), page_sub_style))
+        for test in page['tests']:
+            elements.append(Paragraph(test['name'].upper(), ParagraphStyle(
+                'TestTitle', parent=styles['Heading3'], textColor=colors.HexColor('#2d3748'))))
+            table_data = [['Investigation', 'Result', 'Ref. Range', 'Unit']]
+            style_commands = [
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#667eea')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#dddddd')),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('PADDING', (0, 0), (-1, -1), 6),
+            ]
+            for row in test['rows']:
+                # High/Low marker (Unit 6) — red "H" / blue "L" next to the value, gender-range-aware.
+                if row['hl'] == 'high':
+                    result_cell = Paragraph(f"{row['result_value'] or '-'} <font color='#c0392b'><b>H</b></font>", cell_style)
+                elif row['hl'] == 'low':
+                    result_cell = Paragraph(f"{row['result_value'] or '-'} <font color='#1d4ed8'><b>L</b></font>", cell_style)
+                else:
+                    result_cell = row['result_value'] or '-'
+                table_data.append([row['name'], result_cell, row['reference_range'] or '-', row['unit'] or '-'])
+            t = Table(table_data, colWidths=[2.6 * inch, 1.5 * inch, 1.5 * inch, 1.2 * inch])
+            t.setStyle(TableStyle(style_commands))
+            elements.append(t)
+            elements.append(Spacer(1, 10))
 
-    doctor_lines = filter(None, [config.lab_director, config.doctor_qualification,
-                                  f'Reg. No. {config.doctor_reg_no}' if config.doctor_reg_no else None])
-    tech_lines = filter(None, [config.tech_name, config.tech_qualification, config.tech_institute])
-    elements.append(Table(
-        [[Paragraph('<br/>'.join(doctor_lines), small), Paragraph('<br/>'.join(tech_lines), small)]],
-        colWidths=[3.45 * inch, 3.45 * inch],
-    ))
+        if page['comments']:
+            lines = [f"<b>{xml_escape(c['test_name'])}:</b> {xml_escape(c['comment'])}" for c in page['comments']]
+            comments_table = Table([[Paragraph(
+                '<b>Comments:</b><br/>' + '<br/>'.join(lines), styles['Normal'])]],
+                colWidths=[6.9 * inch])
+            comments_table.setStyle(TableStyle([
+                ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#cccccc')),
+                ('PADDING', (0, 0), (-1, -1), 10),
+            ]))
+            elements.append(comments_table)
+            elements.append(Spacer(1, 15))
 
-    contact = ' | '.join(filter(None, [config.lab_address, config.lab_phone, config.lab_email]))
-    if contact:
-        elements.append(Paragraph(contact, small))
-    social = ' | '.join(filter(None, [config.social_facebook, config.social_instagram, config.social_twitter]))
-    if social:
-        elements.append(Paragraph(social, small))
-    elements.append(Spacer(1, 10))
-
-    # --- Patient info box + QR ---
-    qr = _make_qr_flowable(f"{base_url.rstrip('/')}/report/{visit.id}")
-    patient_name = f'{patient.first_name} {patient.last_name}' if patient else (visit.patient_name or '')
-    info_lines = [
-        f'<b>Patient:</b> {patient_name}',
-        f'<b>Report ID:</b> {visit.visit_id}',
-        f"<b>Age/Sex:</b> {ctx['age'] if ctx['age'] is not None else '-'} / {patient.gender if patient else '-'}",
-        f'<b>Referred By:</b> {visit.referred_by or "Self"}',
-        f'<b>Collection Date:</b> {visit.date}',
-        f"<b>Report Date:</b> {ctx['report_date'].strftime('%Y-%m-%d %H:%M')}",
-    ]
-    info_table = Table(
-        [[Paragraph('<br/>'.join(info_lines), styles['Normal']), qr or '']],
-        colWidths=[5.5 * inch, 1.4 * inch],
-    )
-    info_table.setStyle(TableStyle([
-        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#cccccc')),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 10),
-        ('TOPPADDING', (0, 0), (-1, -1), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
-    ]))
-    elements.append(info_table)
-    elements.append(Spacer(1, 15))
-
-    # --- Per-test result tables ---
-    for test in ctx['tests']:
-        elements.append(Paragraph(test['name'].upper(), ParagraphStyle(
-            'TestTitle', parent=styles['Heading3'], textColor=colors.HexColor('#2d3748'))))
-        table_data = [['Investigation', 'Result', 'Ref. Range', 'Unit']]
-        style_commands = [
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#667eea')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#dddddd')),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('PADDING', (0, 0), (-1, -1), 6),
-        ]
-        for i, row in enumerate(test['rows'], start=1):
-            name_cell = row['name'] + (f"\n{row['method']}" if row['method'] else '')
-            table_data.append([name_cell, row['result_value'] or '-', row['reference_range'] or '-', row['unit'] or '-'])
-            if row['abnormal']:
-                style_commands.append(('FONTNAME', (1, i), (1, i), 'Helvetica-Bold'))
-                style_commands.append(('TEXTCOLOR', (1, i), (1, i), colors.HexColor('#c0392b')))
-        t = Table(table_data, colWidths=[2.6 * inch, 1.5 * inch, 1.5 * inch, 1.2 * inch])
-        t.setStyle(TableStyle(style_commands))
-        elements.append(t)
-        elements.append(Spacer(1, 10))
-
-    # --- Interpretation ---
+    # --- Interpretation (global — spans every page's abnormal notes) ---
     if ctx['interpretations']:
-        lines = [f"<b>{i['parameter']}:</b> {i['note']}" for i in ctx['interpretations']]
+        lines = [f"<b>{xml_escape(i['parameter'])}:</b> {xml_escape(i['note'])}" for i in ctx['interpretations']]
         interp_table = Table([[Paragraph(
             '<b>Interpretation:</b><br/>' + '<br/>'.join(lines), styles['Normal'])]],
             colWidths=[6.9 * inch])
@@ -662,15 +990,82 @@ def generate_visit_report_pdf(visit_id, base_url):
         elements.append(interp_table)
         elements.append(Spacer(1, 15))
 
-    # --- Barcode + footer ---
-    barcode = createBarcodeDrawing('Code128', value=visit.visit_id, humanReadable=True, barHeight=12)
-    elements.append(barcode)
-    elements.append(Spacer(1, 10))
-
     footer = config.report_footer_note or 'This report is not valid for medical legal purposes.'
     elements.append(Paragraph(footer, small))
 
-    doc.build(elements)
+    doc.build(elements, onFirstPage=_page_decorations, onLaterPages=_page_decorations)
     buffer.seek(0)
-    filename = f"report_{visit.visit_id}.pdf".replace('/', '-')
+    filename = f"report_{_safe_filename_part(patient_name)}_{visit.visit_id}.pdf".replace('/', '-')
     return buffer.read(), filename
+
+
+def generate_visit_report_pdf(visit_id, base_url):
+    """Returns (pdf_bytes, filename) or (None, None) if the visit doesn't exist."""
+    ctx = build_report_context(visit_id)
+    if not ctx:
+        return None, None
+    return _render_pdf_from_context(ctx, base_url)
+
+
+# --- REPORT LAYOUT (per-visit, one-off page/title organization — "Organize Report Layout") ---
+
+@reports_bp.route('/visits/<int:visit_id>/report-layout', methods=['GET'])
+def get_report_layout(visit_id):
+    visit = PatientVisit.query.get(visit_id)
+    if not visit:
+        return jsonify({'error': 'Visit not found'}), 404
+
+    pages = VisitReportPage.query.filter_by(visit_id=visit_id).order_by(VisitReportPage.page_number).all()
+    visit_tests = _booked_visit_tests(visit_id)
+
+    by_page = {}
+    unassigned = []
+    for test, vt in visit_tests:
+        entry = {'lab_test_id': test.id, 'test_name': test.name}
+        if vt.page_number is None:
+            unassigned.append(entry)
+        else:
+            by_page.setdefault(vt.page_number, []).append(entry)
+
+    return jsonify({
+        'has_custom_layout': bool(pages),
+        'pages': [{'page_number': p.page_number, 'title': p.title, 'subtitle': p.subtitle,
+                   'tests': by_page.get(p.page_number, [])} for p in pages],
+        'unassigned_tests': unassigned,
+    }), 200
+
+
+@reports_bp.route('/visits/<int:visit_id>/report-layout', methods=['POST'])
+def save_report_layout(visit_id):
+    visit = PatientVisit.query.get(visit_id)
+    if not visit:
+        return jsonify({'error': 'Visit not found'}), 404
+
+    data = request.json or {}
+    pages = data.get('pages', [])
+
+    VisitReportPage.query.filter_by(visit_id=visit_id).delete()
+    assigned = {}
+    for p in pages:
+        db.session.add(VisitReportPage(
+            visit_id=visit_id,
+            page_number=p['page_number'],
+            title=(p.get('title') or '').strip() or None,
+            subtitle=(p.get('subtitle') or '').strip() or None,
+        ))
+        for lab_test_id in p.get('lab_test_ids', []):
+            assigned[int(lab_test_id)] = p['page_number']
+
+    for vt in VisitTest.query.filter_by(visit_id=visit_id).all():
+        vt.page_number = assigned.get(vt.lab_test_id)
+
+    db.session.commit()
+    return jsonify({'success': True}), 200
+
+
+@reports_bp.route('/visits/<int:visit_id>/report-layout', methods=['DELETE'])
+def clear_report_layout(visit_id):
+    VisitReportPage.query.filter_by(visit_id=visit_id).delete()
+    VisitTest.query.filter_by(visit_id=visit_id).update({VisitTest.page_number: None})
+    db.session.commit()
+    return jsonify({'success': True}), 200

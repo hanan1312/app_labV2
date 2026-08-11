@@ -76,6 +76,36 @@
 
         .re-empty { color: var(--muted); text-align: center; padding: 30px; font-size: 14px; }
 
+        .re-comment {
+            width: 100%; min-height: 60px; margin-top: 14px; padding: 10px 12px;
+            border-radius: 8px; border: 1px solid var(--border); background: rgba(0,0,0,0.25);
+            color: var(--text); font-size: 13px; font-family: inherit; resize: vertical;
+        }
+        .re-comment:focus { outline: none; border-color: var(--teal); background: rgba(0,0,0,0.35); }
+        .re-comment-label { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 14px; }
+
+        .re-toolbar { display: flex; justify-content: flex-end; margin-bottom: 16px; }
+
+        .re-modal-overlay {
+            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+            align-items: center; justify-content: center; z-index: 100; padding: 20px;
+        }
+        .re-modal-overlay.open { display: flex; }
+        .re-modal {
+            background: var(--bg-2); border: 1px solid var(--border); border-radius: 14px;
+            padding: 24px; max-width: 640px; width: 100%; max-height: 85vh; overflow-y: auto;
+            box-shadow: 0 8px 32px 0 rgba(0,0,0,0.5);
+        }
+        .re-modal h2 { margin: 0 0 4px; font-family: 'Space Grotesk', sans-serif; color: var(--text); }
+        .re-modal p.re-hint { margin: 0 0 18px; color: var(--muted); font-size: 13px; }
+        .re-layout-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .re-layout-row span { flex: 1; font-size: 14px; }
+        .re-layout-row select { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: rgba(0,0,0,0.25); color: var(--text); }
+        .re-page-card { background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-top: 14px; }
+        .re-page-card label { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
+        .re-page-card input { width: 100%; padding: 8px 10px; margin-bottom: 10px; border-radius: 8px; border: 1px solid var(--border); background: rgba(0,0,0,0.25); color: var(--text); font-family: inherit; }
+        .re-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+
         .re-btn {
             display: inline-flex; align-items: center; gap: 6px;
             border: 0; border-radius: 10px; padding: 11px 20px;
@@ -103,7 +133,25 @@
         <h1>Enter Results</h1>
         <p id="re-subtitle">Loading…</p>
     </div>
+    <div class="re-toolbar">
+        <button class="re-btn re-btn-ghost" onclick="openLayoutEditor()">🗂️ Organize Report Layout</button>
+    </div>
     <div id="re-content"></div>
+
+    <div class="re-modal-overlay" id="re-layout-overlay">
+        <div class="re-modal">
+            <h2>Organize Report Layout</h2>
+            <p class="re-hint">Choose which report page each test appears on, and give pages an optional title/subtitle. Leave everything as "Default" to use the normal single-flow layout.</p>
+            <div id="re-layout-rows"></div>
+            <div id="re-layout-pages"></div>
+            <div class="re-modal-actions">
+                <button class="re-btn re-btn-ghost" onclick="resetLayout()">Reset to Default</button>
+                <button class="re-btn re-btn-ghost" onclick="closeLayoutEditor()">Cancel</button>
+                <button class="re-btn re-btn-primary" onclick="saveLayout()">Save Layout</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/js/config.js"></script>
     <script src="/js/results_entry.js"></script>
 </body>

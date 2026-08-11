@@ -142,10 +142,18 @@
                         <p style="margin-bottom: 20px; color: var(--muted);" data-i18n="modals.book_test_desc">Select the tests to demand for this appointment:</p>
                         
                         <form id="book-test-form" onsubmit="submitTestBooking(event)">
-                            
+
+                            <div id="panel-quick-select" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 15px;"></div>
+
                             <div id="dynamic-test-checkboxes" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 25px; background: rgba(0,0,0,0.2); padding: 20px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); max-height: 300px; overflow-y: auto;">
                             </div>
-            
+
+                            <div style="margin-bottom: 15px;">
+                                <label style="color: var(--muted); font-size: 12px; text-transform: uppercase; display: block; margin-bottom: 5px;">Referring Physician</label>
+                                <input type="text" id="book-physician-name" list="physician-datalist" placeholder="e.g. Dr. Jane Doe" style="width: 100%;">
+                                <datalist id="physician-datalist"></datalist>
+                            </div>
+
                             <div style="text-align: right;">
                                 <button type="button" class="btn ghost" onclick="closeBookTestModal()" data-i18n="actions.cancel">Cancel</button>
                                 <button type="submit" class="btn" style="background: var(--teal); color: #04121d; margin-left: 10px;" data-i18n="actions.submit_booking">Submit Booking</button>
@@ -350,12 +358,22 @@
                             </div>
                         </div>
             
-                        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0, 200, 150, 0.1); padding: 15px; border-radius: 8px; border: 1px solid rgba(0, 200, 150, 0.3); margin-bottom: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0, 200, 150, 0.1); padding: 15px; border-radius: 8px; border: 1px solid rgba(0, 200, 150, 0.3); margin-bottom: 15px;">
                             <span style="font-size: 18px; color: var(--text);" data-i18n="checkout.total_due">Total Due:</span>
                             <span style="font-size: 24px; color: var(--ok); font-weight: bold;">EGP <span id="pay-final-total">0.00</span></span>
                         </div>
-            
-                        <button class="btn" style="width: 100%; background: var(--teal); color: #04121d; font-size: 16px; padding: 12px;" onclick="processTransaction()">💳 <span data-i18n="checkout.pay_now">Pay Now</span></button>
+
+                        <div style="margin-bottom: 15px;">
+                            <label style="font-size: 12px; color: var(--muted); display: block; margin-bottom: 5px;">Amount Paid Now</label>
+                            <input type="number" step="0.01" id="pay-amount-paid" style="width: 100%;" oninput="updateRemainingFees()">
+                        </div>
+
+                        <div id="pay-remaining-row" style="display: none; justify-content: space-between; align-items: center; background: rgba(239, 107, 107, 0.1); padding: 12px 15px; border-radius: 8px; border: 1px solid rgba(239, 107, 107, 0.3); margin-bottom: 20px;">
+                            <span style="font-size: 14px; color: var(--danger);">🚩 Remaining Fees:</span>
+                            <span style="font-size: 18px; color: var(--danger); font-weight: bold;">EGP <span id="pay-remaining-fees">0.00</span></span>
+                        </div>
+
+                        <button class="btn" style="width: 100%; background: var(--teal); color: #04121d; font-size: 16px; padding: 12px; margin-top: 20px;" onclick="processTransaction()">💳 <span data-i18n="checkout.pay_now">Pay Now</span></button>
                     </div>
                 </div>
             
@@ -385,13 +403,29 @@
                             <p><span data-i18n="receipt.subtotal">Subtotal</span>: <span id="rec-subtotal"></span> EGP</p>
                             <p><span data-i18n="receipt.discount">Discount</span>: <span id="rec-discount"></span>%</p>
                             <p><span data-i18n="receipt.method">Method</span>: <span id="rec-method"></span></p>
+                            <p id="rec-due-row" style="display: none;">Total Due: <span id="rec-due"></span> EGP</p>
                             <h3 style="margin-top: 10px;"><span data-i18n="receipt.total_paid">TOTAL PAID:</span> <span id="rec-total"></span> EGP</h3>
+                            <p id="rec-remaining-row" style="display: none; color: #c0392b; font-weight: bold;">🚩 Remaining: <span id="rec-remaining"></span> EGP</p>
                         </div>
                         
                         <button class="btn" style="margin-top: 25px; width: 100%; background: #000; color: #fff;" onclick="closeReceiptModal()" data-i18n="receipt.close">Close Window</button>
                     </div>
                 </div>
 
+                <div id="complete-payment-modal" class="modal">
+                    <div class="modal-content glass-panel" style="max-width: 420px;">
+                        <span class="close" onclick="closeCompletePaymentModal()">&times;</span>
+                        <h2 style="margin-bottom: 15px; color: var(--text);">Complete Payment</h2>
+                        <div style="background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                            <p><strong>Patient:</strong> <span id="cp-patient-name"></span></p>
+                            <p><strong>Trans ID:</strong> <span id="cp-trans-id" style="color: var(--teal);"></span></p>
+                            <p><strong>Remaining Fees:</strong> <span id="cp-remaining-fees" style="color: var(--danger); font-weight: bold;"></span> EGP</p>
+                        </div>
+                        <label style="font-size: 12px; color: var(--muted); display: block; margin-bottom: 5px;">Amount Received Now</label>
+                        <input type="number" step="0.01" id="cp-amount-input" style="width: 100%; margin-bottom: 20px;">
+                        <button class="btn" style="width: 100%; background: var(--teal); color: #04121d; font-size: 15px; padding: 10px;" onclick="submitCompletePayment()">✅ Confirm Payment</button>
+                    </div>
+                </div>
 
                 <div id="test-modal" class="modal">
                     <div class="modal-content glass-panel" style="max-width: 450px;">
@@ -434,8 +468,8 @@
                                         <th data-i18n="forms.param_name">Name</th>
                                         <th data-i18n="forms.param_unit">Unit</th>
                                         <th data-i18n="forms.param_method">Method</th>
-                                        <th data-i18n="forms.param_ref_low">Ref. Low</th>
-                                        <th data-i18n="forms.param_ref_high">Ref. High</th>
+                                        <th title="Different reference range for male/female">M/F</th>
+                                        <th data-i18n="forms.param_ref_low">Ref. Low / High</th>
                                         <th data-i18n="forms.param_ref_text">Ref. Range (display)</th>
                                         <th data-i18n="forms.param_abnormal_note">Abnormal Interpretation</th>
                                         <th style="width: 40px;"></th>
@@ -452,6 +486,32 @@
                         <div style="text-align: right; margin-top: 20px;">
                             <button type="button" class="btn ghost" onclick="closeParametersModal()" data-i18n="actions.cancel">Cancel</button>
                             <button type="button" class="btn" style="background: var(--teal); color: #04121d; margin-left: 10px;" onclick="saveParameterRows()" data-i18n="actions.save">Save</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="panels-modal" class="modal">
+                    <div class="modal-content glass-panel" style="max-width: 700px;">
+                        <span class="close" onclick="closePanelsModal()">&times;</span>
+                        <h2 style="margin-bottom: 5px; color: var(--text);">Test Panels</h2>
+                        <p style="color: var(--muted); font-size: 12px; margin-bottom: 15px;">Bundle tests that are commonly ordered together (e.g. "Lipid Profile") for quick-select while booking. Purely a shortcut — the technician can still add/remove individual tests afterward.</p>
+
+                        <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 200px;">
+                                <h4 style="color: var(--muted); margin-bottom: 8px; font-size: 12px; text-transform: uppercase;">Existing Panels</h4>
+                                <div id="panels-list" style="max-height: 320px; overflow-y: auto;"></div>
+                                <button type="button" class="btn ghost" style="margin-top: 12px; width: 100%;" onclick="startNewPanel()">+ New Panel</button>
+                            </div>
+                            <div style="flex: 1.4; min-width: 260px; background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px;">
+                                <label style="color: var(--muted); font-size: 12px; text-transform: uppercase; display: block; margin-bottom: 5px;">Panel Name</label>
+                                <input type="text" id="panel-name-input" placeholder="e.g. Lipid Profile" style="width: 100%; margin-bottom: 15px;">
+
+                                <label style="color: var(--muted); font-size: 12px; text-transform: uppercase; display: block; margin-bottom: 5px;">Member Tests</label>
+                                <div id="panel-test-checkboxes" style="max-height: 220px; overflow-y: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 6px;"></div>
+
+                                <div style="text-align: right; margin-top: 15px;">
+                                    <button type="button" class="btn" style="background: var(--teal); color: #04121d;" onclick="savePanel()">Save Panel</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -578,6 +638,11 @@
                                 <option value="pending">Pending</option>
                                 <option value="collected">Collected</option>
                             </select>
+                        </div>
+
+                        <div style="width: 160px;">
+                            <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; display: block;">Physician</label>
+                            <input type="text" id="dash-filter-physician" list="physician-datalist" onkeyup="onDashboardFilterChange()" placeholder="Any" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
                         </div>
 
                         <label style="display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: var(--text); font-size: 13px; cursor: pointer; white-space: nowrap;">
@@ -855,6 +920,10 @@
                                 <option value="abnormal" data-i18n="stats.status_abnormal">Abnormal</option>
                             </select>
                         </div>
+                        <div style="width: 160px;">
+                            <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; display: block;">Physician</label>
+                            <input type="text" id="stats-filter-physician" list="physician-datalist" onkeyup="searchStatistics()" placeholder="Any" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                        </div>
                     </div>
 
                     <div id="statistics-list"></div>
@@ -873,7 +942,9 @@
                             <button class="btn ghost" style="border-color: #3b82f6; color: #3b82f6;" onclick="document.getElementById('import-excel-file').click()">
                                 📤 Import Excel
                             </button>
-                            
+
+                            <button class="btn ghost" style="border-color: var(--teal); color: var(--teal);" onclick="openPanelsModal()">🗂 Manage Panels</button>
+
                             <button class="btn" style="background: var(--teal); color: #04121d; font-weight: bold;" onclick="openTestModal()">+ <span data-i18n="modals.add_test">Add New Test</span></button>
                         </div>
                     </div>
@@ -1012,8 +1083,15 @@
                         </div>
                         
                         <button class="btn ghost" onclick="document.getElementById('trans-filter-date-from').value=''; document.getElementById('trans-filter-date-to').value=''; filterTransactions()" data-i18n="history.clear_filter">Clear Filter</button>
+
+                        <label style="display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border-radius: 4px; border: 1px solid rgba(239, 107, 107, 0.3); background: rgba(239, 107, 107, 0.1); color: var(--danger); font-size: 13px; cursor: pointer; white-space: nowrap;">
+                            <input type="checkbox" id="trans-filter-unpaid" onchange="filterTransactions()">
+                            🚩 Show Unpaid Only
+                        </label>
                     </div>
-                
+
+                    <div id="trans-remaining-summary" style="display: none; margin-bottom: 15px; padding: 12px 18px; border-radius: 8px; background: rgba(239, 107, 107, 0.1); border: 1px solid rgba(239, 107, 107, 0.3); color: var(--danger); font-weight: 600;"></div>
+
                     <div id="transactions-list-container"></div>
                 </div>
 
@@ -1281,6 +1359,19 @@
                                 </div>
                                 <label for="logo-upload" class="btn ghost" style="cursor: pointer; margin-top: 10px; font-size: 12px; padding: 6px 12px;" data-i18n="settings.change_logo">Change Logo</label>
                                 <input type="file" id="logo-upload" accept="image/*" style="display: none;" onchange="previewImage(this, 'settings-logo-preview')">
+                            </div>
+
+                            <div style="text-align: center; margin-bottom: 40px;">
+                                <div class="logo-preview-wrapper">
+                                    <img id="settings-signature-preview" src="https://via.placeholder.com/150x60?text=Signature" alt="Pathologist Signature">
+                                </div>
+                                <p style="font-size: 11px; color: var(--muted); margin: 6px 0 0;">Shown at the bottom-left of every generated report.</p>
+                                <label for="signature-upload" class="btn ghost" style="cursor: pointer; margin-top: 10px; font-size: 12px; padding: 6px 12px;" data-i18n="settings.change_signature">Change Signature</label>
+                                <input type="file" id="signature-upload" accept="image/*" style="display: none;" onchange="previewImage(this, 'settings-signature-preview')">
+                                <div style="max-width: 280px; margin: 12px auto 0;">
+                                    <label style="font-weight: bold; margin-bottom: 5px; display: block; color: var(--muted); font-size: 12px;">Signature Title</label>
+                                    <input type="text" id="setting-signature-title" placeholder="e.g. Consultant Pathologist" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                                </div>
                             </div>
 
                             <div style="margin-bottom: 0;">

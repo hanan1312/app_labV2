@@ -1034,10 +1034,15 @@ function refreshAfterResultsEntry() {
             if (!data) return;
             allVisits = data;
 
+            // The KPI badges (#count-total/#count-pending/#count-finished/#count-tests) stay
+            // visible above the drill-down table at all times, so they need updateDashboard()
+            // regardless of whether a drill-down is currently open — these are NOT mutually
+            // exclusive with re-rendering the drill-down table itself.
+            if (document.getElementById('dashboard')?.classList.contains('active') && typeof updateDashboard === 'function') {
+                updateDashboard();
+            }
             if (currentDashboardTableType && typeof renderDashboardTable === 'function') {
                 renderDashboardTable();
-            } else if (document.getElementById('dashboard')?.classList.contains('active') && typeof updateDashboard === 'function') {
-                updateDashboard();
             }
             if (document.getElementById('pending-samples')?.classList.contains('active') && typeof searchPendingSamples === 'function') {
                 searchPendingSamples();
@@ -1443,7 +1448,7 @@ function onDashboardFilterChange() {
 // server-side now (GET /api/visits?status=...). "Total" (which hybrids in never-booked
 // clients as placeholder rows) and "Tests" (a small ~20-row aggregate) are left as they
 // were, still built from the already-loaded allVisits/clients — see docs/sumV2.md.
-async function fetchDashboardVisitsPage(type, searchTerm, filterFrom, filterTo, filterStatus) {
+async function fetchDashboardVisitsPage(type, searchTerm, filterFrom, filterTo, filterStatus, filterPhysician) {
     const container = document.getElementById('dashboard-table-container');
     const title = type === 'pending' ? 'List of Pending Appointments' : 'List of Finished (Collected) Appointments';
     const status = filterStatus || (type === 'pending' ? 'pending' : 'collected');
@@ -1452,6 +1457,7 @@ async function fetchDashboardVisitsPage(type, searchTerm, filterFrom, filterTo, 
     if (searchTerm) params.set('search', searchTerm);
     if (filterFrom) params.set('date_from', filterFrom);
     if (filterTo) params.set('date_to', filterTo);
+    if (filterPhysician) params.set('physician', filterPhysician);
 
     let data = { items: [], page: 1, per_page: 100, total_pages: 1, total: 0 };
     try {
@@ -1462,7 +1468,7 @@ async function fetchDashboardVisitsPage(type, searchTerm, filterFrom, filterTo, 
     }
 
     container.innerHTML = buildAdminTableHTML(
-        title, ['#', 'Date Created', 'Trans ID', 'Patient', 'Phone', 'Tests', 'Status', 'Action'],
+        title, ['#', 'Date Created', 'Trans ID', 'Patient', 'Phone', 'Physician', 'Tests', 'Status', 'Action'],
         data.items || [], type, true, 'dashboard-table-pagination',
         (data.page - 1) * (data.per_page || 100)
     );
@@ -1483,9 +1489,10 @@ function renderDashboardTable() {
     // red "X/Y" counter badge: some but not all booked tests have results entered).
     const unfinishedOnly = document.getElementById('dash-filter-unfinished')?.checked || false;
     const filterStatus = unfinishedOnly ? 'partially_delivered' : document.getElementById('dash-filter-status').value;
+    const filterPhysician = document.getElementById('dash-filter-physician')?.value.trim() || '';
 
     if (type === 'pending' || type === 'finished') {
-        fetchDashboardVisitsPage(type, searchTerm, filterFrom, filterTo, filterStatus);
+        fetchDashboardVisitsPage(type, searchTerm, filterFrom, filterTo, filterStatus, filterPhysician);
         return;
     }
 
@@ -1504,6 +1511,7 @@ function renderDashboardTable() {
             visit_id: `2024${String(c.id).padStart(4, '0')}`,
             patient_name: `${c.first_name} ${c.last_name}`,
             phone: c.phone || 'N/A',
+            physician_name: '',
             tests: ['None'], // Placeholder so the table doesn't break
             status: 'registered'
         }));
@@ -1518,6 +1526,11 @@ function renderDashboardTable() {
         // Filter by Status
         if (filterStatus) {
             filteredData = filteredData.filter(v => v.status === filterStatus);
+        }
+
+        // Filter by Physician
+        if (filterPhysician) {
+            filteredData = filteredData.filter(v => (v.physician_name || '').toLowerCase().includes(filterPhysician.toLowerCase()));
         }
 
         // Search
@@ -1545,7 +1558,7 @@ function renderDashboardTable() {
         const pageData = filteredData.slice(startIndex, startIndex + perPage);
 
         html = buildAdminTableHTML(
-            title, ['#', 'Date Created', 'Trans ID', 'Patient', 'Phone', 'Tests', 'Status', 'Action'],
+            title, ['#', 'Date Created', 'Trans ID', 'Patient', 'Phone', 'Physician', 'Tests', 'Status', 'Action'],
             pageData, type, true, 'dashboard-table-pagination', startIndex
         );
         container.innerHTML = html;
@@ -1789,6 +1802,7 @@ function buildAdminTableHTML(title, headers, data, type, clickable = false, pagi
                         <td><strong>${row.visit_id}</strong></td>
                         <td>${row.patient_name}</td>
                         <td style="color: var(--muted);">${row.phone || 'N/A'}</td>
+                        <td style="color: var(--muted);">${row.physician_name && row.physician_name !== 'Self' ? row.physician_name : '-'}</td>
                         <td>${row.tests.join(', ')}</td>
                         <td style="text-align: center;"><span style="position: relative; display: inline-block;"><span class="pill ${pillClass}">${badgeText}</span>${countBadge}</span></td>
                         <td class="no-row-click" style="text-align: right;">${actionBtn}</td>
@@ -3009,6 +3023,7 @@ async function fetchStatisticsPage() {
     const filterTo = document.getElementById('stats-filter-date-to')?.value || '';
     const filterGender = document.getElementById('stats-filter-gender')?.value || '';
     const filterStatus = document.getElementById('stats-filter-status')?.value || '';
+    const filterPhysician = document.getElementById('stats-filter-physician')?.value.trim() || '';
 
     const params = new URLSearchParams({ page: statsPage, per_page: 100 });
     if (searchTerm) params.set('search', searchTerm);
@@ -3016,6 +3031,7 @@ async function fetchStatisticsPage() {
     if (filterTo) params.set('date_to', filterTo);
     if (filterGender) params.set('gender', filterGender);
     if (filterStatus) params.set('status', filterStatus);
+    if (filterPhysician) params.set('physician', filterPhysician);
 
     let data = { items: [], page: 1, per_page: 100, total_pages: 1, total: 0 };
     try {
@@ -3046,6 +3062,7 @@ function renderStatisticsTable(rows) {
             <td style="color: var(--muted);">${formatForDisplay(r.date)}</td>
             <td>${r.patient_name || 'N/A'}</td>
             <td><span class="pill ghost">${r.gender || '-'}</span></td>
+            <td style="color: var(--muted);">${r.physician_name && r.physician_name !== 'Self' ? r.physician_name : '-'}</td>
             <td>${r.test_name || ''}</td>
             <td>${r.parameter_name || ''}</td>
             <td>${r.result_value || ''} ${r.unit || ''}</td>
@@ -3066,7 +3083,7 @@ function renderStatisticsTable(rows) {
             <table>
                 <thead>
                     <tr>
-                        <th>#</th><th>Date</th><th>Patient</th><th>Gender</th><th>Test</th>
+                        <th>#</th><th>Date</th><th>Patient</th><th>Gender</th><th>Physician</th><th>Test</th>
                         <th>Parameter</th><th>Result</th><th>Ref. Range</th><th>Status</th>
                     </tr>
                 </thead>
@@ -3547,27 +3564,45 @@ function renderParameterRows() {
                oninput="currentParameterRows[${currentParameterRows.indexOf(row)}].${field} = this.value"
                style="width: 100%; min-width: 70px;">
     `;
+    const miniCell = (row, field, label) => `
+        <div style="display:flex; align-items:center; gap:4px; margin-bottom:4px;">
+            <span style="font-size:10px; color:var(--muted); width:20px;">${label}</span>
+            ${cell(row, field, 'number')}
+        </div>
+    `;
 
-    tbody.innerHTML = currentParameterRows.map((row) => `
+    tbody.innerHTML = currentParameterRows.map((row) => {
+        const idx = currentParameterRows.indexOf(row);
+        const rangeCell = row.gender_specific
+            ? miniCell(row, 'ref_low_male', 'M ↓') + miniCell(row, 'ref_high_male', 'M ↑')
+              + miniCell(row, 'ref_low_female', 'F ↓') + miniCell(row, 'ref_high_female', 'F ↑')
+            : `<div style="display:flex; gap:4px;">${cell(row, 'ref_low', 'number')}${cell(row, 'ref_high', 'number')}</div>`;
+        return `
         <tr>
             <td>${cell(row, 'name')}</td>
             <td>${cell(row, 'unit')}</td>
             <td>${cell(row, 'method')}</td>
-            <td>${cell(row, 'ref_low', 'number')}</td>
-            <td>${cell(row, 'ref_high', 'number')}</td>
+            <td style="text-align: center;">
+                <input type="checkbox" ${row.gender_specific ? 'checked' : ''}
+                       title="Different reference range for male/female"
+                       onchange="currentParameterRows[${idx}].gender_specific = this.checked; renderParameterRows()">
+            </td>
+            <td style="min-width: 150px;">${rangeCell}</td>
             <td>${cell(row, 'reference_range_text')}</td>
             <td>${cell(row, 'abnormal_note')}</td>
             <td style="text-align: center;">
-                <span style="cursor: pointer; color: var(--danger);" onclick="removeParameterRow(${currentParameterRows.indexOf(row)})">&times;</span>
+                <span style="cursor: pointer; color: var(--danger);" onclick="removeParameterRow(${idx})">&times;</span>
             </td>
         </tr>
-    `).join('') || `<tr><td colspan="8" style="text-align: center; color: var(--muted); padding: 15px;">No parameters yet — click "+ Add Parameter" below.</td></tr>`;
+        `;
+    }).join('') || `<tr><td colspan="8" style="text-align: center; color: var(--muted); padding: 15px;">No parameters yet — click "+ Add Parameter" below.</td></tr>`;
 }
 
 function addParameterRow() {
     currentParameterRows.push({
         id: null, name: '', unit: '', method: '',
         ref_low: '', ref_high: '', reference_range_text: '', abnormal_note: '',
+        gender_specific: false, ref_low_male: '', ref_high_male: '', ref_low_female: '', ref_high_female: '',
     });
     renderParameterRows();
 }
@@ -3588,14 +3623,20 @@ async function saveParameterRows() {
         for (const row of currentParameterRows) {
             if (!row.name || !row.name.trim()) continue; // skip blank rows silently
 
+            const numOrNull = (v) => (v === '' || v == null ? null : parseFloat(v));
             const payload = {
                 name: row.name,
                 unit: row.unit || null,
                 method: row.method || null,
-                ref_low: row.ref_low === '' || row.ref_low == null ? null : parseFloat(row.ref_low),
-                ref_high: row.ref_high === '' || row.ref_high == null ? null : parseFloat(row.ref_high),
+                ref_low: numOrNull(row.ref_low),
+                ref_high: numOrNull(row.ref_high),
                 reference_range_text: row.reference_range_text || null,
                 abnormal_note: row.abnormal_note || null,
+                gender_specific: !!row.gender_specific,
+                ref_low_male: numOrNull(row.ref_low_male),
+                ref_high_male: numOrNull(row.ref_high_male),
+                ref_low_female: numOrNull(row.ref_low_female),
+                ref_high_female: numOrNull(row.ref_high_female),
             };
 
             if (row.id) {
@@ -3649,28 +3690,161 @@ async function saveTestRecord(event) {
 
 // Fetch tests when the page loads
 document.addEventListener('DOMContentLoaded', fetchLabTests);
+
+// --- TEST PANELS (Test List > "Manage Panels") ---
+let availablePanels = [];
+let editingPanelId = null;
+
+async function fetchPanels() {
+    try {
+        const response = await apiFetch('/api/panels');
+        availablePanels = response.ok ? await response.json() : [];
+    } catch (error) {
+        availablePanels = [];
+    }
+}
+document.addEventListener('DOMContentLoaded', fetchPanels);
+
+// --- PHYSICIAN AUTOCOMPLETE (booking / dashboard / statistics) ---
+async function fetchPhysicians() {
+    try {
+        const response = await apiFetch('/api/physicians');
+        const names = response.ok ? await response.json() : [];
+        const datalist = document.getElementById('physician-datalist');
+        if (datalist) datalist.innerHTML = names.map(n => `<option value="${n.replace(/"/g, '&quot;')}">`).join('');
+    } catch (error) {
+        console.error('Failed to load physicians:', error);
+    }
+}
+document.addEventListener('DOMContentLoaded', fetchPhysicians);
+
+function openPanelsModal() {
+    startNewPanel();
+    renderPanelsList();
+    document.getElementById('panels-modal').style.display = 'block';
+}
+
+function closePanelsModal() {
+    document.getElementById('panels-modal').style.display = 'none';
+}
+
+function renderPanelsList() {
+    const container = document.getElementById('panels-list');
+    if (!availablePanels.length) {
+        container.innerHTML = '<p style="color: var(--muted); font-size: 13px;">No panels yet — create one on the right.</p>';
+        return;
+    }
+    container.innerHTML = availablePanels.map(p => `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+            <span>${p.name} <span style="color: var(--muted); font-size: 11px;">(${p.tests.length} tests)</span></span>
+            <div>
+                <span style="cursor: pointer; margin-right: 10px;" onclick="editPanel(${p.id})" title="Edit">✏️</span>
+                <span style="cursor: pointer; color: var(--danger);" onclick="deletePanel(${p.id})" title="Delete">🗑️</span>
+            </div>
+        </div>
+    `).join('');
+}
+
+function startNewPanel() {
+    editingPanelId = null;
+    document.getElementById('panel-name-input').value = '';
+    renderPanelTestCheckboxes([]);
+}
+
+function editPanel(panelId) {
+    const panel = availablePanels.find(p => p.id === panelId);
+    if (!panel) return;
+    editingPanelId = panelId;
+    document.getElementById('panel-name-input').value = panel.name;
+    renderPanelTestCheckboxes(panel.lab_test_ids);
+}
+
+function renderPanelTestCheckboxes(selectedIds) {
+    const container = document.getElementById('panel-test-checkboxes');
+    container.innerHTML = availableTests.map(t => `
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+            <input type="checkbox" class="panel-test-checkbox" value="${t.id}" ${selectedIds.includes(t.id) ? 'checked' : ''}>
+            ${t.name}
+        </label>
+    `).join('');
+}
+
+async function savePanel() {
+    const name = document.getElementById('panel-name-input').value.trim();
+    if (!name) return showAlert('Panel name is required.', 'warn');
+    const lab_test_ids = Array.from(document.querySelectorAll('.panel-test-checkbox:checked')).map(cb => parseInt(cb.value, 10));
+    if (lab_test_ids.length === 0) return showAlert('Select at least one test for the panel.', 'warn');
+
+    try {
+        const url = editingPanelId ? `/api/panels/${editingPanelId}` : '/api/panels';
+        const method = editingPanelId ? 'PUT' : 'POST';
+        const response = await apiFetch(url, { method, body: JSON.stringify({ name, lab_test_ids }) });
+        if (!response.ok) throw new Error('Server rejected panel save');
+        await fetchPanels();
+        renderPanelsList();
+        startNewPanel();
+        showAlert('Panel saved!', 'success');
+    } catch (error) {
+        showAlert('Error saving panel: ' + error.message, 'error');
+    }
+}
+
+async function deletePanel(panelId) {
+    if (!confirm('Delete this panel? This only removes the booking shortcut — no existing visits or tests are affected.')) return;
+    try {
+        await apiFetch(`/api/panels/${panelId}`, { method: 'DELETE' });
+        await fetchPanels();
+        renderPanelsList();
+        if (editingPanelId === panelId) startNewPanel();
+    } catch (error) {
+        showAlert('Error deleting panel: ' + error.message, 'error');
+    }
+}
+
 // 4. OVERRIDE: Dynamic "Book Test" Modal
 // This overrides the old function to generate checkboxes from our live array!
 function openBookTestModal(clientId) {
     currentBookingClientId = clientId;
-    
+
     // Get the container in your modal where the checkboxes go
     const container = document.getElementById('dynamic-test-checkboxes');
-    
+
     if (availableTests.length === 0) {
         container.innerHTML = '<p style="color: var(--danger);">No tests available in directory. Please add tests in the "Test List" tab first.</p>';
     } else {
         // Dynamically create a checkbox for every test in your database
         container.innerHTML = availableTests.map(t => `
         <label style="display: flex; align-items: center; cursor: pointer; color: var(--text); padding: 8px; border-radius: 4px;">
-            <input type="checkbox" class="test-checkbox" value="${t.name}" data-price="${t.price}" data-sample="${t.sample_type || 'Unspecified'}" style="margin-right: 10px; width: auto;"> 
+            <input type="checkbox" class="test-checkbox" value="${t.name}" data-price="${t.price}" data-sample="${t.sample_type || 'Unspecified'}" style="margin-right: 10px; width: auto;">
             <span style="flex: 1;">${t.name} <span style="font-size:11px; color:var(--muted)">(${t.sample_type || 'Unspecified'})</span></span>
             <span style="color: var(--ok); font-size: 12px;">${parseFloat(t.price).toFixed(2)} EGP</span>
         </label>
     `).join('');
     }
-    
+
+    const panelContainer = document.getElementById('panel-quick-select');
+    if (panelContainer) {
+        panelContainer.innerHTML = (availablePanels || []).map(p => `
+            <button type="button" class="btn ghost panel-chip" style="padding: 6px 12px; font-size: 12px;" onclick="applyPanelQuickSelect(${p.id})">🗂 ${p.name}</button>
+        `).join('');
+    }
+
+    const physicianInput = document.getElementById('book-physician-name');
+    if (physicianInput) physicianInput.value = '';
+
     document.getElementById('book-test-modal').style.display = 'block';
+}
+
+// Toggle-checks every test that belongs to a panel — check all if any are unchecked, else
+// uncheck all. The technician can still adjust individual checkboxes afterward.
+function applyPanelQuickSelect(panelId) {
+    const panel = (availablePanels || []).find(p => p.id === panelId);
+    if (!panel) return;
+    const boxes = panel.tests
+        .map(t => document.querySelector(`#dynamic-test-checkboxes .test-checkbox[value="${t.name}"]`))
+        .filter(Boolean);
+    const allChecked = boxes.length > 0 && boxes.every(b => b.checked);
+    boxes.forEach(b => { b.checked = !allChecked; });
 }
 
 // Call loadTestList when the tab is clicked (Assuming you have a tab switcher in your script)
@@ -3732,6 +3906,7 @@ function submitTestBooking(event) {
         patient_id: patient.id,
         patient_name: `${patient.first_name} ${patient.last_name}`,
         patient_phone: patient.phone || 'N/A',
+        physician_name: document.getElementById('book-physician-name')?.value.trim() || 'Self',
         date: `${dateString} ${timeString}`,
         tests: testsList,
         sampleTypes: samplesList,
@@ -3778,14 +3953,33 @@ function populatePaymentModal() {
 function calculateFinalPayment() {
     const discountPercent = parseInt(document.getElementById('pay-discount').value);
     const subtotal = pendingTransaction.total_price;
-    
+
     const discountAmount = subtotal * (discountPercent / 100);
     const finalTotal = subtotal - discountAmount;
-    
+
     pendingTransaction.discount_percentage = discountPercent;
     pendingTransaction.final_payment = finalTotal;
-    
+
     document.getElementById('pay-final-total').textContent = finalTotal.toFixed(2);
+
+    // Amount Paid defaults to fully paid whenever the total changes (e.g. discount edited);
+    // updateRemainingFees() reconciles remaining_fees / the red-flag row from this.
+    document.getElementById('pay-amount-paid').value = finalTotal.toFixed(2);
+    updateRemainingFees();
+}
+
+// Remaining Fees = Total Due - Amount Paid (clamped to >= 0), recomputed live as the
+// technician edits how much was actually tendered. Shown as a red flag row only when a
+// balance remains — mirrors the treatment in the receipt and Transaction History.
+function updateRemainingFees() {
+    const amountPaid = parseFloat(document.getElementById('pay-amount-paid').value) || 0;
+    const remaining = Math.max(0, pendingTransaction.final_payment - amountPaid);
+
+    pendingTransaction.amount_paid = amountPaid;
+    pendingTransaction.remaining_fees = remaining;
+
+    document.getElementById('pay-remaining-fees').textContent = remaining.toFixed(2);
+    document.getElementById('pay-remaining-row').style.display = remaining > 0 ? 'flex' : 'none';
 }
 
 // 4. Submit "Pay Now" to Python
@@ -3824,8 +4018,9 @@ async function processTransaction() {
                 patient_name: pendingTransaction.patient_name,
                 date: pendingTransaction.date,
                 tests: pendingTransaction.tests,
-                status: 'pending', 
-                phone: pendingTransaction.patient_phone
+                status: 'pending',
+                phone: pendingTransaction.patient_phone,
+                physician_name: pendingTransaction.physician_name
             });
         }
         
@@ -3841,7 +4036,9 @@ async function processTransaction() {
                 total_price: pendingTransaction.total_price,
                 discount_percentage: pendingTransaction.discount_percentage,
                 payment_method: pendingTransaction.payment_method,
-                final_payment: pendingTransaction.final_payment
+                final_payment: pendingTransaction.final_payment,
+                amount_paid: pendingTransaction.amount_paid,
+                remaining_fees: pendingTransaction.remaining_fees || 0
             });
         }
         
@@ -3857,7 +4054,8 @@ async function processTransaction() {
         // ========================================================
 
         // Now when this runs, it will redraw the tables using our updated arrays!
-        await loadInitialData(); 
+        await loadInitialData();
+        fetchPhysicians(); // pick up a newly-typed physician name for future autocomplete
 
     } catch (error) {
         console.error("Transaction Error:", error);
@@ -4000,7 +4198,17 @@ function generateReceipt() {
     document.getElementById('rec-subtotal').textContent = pendingTransaction.total_price.toFixed(2);
     document.getElementById('rec-discount').textContent = pendingTransaction.discount_percentage;
     document.getElementById('rec-method').textContent = pendingTransaction.payment_method;
-    document.getElementById('rec-total').textContent = pendingTransaction.final_payment.toFixed(2);
+
+    // TOTAL PAID reflects what was actually tendered now (amount_paid), not the discounted
+    // total due — those only differ when a balance is left remaining.
+    const amountPaid = pendingTransaction.amount_paid ?? pendingTransaction.final_payment;
+    const remaining = pendingTransaction.remaining_fees || 0;
+    document.getElementById('rec-total').textContent = amountPaid.toFixed(2);
+
+    document.getElementById('rec-due-row').style.display = remaining > 0 ? 'block' : 'none';
+    document.getElementById('rec-due').textContent = pendingTransaction.final_payment.toFixed(2);
+    document.getElementById('rec-remaining-row').style.display = remaining > 0 ? 'block' : 'none';
+    document.getElementById('rec-remaining').textContent = remaining.toFixed(2);
 
     document.getElementById('receipt-modal').style.display = 'block';
 }
@@ -4064,6 +4272,8 @@ async function saveSettings() {
         msg_phone: document.getElementById('setting-msg-phone').value,
         logo_path: document.getElementById('settings-logo-preview').src,
         cover_path: document.getElementById('settings-cover-preview').src,
+        signature_path: document.getElementById('settings-signature-preview').src,
+        signature_title: document.getElementById('setting-signature-title').value,
         lab_director: document.getElementById('setting-lab-director').value,
         doctor_qualification: document.getElementById('setting-doctor-qualification').value,
         doctor_reg_no: document.getElementById('setting-doctor-reg-no').value,
@@ -4138,6 +4348,17 @@ async function applyGlobalSettings() {
             if (sidebarLogo) sidebarLogo.src = logoUrl;
             if (settingsPreview) settingsPreview.src = logoUrl;
         }
+        // 1b. Apply Pathologist Signature (shown bottom-left of generated reports)
+        if (settings.signature_path) {
+            const signaturePreview = document.getElementById('settings-signature-preview');
+            const isSigBase64 = settings.signature_path.startsWith('data:');
+            const signatureUrl = isSigBase64 ? settings.signature_path : `${settings.signature_path}?t=${timestamp}`;
+            if (signaturePreview) signaturePreview.src = signatureUrl;
+        }
+        if (settings.signature_title) {
+            const signatureTitleInput = document.getElementById('setting-signature-title');
+            if (signatureTitleInput) signatureTitleInput.value = settings.signature_title;
+        }
         if (settings.theme) {
             localStorage.setItem('theme', settings.theme);
             
@@ -4174,7 +4395,7 @@ async function applyGlobalSettings() {
             const coverUrl = isBase64 ? settings.cover_path : `${settings.cover_path}?t=${timestamp}`;
         
             document.body.style.backgroundImage = `linear-gradient(to bottom, rgba(30, 41, 59, 0.65), rgba(15, 23, 42, 0.85)), url('${coverUrl}')`;
-            document.body.style.backgroundSize = 'cover';
+            document.body.style.backgroundSize = 'contain'; // shrink to fit the screen instead of cropping to fill it
             document.body.style.backgroundPosition = 'center';
             document.body.style.backgroundAttachment = 'fixed';
             document.body.style.backgroundRepeat = 'no-repeat';
@@ -4314,12 +4535,14 @@ async function fetchTransactionsHistoryPage() {
 
     const filterFrom = document.getElementById('trans-filter-date-from').value;
     const filterTo = document.getElementById('trans-filter-date-to').value;
+    const unpaidOnly = document.getElementById('trans-filter-unpaid')?.checked || false;
 
     const params = new URLSearchParams({ page: transactionsHistoryPage, per_page: 100 });
     if (filterFrom) params.set('date_from', filterFrom);
     if (filterTo) params.set('date_to', filterTo);
+    if (unpaidOnly) params.set('unpaid_only', 'true');
 
-    let data = { items: [], page: 1, per_page: 100, total_pages: 1, total: 0 };
+    let data = { items: [], page: 1, per_page: 100, total_pages: 1, total: 0, total_remaining: 0 };
     try {
         const response = await apiFetch(`/api/transactions?${params.toString()}`);
         if (response.ok) data = await response.json();
@@ -4327,13 +4550,31 @@ async function fetchTransactionsHistoryPage() {
         console.error('Failed to load transactions:', error);
     }
 
+    const summary = document.getElementById('trans-remaining-summary');
+    if (summary) {
+        const totalRemaining = data.total_remaining || 0;
+        if (totalRemaining > 0) {
+            summary.style.display = 'block';
+            summary.textContent = `🚩 Total Remaining to Collect: ${totalRemaining.toFixed(2)} EGP`;
+        } else {
+            summary.style.display = 'none';
+        }
+    }
+
     const filtered = data.items || [];
+    lastFetchedTransactions = filtered; // for openCompletePaymentModal() to look up by id
     if (filtered.length === 0) {
-        container.innerHTML = '<div class="glass-panel" style="padding: 30px; text-align: center; color: var(--muted);">No transactions found for this date.</div>';
+        container.innerHTML = `<div class="glass-panel" style="padding: 30px; text-align: center; color: var(--muted);">${unpaidOnly ? 'No unpaid transactions found.' : 'No transactions found for this date.'}</div>`;
         return;
     }
 
-    let rows = filtered.map(t => `
+    let rows = filtered.map(t => {
+        const remaining = t.remaining_fees || 0;
+        const remainingCell = remaining > 0
+            ? `<span class="pill danger">🚩 ${remaining.toFixed(2)} EGP owed</span>
+               <button class="btn ghost" style="padding: 4px 10px; font-size: 11px; margin-left: 6px;" onclick="openCompletePaymentModal(${t.id})">💰 Complete Payment</button>`
+            : `<span class="pill ok">Fully Paid</span>`;
+        return `
         <tr>
             <td style="color: var(--muted);">${formatForDisplay(t.date)}</td>
             <td><strong>${t.transaction_id}</strong></td>
@@ -4341,9 +4582,11 @@ async function fetchTransactionsHistoryPage() {
             <td style="color: var(--muted); font-size: 12px;">${t.tests.join(', ')}</td>
             <td>${t.payment_method}</td>
             <td style="color: var(--warn);">${t.discount_percentage}%</td>
-            <td style="color: var(--ok); font-weight: bold; text-align: right;">${t.final_payment.toFixed(2)} EGP</td>
+            <td style="color: var(--ok); font-weight: bold; text-align: right;">${(t.amount_paid ?? t.final_payment).toFixed(2)} EGP</td>
+            <td style="text-align: right;">${remainingCell}</td>
         </tr>
-    `).join('');
+    `;
+    }).join('');
 
     container.innerHTML = `
         <div class="table-container glass-panel">
@@ -4356,7 +4599,8 @@ async function fetchTransactionsHistoryPage() {
                         <th>Tests Included</th>
                         <th>Method</th>
                         <th>Discount</th>
-                        <th style="text-align: right;">Final Paid</th>
+                        <th style="text-align: right;">Paid</th>
+                        <th style="text-align: right;">Remaining</th>
                     </tr>
                 </thead>
                 <tbody>${rows}</tbody>
@@ -4365,6 +4609,51 @@ async function fetchTransactionsHistoryPage() {
         <div id="transactions-history-pagination"></div>
     `;
     renderPaginationControls('transactions-history-pagination', data, 'goToTransactionsHistoryPage');
+}
+
+// --- COMPLETE PAYMENT (settle an outstanding balance from Transaction History) ---
+let lastFetchedTransactions = [];
+let completePaymentTransactionId = null;
+
+function openCompletePaymentModal(transactionId) {
+    const t = lastFetchedTransactions.find(row => row.id === transactionId);
+    if (!t) return;
+    completePaymentTransactionId = transactionId;
+
+    const remaining = t.remaining_fees || 0;
+    document.getElementById('cp-patient-name').textContent = t.patient_name;
+    document.getElementById('cp-trans-id').textContent = t.transaction_id;
+    document.getElementById('cp-remaining-fees').textContent = remaining.toFixed(2);
+    document.getElementById('cp-amount-input').value = remaining.toFixed(2);
+
+    document.getElementById('complete-payment-modal').style.display = 'block';
+}
+
+function closeCompletePaymentModal() {
+    document.getElementById('complete-payment-modal').style.display = 'none';
+    completePaymentTransactionId = null;
+}
+
+async function submitCompletePayment() {
+    const amount = parseFloat(document.getElementById('cp-amount-input').value);
+    if (!amount || amount <= 0) {
+        showAlert('Enter a valid amount.', 'warn');
+        return;
+    }
+
+    try {
+        const response = await apiFetch(`/api/transactions/${completePaymentTransactionId}/payment`, {
+            method: 'PUT',
+            body: JSON.stringify({ amount }),
+        });
+        if (!response.ok) throw new Error('Server rejected payment update');
+
+        closeCompletePaymentModal();
+        showAlert('Payment recorded!', 'success');
+        fetchTransactionsHistoryPage(); // re-fetch so the flag/columns update immediately
+    } catch (error) {
+        showAlert('Error recording payment: ' + error.message, 'error');
+    }
 }
 
 // 3. Financial Dashboard Calculations

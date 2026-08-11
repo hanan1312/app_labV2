@@ -17,6 +17,11 @@ function escapeAttr(value) {
     return (value ?? '').toString().replace(/"/g, '&quot;');
 }
 
+function escapeHtml(value) {
+    return (value ?? '').toString()
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 async function loadSchema() {
     try {
         const response = await apiFetch(`/api/visits/${visitId}/results-schema`);
@@ -80,21 +85,30 @@ function render() {
                     </thead>
                     <tbody>${rows}</tbody>
                 </table>
+                <label class="re-comment-label" for="re-comment-${testIndex}">Comment (shown in the report footer)</label>
+                <textarea id="re-comment-${testIndex}" class="re-comment" placeholder="Optional note from the technician about this test...">${escapeHtml(test.comment)}</textarea>
             </div>
         `;
     }).join('');
 
     content.innerHTML = cards + `
         <div class="re-actions">
+            <button class="re-btn re-btn-ghost" onclick="previewReport()">
+                👁️ Preview Report
+            </button>
             <button class="re-btn re-btn-primary" onclick="saveResults()">
-                💾 Save &amp; Generate Report
+                💾 Save &amp; Finalize
             </button>
         </div>
+        <div id="re-preview-panel"></div>
     `;
 }
 
-async function saveResults() {
+// Shared by previewReport() (non-destructive) and saveResults() (the real save) — same
+// {results, comments} shape the backend expects for both /results/preview and /results.
+function collectFormData() {
     const results = [];
+    const comments = {};
     schema.tests.forEach((test, testIndex) => {
         test.parameters.forEach((param, paramIndex) => {
             const input = document.getElementById(`re-input-${testIndex}-${paramIndex}`);
@@ -110,12 +124,54 @@ async function saveResults() {
                 result_value: value,
             });
         });
+
+        const commentInput = document.getElementById(`re-comment-${testIndex}`);
+        const commentValue = commentInput ? commentInput.value.trim() : '';
+        if (commentValue) comments[test.lab_test_id] = commentValue;
     });
+    return { results, comments };
+}
+
+// Non-destructive: renders a preview of exactly what Save would produce right now, without
+// writing anything to the database, changing the visit's status, or sending any message.
+// Re-invoked automatically after saving a report layout so the preview reflects it
+// immediately (see saveLayout() below).
+async function previewReport() {
+    const panel = document.getElementById('re-preview-panel');
+    if (!panel) return; // not rendered yet (e.g. called before the form loaded)
+    panel.innerHTML = '<p class="re-empty" style="padding: 10px 0;">Generating preview…</p>';
+
+    try {
+        const response = await apiFetch(`/api/visits/${visitId}/results/preview`, {
+            method: 'POST',
+            body: JSON.stringify(collectFormData()),
+        });
+        if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            panel.innerHTML = `<p class="re-empty" style="padding: 10px 0;">Could not generate preview: ${escapeHtml(body.error || 'unknown error')}</p>`;
+            return;
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        panel.innerHTML = `
+            <div class="re-preview-bar">
+                <strong style="color: var(--teal);">Preview — not saved yet</strong>
+                <button class="re-btn re-btn-ghost" onclick="document.getElementById('re-preview-panel').innerHTML = ''">✕ Close Preview</button>
+            </div>
+            <iframe class="re-preview-frame" src="${url}"></iframe>
+        `;
+    } catch (error) {
+        panel.innerHTML = `<p class="re-empty" style="padding: 10px 0;">Error generating preview: ${escapeHtml(error.message)}</p>`;
+    }
+}
+
+async function saveResults() {
+    const { results, comments } = collectFormData();
 
     try {
         const response = await apiFetch(`/api/visits/${visitId}/results`, {
             method: 'POST',
-            body: JSON.stringify({ results }),
+            body: JSON.stringify({ results, comments }),
         });
         const body = await response.json();
         if (!response.ok || !body.success) {
@@ -227,6 +283,125 @@ function showSuccess(body, messagingResult) {
         </div>
         <iframe id="re-pdf-frame" class="re-preview-frame" src="/${reportUrl}"></iframe>
     `;
+}
+
+// --- REPORT LAYOUT EDITOR ("Organize Report Layout") ---
+// Per-visit, one-off arrangement — not a reusable template. layoutState mirrors what
+// gets POSTed: which page (or null = unassigned/default) each test sits on, plus each
+// page's optional title/subtitle.
+let layoutState = { pageOf: {}, pages: {} }; // pageOf: {lab_test_id: pageNumber|null}, pages: {pageNumber: {title, subtitle}}
+
+async function openLayoutEditor() {
+    if (!schema || !schema.tests.length) {
+        alert('No tests booked for this visit yet.');
+        return;
+    }
+    try {
+        const response = await apiFetch(`/api/visits/${visitId}/report-layout`);
+        const layout = response.ok ? await response.json() : { pages: [], unassigned_tests: [] };
+
+        layoutState = { pageOf: {}, pages: {} };
+        (layout.pages || []).forEach(p => {
+            layoutState.pages[p.page_number] = { title: p.title || '', subtitle: p.subtitle || '' };
+            (p.tests || []).forEach(t => { layoutState.pageOf[t.lab_test_id] = p.page_number; });
+        });
+    } catch (error) {
+        layoutState = { pageOf: {}, pages: {} };
+    }
+    renderLayoutEditor();
+    document.getElementById('re-layout-overlay').classList.add('open');
+}
+
+function closeLayoutEditor() {
+    document.getElementById('re-layout-overlay').classList.remove('open');
+}
+
+function usedPageNumbers() {
+    const nums = new Set(Object.values(layoutState.pageOf).filter(n => n !== null && n !== undefined));
+    Object.keys(layoutState.pages).forEach(n => nums.add(parseInt(n, 10)));
+    return Array.from(nums).sort((a, b) => a - b);
+}
+
+function renderLayoutEditor() {
+    const pages = usedPageNumbers();
+
+    const rows = schema.tests.map(test => {
+        const current = layoutState.pageOf[test.lab_test_id];
+        const options = ['<option value="">Unassigned</option>']
+            .concat(pages.map(n => `<option value="${n}" ${current === n ? 'selected' : ''}>Page ${n}</option>`))
+            .concat(['<option value="__new__">+ New Page</option>']);
+        return `
+            <div class="re-layout-row">
+                <span>${escapeHtml(test.test_name)}</span>
+                <select onchange="assignTestPage(${test.lab_test_id}, this.value)">${options.join('')}</select>
+            </div>
+        `;
+    }).join('');
+    document.getElementById('re-layout-rows').innerHTML = rows;
+
+    const pageCards = pages.map(n => {
+        const p = layoutState.pages[n] || { title: '', subtitle: '' };
+        return `
+            <div class="re-page-card">
+                <label>Page ${n} Title</label>
+                <input type="text" value="${escapeAttr(p.title)}" oninput="updatePageField(${n}, 'title', this.value)" placeholder="e.g. Hematology">
+                <label>Page ${n} Subtitle</label>
+                <input type="text" value="${escapeAttr(p.subtitle)}" oninput="updatePageField(${n}, 'subtitle', this.value)" placeholder="Optional">
+            </div>
+        `;
+    }).join('');
+    document.getElementById('re-layout-pages').innerHTML = pageCards;
+}
+
+function assignTestPage(labTestId, value) {
+    if (value === '__new__') {
+        const nextPage = usedPageNumbers().reduce((max, n) => Math.max(max, n), 0) + 1;
+        layoutState.pageOf[labTestId] = nextPage;
+        layoutState.pages[nextPage] = { title: '', subtitle: '' };
+    } else if (value === '') {
+        layoutState.pageOf[labTestId] = null;
+    } else {
+        layoutState.pageOf[labTestId] = parseInt(value, 10);
+    }
+    renderLayoutEditor();
+}
+
+function updatePageField(pageNumber, field, value) {
+    if (!layoutState.pages[pageNumber]) layoutState.pages[pageNumber] = { title: '', subtitle: '' };
+    layoutState.pages[pageNumber][field] = value;
+}
+
+async function saveLayout() {
+    const pages = usedPageNumbers().map(n => ({
+        page_number: n,
+        title: (layoutState.pages[n] || {}).title || '',
+        subtitle: (layoutState.pages[n] || {}).subtitle || '',
+        lab_test_ids: Object.entries(layoutState.pageOf)
+            .filter(([, pageNum]) => pageNum === n)
+            .map(([labTestId]) => parseInt(labTestId, 10)),
+    }));
+
+    try {
+        const response = await apiFetch(`/api/visits/${visitId}/report-layout`, {
+            method: 'POST',
+            body: JSON.stringify({ pages }),
+        });
+        if (!response.ok) throw new Error('Server rejected layout save');
+        closeLayoutEditor();
+        previewReport(); // "after organise another preview" — reflect the new layout immediately
+    } catch (error) {
+        alert('Error saving report layout: ' + error.message);
+    }
+}
+
+async function resetLayout() {
+    try {
+        await apiFetch(`/api/visits/${visitId}/report-layout`, { method: 'DELETE' });
+        layoutState = { pageOf: {}, pages: {} };
+        renderLayoutEditor();
+    } catch (error) {
+        alert('Error resetting report layout: ' + error.message);
+    }
 }
 
 function printReport() {
