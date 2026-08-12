@@ -9,7 +9,7 @@ from flask import Blueprint, request, jsonify, current_app, Response
 
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
+from reportlab.lib.units import inch, cm
 from reportlab.lib import colors
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
@@ -806,23 +806,84 @@ def _render_pdf_from_context(ctx, base_url):
     cell_style = ParagraphStyle('Cell', parent=styles['Normal'], fontSize=9)
     page_title_style = ParagraphStyle('PageTitle', parent=styles['Heading2'], textColor=colors.HexColor('#2d3748'))
     page_sub_style = ParagraphStyle('PageSub', parent=styles['Normal'], fontSize=11, textColor=colors.HexColor('#667eea'))
+    test_title_style = ParagraphStyle('TestTitle', parent=styles['Heading3'], textColor=colors.HexColor('#2d3748'))
 
     PAGE_W, PAGE_H = letter
     MARGIN = 0.5 * inch
-    # Fixed, generous budget for the repeating header drawn in _page_decorations below —
-    # avoids a chicken-and-egg measure-then-build pass (SimpleDocTemplate needs topMargin
-    # up front). Comfortably covers logo/name row + doctor/tech lines + contact/social +
-    # a 6-line patient info box for realistically-sized branding text; see the plan doc for
-    # the line-height budget this was sized against.
-    TOP_MARGIN = 3.4 * inch
+    GAP = 1 * cm  # the requested clearance: 1cm after the header, 1cm before the signature/footer
 
     patient_name = f'{patient.first_name} {patient.last_name}' if patient else (visit.patient_name or '')
+
+    # --- Precompute the repeating header's exact layout ONCE (Paragraph.wrap() is a pure
+    # layout calculation — no canvas needed — so the same Paragraph objects and heights
+    # computed here are reused for both the topMargin calculation below and the actual
+    # per-page drawing in _page_decorations, instead of measuring it twice with two
+    # independently-maintained copies of the same logic). ---
+    logo = _load_image_reader(config.logo_path)
+    LOGO_H = 0.55 * inch
+    logo_w = (LOGO_H * logo[1] / logo[2]) if logo else 0
+    text_x = MARGIN + (logo_w + 10 if logo else 0)
+    ROW1_H = LOGO_H + 10
+
+    doctor_lines = filter(None, [config.lab_director, config.doctor_qualification,
+                                  f'Reg. No. {config.doctor_reg_no}' if config.doctor_reg_no else None])
+    tech_lines = filter(None, [config.tech_name, config.tech_qualification, config.tech_institute])
+    avail_w = (PAGE_W - 2 * MARGIN) / 2 - 5
+    doc_p = Paragraph('<br/>'.join(doctor_lines), small)
+    tech_p = Paragraph('<br/>'.join(tech_lines), small)
+    _, doc_h = doc_p.wrap(avail_w, 200)
+    _, tech_h = tech_p.wrap(avail_w, 200)
+    ROW2_H = max(doc_h, tech_h) + 6
+
+    contact = ' | '.join(filter(None, [config.lab_address, config.lab_phone, config.lab_email]))
+    contact_p = Paragraph(contact, small) if contact else None
+    contact_h = 0
+    if contact_p:
+        _, contact_h = contact_p.wrap(PAGE_W - 2 * MARGIN, 40)
+        contact_h += 2
+    social = ' | '.join(filter(None, [config.social_facebook, config.social_instagram, config.social_twitter]))
+    social_p = Paragraph(social, small) if social else None
+    social_h = 0
+    if social_p:
+        _, social_h = social_p.wrap(PAGE_W - 2 * MARGIN, 40)
+        social_h += 2
+    ROW3_H = contact_h + social_h + 8
+
+    box_w = PAGE_W - 2 * MARGIN
+    qr_size = 1.0 * inch
+    text_w = box_w - qr_size - 30
+    info_lines = [
+        f'<b>Patient:</b> {patient_name}',
+        f'<b>Report ID:</b> {visit.visit_id}',
+        f"<b>Age/Sex:</b> {ctx['age'] if ctx['age'] is not None else '-'} / {patient.gender if patient else '-'}",
+        f'<b>Physician:</b> {visit.referred_by or "Self"}',
+        f'<b>Collection Date:</b> {visit.date}',
+        f"<b>Report Date:</b> {ctx['report_date'].strftime('%Y-%m-%d %H:%M')}",
+    ]
+    info_p = Paragraph('<br/>'.join(info_lines), styles['Normal'])
+    _, info_h = info_p.wrap(text_w, 300)
+    ROW4_H = info_h + 20  # patient info box height (20 = top+bottom padding)
+
+    # The drawing cursor in _page_decorations starts at PAGE_H - MARGIN (not PAGE_H), so the
+    # header actually consumes MARGIN + HEADER_H from the top before its bottom edge — the
+    # frame's topMargin needs that same MARGIN accounted for, or the requested GAP silently
+    # shrinks by a full MARGIN's worth (was the bug here: previously only HEADER_H + GAP).
+    HEADER_H = ROW1_H + ROW2_H + ROW3_H + ROW4_H
+    TOP_MARGIN = MARGIN + HEADER_H + GAP
+
+    # Signature box is a fixed, bounded area (contain-fit, like the cover background) rather
+    # than a fixed-width/unconstrained-height image — an unusually tall/narrow signature
+    # upload used to be able to grow past this area and collide with the report body.
+    SIG_Y = 0.5 * inch
+    SIG_BOX_W = 1.3 * inch
+    SIG_BOX_H = 0.55 * inch
+    BOTTOM_MARGIN = SIG_Y + SIG_BOX_H + GAP
 
     def _page_decorations(canvas_obj, _doc_obj):
         """Draws everything that must repeat identically on every page: the Settings > Cover
         background wash, the full header (logo, lab name/subtitle, barcode top-right,
         doctor/tech credentials, contact/social, patient info box + QR), and the pathologist
-        signature bottom-left."""
+        signature bottom-left — reusing the exact Paragraph objects/heights computed above."""
         canvas_obj.saveState()
 
         # --- Background wash ---
@@ -839,14 +900,9 @@ def _render_pdf_from_context(ctx, base_url):
         y = PAGE_H - MARGIN  # top-down cursor
 
         # --- Row 1: logo + lab name/subtitle (left), barcode (top-right) ---
-        logo = _load_image_reader(config.logo_path)
-        logo_h = 0.55 * inch
-        text_x = MARGIN
         if logo:
-            reader, iw, ih = logo
-            logo_w = logo_h * iw / ih
-            canvas_obj.drawImage(reader, MARGIN, y - logo_h, width=logo_w, height=logo_h, mask='auto')
-            text_x = MARGIN + logo_w + 10
+            reader, _iw, _ih = logo
+            canvas_obj.drawImage(reader, MARGIN, y - LOGO_H, width=logo_w, height=LOGO_H, mask='auto')
 
         canvas_obj.setFont('Helvetica-Bold', 15)
         canvas_obj.setFillColor(colors.HexColor('#2d3748'))
@@ -859,52 +915,25 @@ def _render_pdf_from_context(ctx, base_url):
         barcode = createBarcodeDrawing('Code128', value=visit.visit_id, humanReadable=True, barHeight=12)
         renderPDF.draw(barcode, canvas_obj, PAGE_W - MARGIN - barcode.width, y - barcode.height)
 
-        y -= logo_h + 10
+        y -= ROW1_H
 
         # --- Row 2: doctor / tech credentials (two columns) ---
-        doctor_lines = filter(None, [config.lab_director, config.doctor_qualification,
-                                      f'Reg. No. {config.doctor_reg_no}' if config.doctor_reg_no else None])
-        tech_lines = filter(None, [config.tech_name, config.tech_qualification, config.tech_institute])
-        avail_w = (PAGE_W - 2 * MARGIN) / 2 - 5
-        doc_p = Paragraph('<br/>'.join(doctor_lines), small)
-        tech_p = Paragraph('<br/>'.join(tech_lines), small)
-        _, doc_h = doc_p.wrap(avail_w, 100)
-        _, tech_h = tech_p.wrap(avail_w, 100)
-        row_h = max(doc_h, tech_h)
-        doc_p.drawOn(canvas_obj, MARGIN, y - row_h)
-        tech_p.drawOn(canvas_obj, MARGIN + avail_w + 10, y - row_h)
-        y -= row_h + 6
+        row2_h = ROW2_H - 6
+        doc_p.drawOn(canvas_obj, MARGIN, y - row2_h)
+        tech_p.drawOn(canvas_obj, MARGIN + avail_w + 10, y - row2_h)
+        y -= ROW2_H
 
         # --- Row 3: contact / social lines ---
-        contact = ' | '.join(filter(None, [config.lab_address, config.lab_phone, config.lab_email]))
-        if contact:
-            p = Paragraph(contact, small)
-            _, h = p.wrap(PAGE_W - 2 * MARGIN, 20)
-            p.drawOn(canvas_obj, MARGIN, y - h)
-            y -= h + 2
-        social = ' | '.join(filter(None, [config.social_facebook, config.social_instagram, config.social_twitter]))
-        if social:
-            p = Paragraph(social, small)
-            _, h = p.wrap(PAGE_W - 2 * MARGIN, 20)
-            p.drawOn(canvas_obj, MARGIN, y - h)
-            y -= h + 2
+        if contact_p:
+            contact_p.drawOn(canvas_obj, MARGIN, y - (contact_h - 2))
+            y -= contact_h
+        if social_p:
+            social_p.drawOn(canvas_obj, MARGIN, y - (social_h - 2))
+            y -= social_h
         y -= 8
 
         # --- Row 4: patient info box + QR ---
-        box_w = PAGE_W - 2 * MARGIN
-        qr_size = 1.0 * inch
-        text_w = box_w - qr_size - 30
-        info_lines = [
-            f'<b>Patient:</b> {patient_name}',
-            f'<b>Report ID:</b> {visit.visit_id}',
-            f"<b>Age/Sex:</b> {ctx['age'] if ctx['age'] is not None else '-'} / {patient.gender if patient else '-'}",
-            f'<b>Physician:</b> {visit.referred_by or "Self"}',
-            f'<b>Collection Date:</b> {visit.date}',
-            f"<b>Report Date:</b> {ctx['report_date'].strftime('%Y-%m-%d %H:%M')}",
-        ]
-        info_p = Paragraph('<br/>'.join(info_lines), styles['Normal'])
-        _, info_h = info_p.wrap(text_w, 200)
-        box_h = info_h + 20
+        box_h = ROW4_H
         canvas_obj.setStrokeColor(colors.HexColor('#cccccc'))
         canvas_obj.rect(MARGIN, y - box_h, box_w, box_h, fill=0, stroke=1)
         info_p.drawOn(canvas_obj, MARGIN + 10, y - box_h + 10)
@@ -913,22 +942,27 @@ def _render_pdf_from_context(ctx, base_url):
             canvas_obj.drawImage(qr, MARGIN + box_w - qr_size - 10, y - box_h + (box_h - qr_size) / 2,
                                   width=qr_size, height=qr_size, mask='auto')
 
-        # --- Signature, bottom-left ---
+        # --- Signature, bottom-left — contain-fit within a fixed SIG_BOX_W x SIG_BOX_H box ---
         sig = _load_image_reader(config.signature_path)
         if sig:
             reader, iw, ih = sig
-            sig_w = 1.3 * inch
-            canvas_obj.drawImage(reader, MARGIN, 0.5 * inch, width=sig_w, height=sig_w * ih / iw, mask='auto')
+            sig_scale = min(SIG_BOX_W / iw, SIG_BOX_H / ih)
+            sig_draw_w, sig_draw_h = iw * sig_scale, ih * sig_scale
+            canvas_obj.drawImage(reader, MARGIN, SIG_Y, width=sig_draw_w, height=sig_draw_h, mask='auto')
             canvas_obj.setFont('Helvetica', 7)
             canvas_obj.setFillColor(colors.black)
-            canvas_obj.drawString(MARGIN, 0.5 * inch - 9,
+            canvas_obj.drawString(MARGIN, SIG_Y - 9,
                                    config.signature_title or config.tech_name or config.lab_director
                                    or 'Authorized Signatory')
 
         canvas_obj.restoreState()
 
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=TOP_MARGIN, bottomMargin=0.5 * inch)
+    doc = SimpleDocTemplate(
+        buffer, pagesize=letter,
+        leftMargin=MARGIN, rightMargin=MARGIN,  # was left at ReportLab's 1" default, narrower
+        topMargin=TOP_MARGIN, bottomMargin=BOTTOM_MARGIN,  # than the 6.8"/6.9"-wide tables below need
+    )
     elements = []
 
     # --- Per-page, per-test result tables, each with only that page's own comments (Unit 7
@@ -941,8 +975,7 @@ def _render_pdf_from_context(ctx, base_url):
         if page['subtitle']:
             elements.append(Paragraph(xml_escape(page['subtitle']), page_sub_style))
         for test in page['tests']:
-            elements.append(Paragraph(test['name'].upper(), ParagraphStyle(
-                'TestTitle', parent=styles['Heading3'], textColor=colors.HexColor('#2d3748'))))
+            elements.append(Paragraph(test['name'].upper(), test_title_style))
             table_data = [['Investigation', 'Result', 'Ref. Range', 'Unit']]
             style_commands = [
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#667eea')),
