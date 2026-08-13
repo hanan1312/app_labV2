@@ -176,6 +176,32 @@ EOF
 
 echo "--> Wrote /etc/systemd/system/lab_python_port.service and lab_node_port.service"
 
+# Without this, python_out.log/python_err.log/node_out.log/node_err.log grow forever —
+# StandardOutput=append: has no built-in size cap (unlike journald), and this app's own
+# traffic (a presence heartbeat every ~30s per logged-in user, plus routine request/print
+# logging) is enough to fill a disk over weeks/months, which then makes every DB write fail
+# with "database or disk is full" (SQLite needs free space for its journal even for a tiny
+# write) — indistinguishable from an application bug until you check `df -h`.
+#
+# copytruncate (not the default create/rename strategy) is required here specifically
+# because these services hold their log file open for their entire lifetime
+# (StandardOutput=append:, not journald) — a rename-based rotation would leave them writing
+# forever into the old, now-unlisted file while logrotate's newly-created file stays empty.
+# copytruncate copies the current content out, then truncates the original in place, so the
+# already-open file descriptor keeps writing to the same inode.
+cat > /etc/logrotate.d/lab_app <<EOF
+$LOG_DIR/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}
+EOF
+echo "--> Wrote /etc/logrotate.d/lab_app (daily rotation, 14 days retained, compressed)"
+
 systemctl daemon-reload
 systemctl enable lab_python_port.service lab_node_port.service
 systemctl restart lab_python_port.service lab_node_port.service
@@ -184,11 +210,13 @@ echo "========================================"
 echo " Done. Both services are running and will:"
 echo "   - restart automatically if they crash (Restart=always)"
 echo "   - start automatically on boot (systemctl enable)"
+echo "   - have their logs rotated daily, 14 days kept (see /etc/logrotate.d/lab_app)"
 echo "========================================"
 echo "Check status:   systemctl status lab_python_port.service lab_node_port.service"
 echo "Watch logs:     tail -f $LOG_DIR/python_out.log"
 echo "                tail -f $LOG_DIR/node_out.log"
 echo "Restart both:   sudo systemctl restart lab_python_port.service lab_node_port.service"
+echo "Test log rotation config: sudo logrotate -d /etc/logrotate.d/lab_app"
 echo ""
 echo "NOTE: the WhatsApp bot needs its QR code scanned once per machine (see node_out.log"
 echo "the first time it starts) — this can't be automated, it needs a phone in hand."
