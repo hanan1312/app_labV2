@@ -3220,8 +3220,14 @@ async function handleFileUpload(event) {
 
         // 5. Background WhatsApp Sending via Node.js
         if (data.success && data.report_urls.length > 0) {
-            const isEnabled = document.getElementById('setting-msg-enabled').checked;
-            const method = document.getElementById('setting-msg-method').value;
+            // Server-authoritative: same LabConfig.msg_enabled/msg_method the DB actually
+            // holds, fetched fresh in upload_report() (main.py) — NOT this page's live
+            // Settings checkbox, which only matches the DB if the last toggle was actually
+            // saved (and reverted on a failed/permission-denied save, which it isn't). That
+            // mismatch used to make this path send when "Enter Results" (which always asked
+            // the DB) would correctly have skipped, or vice versa.
+            const isEnabled = data.messaging?.enabled;
+            const method = data.messaging?.method || 'whatsapp';
 
             if (!isEnabled) {
                 showAlert("Report uploaded. Auto-messaging is disabled.", "info");
@@ -3230,49 +3236,30 @@ async function handleFileUpload(event) {
             const liveServer = `http://${window.location.hostname}:${window.APP_PORTS.backend}`;
             const nodeServer = `http://${window.location.hostname}:${window.APP_PORTS.node}`; // Your Node.js Bot Port
             const endpoint = (method === 'sms') ? '/api/sms/send' : '/api/whatsapp/send';
-            
+
             const patientName = window.currentUploadPatientName || "Patient";
             let pdfLinksText = data.report_urls.map((url, index) => {
                 // FIX: encodeURI converts spaces into '%20' so WhatsApp doesn't break the link
                 let cleanUrl = encodeURI(url.trim());
-                
+
                 // Ensure absolute routing
                 if (!cleanUrl.startsWith('/')) {
                     cleanUrl = '/' + cleanUrl;
                 }
-                
+
                 return `📄 Report ${index + 1}: ${liveServer}${cleanUrl}`;
             }).join('\n');
-            
+
             let message = `Hello ${patientName},\n\nYour results are ready:\n\n${pdfLinksText}\n\nHistory: ${liveServer}/patient-history/${data.patient_id}`;
             const messagingPayload = {
-                centerId: 'lab', 
+                centerId: 'lab',
                 phone: data.phone,
                 message: message // <-- Now passing the valid string
             };
-            // Call the Node.js API silently in the background
-        //     const waResponse = await fetch(`${nodeServer}/api/whatsapp/send`, {
-        //         method: 'POST',
-        //         headers: { 'Content-Type': 'application/json' },
-        //         body: JSON.stringify({
-        //             centerId: 'lab', 
-        //             phone: data.phone,
-        //             message: message,
-        //             // Send the absolute first URL in the array directly as a PDF document if desired
-        //             pdfUrl: `${liveServer}${encodeURI(data.report_urls[0].trim().startsWith('/') ? data.report_urls[0].trim() : '/' + data.report_urls[0].trim())}`
-        //         })
-        //     });
-
-        //     if (waResponse.ok) {
-        //         showAlert("Message sent in background via WhatsApp bot!", "success");
-        //     } else {
-        //         showAlert("Upload successful, but background messaging failed.", "warn");
-        //     }
-        // }
             if (method === 'whatsapp') {
                 messagingPayload.pdfUrl = `${liveServer}${encodeURI(data.report_urls[0].trim().startsWith('/') ? data.report_urls[0].trim() : '/' + data.report_urls[0].trim())}`;
             }
-        
+
             try {
                 const waResponse = await fetch(`${nodeServer}${endpoint}`, {
                     method: 'POST',

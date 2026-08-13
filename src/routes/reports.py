@@ -11,6 +11,7 @@ from flask import Blueprint, request, jsonify, current_app, Response
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch, cm
+from reportlab.lib.enums import TA_CENTER
 from reportlab.lib import colors
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
@@ -1026,8 +1027,8 @@ def _render_pdf_from_context(ctx, base_url):
     styles = getSampleStyleSheet()
     small = ParagraphStyle('Small', parent=styles['Normal'], fontSize=8, textColor=colors.HexColor('#555555'))
     cell_style = ParagraphStyle('Cell', parent=styles['Normal'], fontSize=9)
-    page_title_style = ParagraphStyle('PageTitle', parent=styles['Heading2'], textColor=colors.HexColor('#2d3748'))
-    page_sub_style = ParagraphStyle('PageSub', parent=styles['Normal'], fontSize=11, textColor=colors.HexColor('#667eea'))
+    page_title_style = ParagraphStyle('PageTitle', parent=styles['Heading2'], textColor=colors.HexColor('#2d3748'), alignment=TA_CENTER)
+    page_sub_style = ParagraphStyle('PageSub', parent=styles['Normal'], fontSize=11, textColor=colors.HexColor('#667eea'), alignment=TA_CENTER)
     test_title_style = ParagraphStyle('TestTitle', parent=styles['Heading3'], textColor=colors.HexColor('#2d3748'))
 
     PAGE_W, PAGE_H = letter

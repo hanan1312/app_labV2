@@ -1236,13 +1236,31 @@ def upload_report():
         # Return ALL URLs (old and new) so the WhatsApp message includes everything
         all_current_urls = [r.file_path for r in VisitReport.query.filter_by(visit_id=visit.id).order_by(VisitReport.id).all()]
 
+        # Same shape/source as save_results()'s messaging object (src/routes/reports.py) —
+        # a fresh DB read of LabConfig.msg_enabled, NOT the Settings page's live checkbox.
+        # This used to be decided client-side off document.getElementById('setting-msg-
+        # enabled').checked, which only matches the DB if the admin's last toggle was
+        # actually saved (and reverted correctly if that save failed, e.g. lacked the
+        # 'settings' permission) — a silent, easy-to-hit way for "Upload Report" to send
+        # messages "Enter Results" (which always asked the DB) would correctly skip, or
+        # vice versa. Both paths now agree on the same authoritative source.
+        config = LabConfig.get_config()
+        messaging = {
+            'enabled': bool(config.msg_enabled),
+            'method': config.msg_method,
+            'phone': patient_phone,
+            'patient_name': patient_name,
+            'patient_id': patient_id,
+        }
+
         # 4. Return the list of urls and the patient_id back to Javascript!
         return jsonify({
-            "success": True, 
+            "success": True,
             "message": "Status updated to delivered",
             "report_urls": all_current_urls, # Sends the complete combined list back
             "phone": patient_phone,
-            "patient_id": patient_id
+            "patient_id": patient_id,
+            "messaging": messaging,
         })
     else:
         return jsonify({"error": "Visit not found"}), 404
