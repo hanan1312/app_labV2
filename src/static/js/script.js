@@ -10,6 +10,14 @@ let selectedPatientForReservation = null;
 let selectedPatientForTransaction = null;
 let currentPatientDetails = null;
 
+// "YYYY-MM-DD" for a given instant (default: right now) as it reads in Africa/Cairo local
+// time — used for "today"/"this month" boundary comparisons so they agree with the
+// server-stamped Cairo-local created_at/date values (see src/utils/timezone.py) regardless
+// of the viewing browser's own OS timezone. Matches cairoDateStr() in script_lab.js.
+function cairoDateStr(date = new Date()) {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(date);
+}
+
 // --- WORKSPACE LOGIC ---
 let currentWorkspace = localStorage.getItem('app_workspace') || 'clinic';
 
@@ -172,10 +180,13 @@ function showTab(tabName) {
 function updateDashboard() {
     if (!patients) return;
     const totalPatients = patients.length;
-    const now = new Date();
-    const newPatientsThisMonth = patients.filter(p => new Date(p.created_at).getMonth() === now.getMonth()).length;
-    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-    const todayPatientsCount = patients.filter(p => p.visit_datetime && new Date(p.visit_datetime) >= todayStart).length;
+    // created_at/visit_datetime are already Cairo-local text from the server — compared as
+    // strings against a Cairo-local "now" reference, rather than round-tripped through Date
+    // object getters (which read the browser's own timezone, not necessarily Cairo's).
+    const nowCairoMonth = cairoDateStr().substring(0, 7); // "YYYY-MM"
+    const newPatientsThisMonth = patients.filter(p => p.created_at && p.created_at.substring(0, 7) === nowCairoMonth).length;
+    const todayCairoStr = cairoDateStr(); // "YYYY-MM-DD"
+    const todayPatientsCount = patients.filter(p => p.visit_datetime && p.visit_datetime >= todayCairoStr).length;
     const totalAge = patients.reduce((sum, p) => sum + calculateAge(p.date_of_birth), 0);
     const averageAge = totalPatients > 0 ? Math.round(totalAge / totalPatients) : 0;
 
@@ -360,7 +371,7 @@ function selectPatientForReservation(patientId) {
         document.getElementById('reservation-patient-search').value = `${selectedPatientForReservation.first_name} ${selectedPatientForReservation.last_name}`;
         document.getElementById('reservation-patient-results').innerHTML = '';
         document.getElementById('reservation-form').style.display = 'block';
-        document.getElementById('visit-date').value = new Date().toISOString().split('T')[0];
+        document.getElementById('visit-date').value = cairoDateStr();
     }
 }
 
@@ -597,8 +608,8 @@ async function loadPatientHistory() {
 async function loadHallStatusPatients() {
     const hallStatusList = document.getElementById('hall-status-list');
     if (!hallStatusList) return;
-    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-    const todayPatients = patients.filter(p => p.visit_datetime && new Date(p.visit_datetime) >= todayStart && p.status !== 'finished');
+    const todayCairoStr = cairoDateStr(); // "YYYY-MM-DD" — visit_datetime is already Cairo-local text
+    const todayPatients = patients.filter(p => p.visit_datetime && p.visit_datetime >= todayCairoStr && p.status !== 'finished');
     
     if (todayPatients.length === 0) { hallStatusList.innerHTML = '<p style="color: var(--muted); padding: 20px;">No patients scheduled for today.</p>'; return; }
     

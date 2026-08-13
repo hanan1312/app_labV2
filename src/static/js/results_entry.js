@@ -22,6 +22,20 @@ function escapeHtml(value) {
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// Every timestamp from the API is already Africa/Cairo local time (see
+// src/utils/timezone.py) — this only reformats the string for display, matching
+// formatCairoDateTime() in script_lab.js.
+function formatCairoDateTime(value, includeSeconds = true) {
+    if (!value) return '';
+    const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+    if (!match) return String(value);
+    const [, year, month, day, hour, minute, second] = match;
+    const datePart = `${day}/${month}/${year}`;
+    if (hour === undefined) return datePart;
+    const timePart = includeSeconds && second ? `${hour}:${minute}:${second}` : `${hour}:${minute}`;
+    return `${datePart} ${timePart}`;
+}
+
 async function loadSchema() {
     try {
         const response = await apiFetch(`/api/visits/${visitId}/results-schema`);
@@ -37,7 +51,7 @@ async function loadSchema() {
 }
 
 function render() {
-    let subtitle = `${schema.patient_name} — Visit ${schema.visit_code} — ${schema.date || ''}`;
+    let subtitle = `${schema.patient_name} — Visit ${schema.visit_code} — ${formatCairoDateTime(schema.date, false)}`;
     if (schema.status === 'partially_delivered') {
         subtitle += ` — ${completionStatusLine(schema)}`;
     }

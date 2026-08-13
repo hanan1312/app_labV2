@@ -25,6 +25,7 @@ from src.models.test_result import TestResult
 from src.models.test_parameter import TestParameterTemplate
 from src.models.lab_config import LabConfig
 from src.models.junctions import VisitTest, VisitReportPage, add_visit_reports, get_visit_test_names, get_completed_test_names
+from src.utils.timezone import now_cairo
 
 reports_bp = Blueprint('reports_bp', __name__)
 
@@ -759,7 +760,7 @@ def build_report_context(visit_id):
         'report_pages': report_pages,
         'interpretations': interpretations,
         'comments': comments,
-        'report_date': datetime.utcnow(),
+        'report_date': now_cairo(),
     }
 
 
@@ -851,7 +852,7 @@ def build_preview_context(visit_id, entries, comments_map):
         'report_pages': report_pages,
         'interpretations': interpretations,
         'comments': comments,
-        'report_date': datetime.utcnow(),
+        'report_date': now_cairo(),
     }
 
 

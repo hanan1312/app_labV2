@@ -1,6 +1,7 @@
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
+from src.utils.timezone import utc_to_cairo
 
 db = SQLAlchemy()
 
@@ -40,8 +41,8 @@ class User(db.Model):
             'email': self.email,
             'role': self.role,
             'is_active': self.is_active,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'last_login': self.last_login.isoformat() if self.last_login else None
+            'created_at': utc_to_cairo(self.created_at).isoformat() if self.created_at else None,
+            'last_login': utc_to_cairo(self.last_login).isoformat() if self.last_login else None
         }
     
 

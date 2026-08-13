@@ -139,49 +139,31 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeTopbar();
     applyGlobalSettings();
 });
-// Helper function to force all dates into consistent Local Time
-function formatDateTime(dateVal, includeSeconds = true) {
-    if (!dateVal) return 'N/A';
-    
-    // Ensure JavaScript treats database strings as UTC by appending 'Z'
-    let dateStr = dateVal instanceof Date ? dateVal.toISOString() : String(dateVal);
-    if (!dateStr.endsWith('Z') && dateStr.includes('T')) dateStr += 'Z';
-    
-    const d = dateVal instanceof Date ? dateVal : new Date(dateStr);
-    if (isNaN(d.getTime())) return String(dateVal); 
-
-    const pad = n => String(n).padStart(2, '0');
-    
-    // Changed this line to format as DD/MM/YYYY
-    const dPart = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
-    
-    const tPart = includeSeconds ? 
-        `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` :
-        `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-        
-    return `${dPart} ${tPart}`;
+// Every timestamp arriving from the API is already Africa/Cairo local time — the backend
+// converts before serializing (see src/utils/timezone.py) and stamps booking/transaction/
+// warehouse timestamps in Cairo time at creation, never trusting the client's own clock. So
+// this only reformats the string for display: it deliberately never builds a Date object or
+// does any timezone math of its own, meaning display is correct regardless of the viewing
+// browser's own clock/timezone (unlike the old approach of re-parsing as UTC and converting
+// to the browser's local time, which double-shifted values that were already Cairo-local).
+// "YYYY-MM-DD" for a given instant (default: right now) as it reads in Africa/Cairo local
+// time — used to compute "today"/"this month"/"this year" boundaries so they agree with the
+// server-stamped Cairo-local date/date_time strings (see formatCairoDateTime above),
+// regardless of the viewing browser's own OS timezone (Intl's timeZone option ignores that
+// entirely, unlike toISOString(), which is always UTC, or getFullYear()/getDate(), which are
+// always the browser's local timezone).
+function cairoDateStr(date = new Date()) {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo' }).format(date);
 }
 
-// Helper to visually format the table dates strictly to DD/MM/YYYY
-function formatForDisplay(dateString) {
-    if (!dateString || dateString === 'N/A') return 'N/A';
-    
-    // Convert "YYYY-MM-DD HH:MM:SS" into a standard format the browser understands
-    let parseableStr = String(dateString).replace(' ', 'T'); 
-    
-    if (!parseableStr.endsWith('Z') && parseableStr.length <= 19) {
-        parseableStr += 'Z'; 
-    }
-    
-    const d = new Date(parseableStr);
-    if (isNaN(d.getTime())) return dateString; 
-
-    const pad = n => String(n).padStart(2, '0');
-    
-    // Strictly force DD/MM/YYYY format for the table display
-    const datePart = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
-    const timePart = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    
+function formatCairoDateTime(value, includeSeconds = true) {
+    if (!value || value === 'N/A') return 'N/A';
+    const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+    if (!match) return String(value); // not a recognized server timestamp shape — show as-is
+    const [, year, month, day, hour, minute, second] = match;
+    const datePart = `${day}/${month}/${year}`;
+    if (hour === undefined) return datePart; // date-only value (e.g. a chart label with no time)
+    const timePart = includeSeconds && second ? `${hour}:${minute}:${second}` : `${hour}:${minute}`;
     return `${datePart} ${timePart}`;
 }
 
@@ -1507,7 +1489,7 @@ function renderDashboardTable() {
         const unbookedClients = clients.filter(c => !clientsWithVisits.has(c.id)).map(c => ({
             is_unbooked: true,
             patient_id: c.id,
-            date: c.created_at ? formatDateTime(c.created_at) : 'N/A',
+            date: c.created_at ? formatCairoDateTime(c.created_at) : 'N/A',
             visit_id: `2024${String(c.id).padStart(4, '0')}`,
             patient_name: `${c.first_name} ${c.last_name}`,
             phone: c.phone || 'N/A',
@@ -1798,7 +1780,7 @@ function buildAdminTableHTML(title, headers, data, type, clickable = false, pagi
                 tbody += `
                     <tr ${rowAttrs}>
                         <td>${startIndex + index + 1}</td>
-                        <td style="color: var(--muted);">${formatForDisplay(row.date)}</td>
+                        <td style="color: var(--muted);">${formatCairoDateTime(row.date, false)}</td>
                         <td><strong>${row.visit_id}</strong></td>
                         <td>${row.patient_name}</td>
                         <td style="color: var(--muted);">${row.phone || 'N/A'}</td>
@@ -1896,7 +1878,7 @@ function displayClients(clientsToDisplay) {
 
     tableBody.innerHTML = clientsToDisplay.map(c => {
         // Format Date and Code
-        const dateStr = c.created_at ? formatDateTime(c.created_at, false) : 'N/A';
+        const dateStr = c.created_at ? formatCairoDateTime(c.created_at, false) : 'N/A';
         const codeStr = `2024${String(c.id).padStart(4, '0')}`;
         
         // --- FIXED STATUS LOGIC ---
@@ -2049,7 +2031,7 @@ function loadClientHistory() {
             <td>${c.first_name} ${c.last_name}</td>
             <td style="color: var(--muted)">${c.date_of_birth}</td>
             <td><span class="pill info">${c.status || 'Active'}</span></td>
-            <td style="color: var(--muted)">${new Date(c.updated_at).toLocaleDateString()}</td>
+            <td style="color: var(--muted)">${formatCairoDateTime(c.updated_at, false).split(' ')[0]}</td>
             <td style="text-align: right;"><button class="btn ghost" onclick="viewClient(${c.id})">View Record</button></td>
         </tr>
     `).join('');
@@ -2485,7 +2467,7 @@ async function fetchTestResultsPage() {
         <tr>
             <td>${startIndex + index + 1}</td>
             <td><strong>${patientCode}</strong></td>
-            <td style="color: var(--muted);">${formatForDisplay(v.date)}</td>
+            <td style="color: var(--muted);">${formatCairoDateTime(v.date, false)}</td>
             <td>${v.patient_name}</td>
             <td style="color: var(--muted);">${v.phone || 'N/A'}</td>
             <td>${v.tests.join(', ')}</td>
@@ -2540,7 +2522,7 @@ function searchClientHistory() {
                 <strong style="font-size: 16px; color: var(--text);">${c.first_name} ${c.last_name}</strong> 
                 <span style="color: var(--muted)">(Code: 2024${String(c.id).padStart(4, '0')})</span><br>
                 <small style="color: var(--muted); display: inline-block; margin-top: 6px;">DOB: ${c.date_of_birth} | Phone: ${c.phone || 'N/A'}</small><br>
-                <small style="color: var(--muted); display: inline-block; margin-top: 4px;">Status: ${c.status || 'Active'} | Last Updated: ${new Date(c.updated_at).toLocaleDateString()}</small>
+                <small style="color: var(--muted); display: inline-block; margin-top: 4px;">Status: ${c.status || 'Active'} | Last Updated: ${formatCairoDateTime(c.updated_at, false).split(' ')[0]}</small>
             </div>
             
             <div>
@@ -2622,7 +2604,7 @@ function searchReports() {
 
     // 5. Generate the Master Table
     let rows = filtered.map((c, index) => {
-        const dateStr = c.created_at ? formatDateTime(c.created_at, false) : 'N/A';
+        const dateStr = c.created_at ? formatCairoDateTime(c.created_at, false) : 'N/A';
         const codeStr = `2024${String(c.id).padStart(4, '0')}`;
         const patientName = `${c.first_name} ${c.last_name}`.toUpperCase();
         
@@ -2788,7 +2770,7 @@ function openPatientHistoryModal(clientId) {
 
             return `
             <tr>
-                <td style="color: var(--muted);">${v.date}</td>
+                <td style="color: var(--muted);">${formatCairoDateTime(v.date, false)}</td>
                 <td><strong>${v.visit_id}</strong></td>
                 <td>${v.tests.join('<br>')}</td>
                 <td><span style="position: relative; display: inline-block;"><span class="pill ${pillClass}">${badgeText}</span>${countBadge}</span></td>
@@ -2965,7 +2947,7 @@ function renderVisitResultsHistoryCharts(tests) {
         vrChartInstances.push(new Chart(canvas, {
             type: 'line',
             data: {
-                labels: t.labels.map(d => formatForDisplay(d)),
+                labels: t.labels.map(d => formatCairoDateTime(d, false)),
                 datasets: t.series.map((s, idx) => ({
                     label: s.unit ? `${s.name} (${s.unit})` : s.name,
                     data: s.data,
@@ -3059,7 +3041,7 @@ function renderStatisticsTable(rows) {
     const tableRows = rows.map((r, index) => `
         <tr>
             <td>${startIndex + index + 1}</td>
-            <td style="color: var(--muted);">${formatForDisplay(r.date)}</td>
+            <td style="color: var(--muted);">${formatCairoDateTime(r.date, false)}</td>
             <td>${r.patient_name || 'N/A'}</td>
             <td><span class="pill ghost">${r.gender || '-'}</span></td>
             <td style="color: var(--muted);">${r.physician_name && r.physician_name !== 'Self' ? r.physician_name : '-'}</td>
@@ -4691,7 +4673,7 @@ async function fetchTransactionsHistoryPage() {
             : `<span class="pill ok">Fully Paid</span>`;
         return `
         <tr>
-            <td style="color: var(--muted);">${formatForDisplay(t.date)}</td>
+            <td style="color: var(--muted);">${formatCairoDateTime(t.date, false)}</td>
             <td><strong>${t.transaction_id}</strong></td>
             <td>${t.patient_name}</td>
             <td style="color: var(--muted); font-size: 12px;">${t.tests.join(', ')}</td>
@@ -4778,9 +4760,9 @@ function calculateFinancials() {
     if (!document.getElementById('rev-daily')) return;
 
     const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];           
-    const monthStr = todayStr.substring(0, 7);                  
-    const yearStr = now.getFullYear().toString();               
+    const todayStr = cairoDateStr(now);
+    const monthStr = todayStr.substring(0, 7);
+    const yearStr = todayStr.substring(0, 4);
 
     let dailyRev = 0, monthlyRev = 0, yearlyRev = 0;
 
@@ -4789,7 +4771,7 @@ function calculateFinancials() {
     for (let i = 6; i >= 0; i--) {
         let d = new Date();
         d.setDate(d.getDate() - i);
-        revenueByDate[d.toISOString().split('T')[0]] = 0;
+        revenueByDate[cairoDateStr(d)] = 0;
     }
 
     allTransactions.forEach(t => {
@@ -4837,9 +4819,9 @@ function calculateFinancials() {
 
     // Draw the Charts!
     renderFinancialCharts(revenueByDate, { Male: males, Female: females }, sortedTests);
-    let d = new Date(); 
+    let d = new Date();
     d.setDate(d.getDate() - 1);
-    const yesterdayStr = d.toISOString().split('T')[0];
+    const yesterdayStr = cairoDateStr(d);
     const yesterdayRev = revenueByDate[yesterdayStr] || 0;
 
     // If today is strictly better than yesterday, and we haven't notified yet today
@@ -5062,7 +5044,7 @@ function renderWarehouseTable() {
             <td><strong>${item.name}</strong>${expiredBadge}</td>
             <td><span class="pill" style="color: ${catColor}; border: 1px solid ${catColor}; background: transparent;">${item.category}</span></td>
             <td style="color: ${qtyColor}; font-weight: bold;">${item.quantity} <span style="font-size: 11px; color: var(--muted); font-weight: normal;">${item.unit}</span></td>
-            <td style="color: var(--muted);">${item.updated_at}</td>
+            <td style="color: var(--muted);">${formatCairoDateTime(item.updated_at, false)}</td>
             <td style="text-align: right;">
                 ${orderBtn}
                 <button type="button" class="btn ghost" style="padding: 4px 8px; font-size: 11px; margin-right: 5px;" onclick="openItemBatchesModal(${item.id})">🏷 Batches</button>
@@ -5189,7 +5171,7 @@ async function openItemBatchesModal(itemId) {
                 <td>${b.quantity_received}</td>
                 <td>${b.quantity_remaining} <span style="font-size: 11px; color: var(--muted);">${b.unit || ''}</span></td>
                 <td><span class="pill" style="color: var(--${batchStatusPillClass(b)}); border: 1px solid var(--${batchStatusPillClass(b)}); background: transparent;">${batchStatusLabel(b)}</span></td>
-                <td style="color: var(--muted); font-size: 11px;">${b.received_at}</td>
+                <td style="color: var(--muted); font-size: 11px;">${formatCairoDateTime(b.received_at, false)}</td>
                 <td><button type="button" class="btn ghost" style="padding: 4px 8px; font-size: 11px;" onclick='printBatchBarcode(${JSON.stringify(b.barcode)}, ${JSON.stringify(b.item_name)}, ${JSON.stringify(b.expiry_date)})'>🖨️ Print</button></td>
             </tr>
         `).join('');
@@ -5717,7 +5699,7 @@ function renderWarehouseBills() {
             : `${receivedCount}/${deliveredCount} received`;
         return `
         <tr style="cursor: pointer;" onclick="openBulkBillDetail('${bulkBillId}')" title="View bill details">
-            <td style="color: var(--muted); font-size: 11px;">${bills[0].date_time}</td>
+            <td style="color: var(--muted); font-size: 11px;">${formatCairoDateTime(bills[0].date_time, false)}</td>
             <td><strong>${bulkBillId}</strong></td>
             <td>🧾 New Bill — ${bills.length} item${bills.length > 1 ? 's' : ''}</td>
             <td>—</td>
@@ -5738,7 +5720,7 @@ function renderWarehouseBills() {
 
     const standaloneRows = standaloneBills.map(b => `
         <tr>
-            <td style="color: var(--muted); font-size: 11px;">${b.date_time}</td>
+            <td style="color: var(--muted); font-size: 11px;">${formatCairoDateTime(b.date_time, false)}</td>
             <td><strong>${b.order_id}</strong></td>
             <td>${b.item_name}</td>
             <td>${b.ordered_stock} <span style="font-size:10px; color:var(--muted)">${b.unit}</span></td>
@@ -5787,7 +5769,7 @@ function openBulkBillDetail(bulkBillId) {
     currentBulkBillId = bulkBillId;
 
     document.getElementById('bb-detail-title').textContent = `🧾 New Bill ${bulkBillId}`;
-    document.getElementById('bb-detail-subtitle').textContent = `${bills[0].date_time} — Requested by ${bills[0].user}`;
+    document.getElementById('bb-detail-subtitle').textContent = `${formatCairoDateTime(bills[0].date_time, false)} — Requested by ${bills[0].user}`;
 
     const status = bills.some(b => b.status === 'demanded') ? 'demanded'
         : bills.some(b => b.status === 'ordered') ? 'ordered' : 'delivered';
@@ -5876,7 +5858,7 @@ function printBulkBill() {
         </style></head><body>
             <h2 style="text-align: center;">Warehouse Bill</h2>
             <p><strong>Bill ID:</strong> ${currentBulkBillId}</p>
-            <p><strong>Date:</strong> ${bills[0].date_time}</p>
+            <p><strong>Date:</strong> ${formatCairoDateTime(bills[0].date_time, false)}</p>
             <p><strong>Requested By:</strong> ${bills[0].user}</p>
             <table>
                 <thead><tr><th>Item</th><th>Qty</th><th>Price/Unit</th><th>Subtotal</th></tr></thead>
@@ -6030,7 +6012,7 @@ function renderWarehouseWorkOrders() {
 
         return `
         <tr style="cursor: pointer;" onclick="openWorkOrderDetail('${workOrderId}')" title="View work order details">
-            <td style="color: var(--muted); font-size: 11px;">${items[0].date_time}</td>
+            <td style="color: var(--muted); font-size: 11px;">${formatCairoDateTime(items[0].date_time, false)}</td>
             <td><strong>${workOrderId}</strong></td>
             <td>${itemsLabel}</td>
             <td style="color: var(--muted);">${items[0].user}</td>
@@ -6089,7 +6071,7 @@ function openWorkOrderDetail(workOrderId) {
     currentWorkOrderId = workOrderId;
 
     document.getElementById('wo-detail-title').textContent = `📦 Work Order ${workOrderId}`;
-    document.getElementById('wo-detail-subtitle').textContent = `${items[0].date_time} — Issued by ${items[0].user}`;
+    document.getElementById('wo-detail-subtitle').textContent = `${formatCairoDateTime(items[0].date_time, false)} — Issued by ${items[0].user}`;
 
     const rows = items.map(i => `
         <tr>
@@ -6222,7 +6204,7 @@ function printWorkOrder() {
         </style></head><body>
             <h2 style="text-align: center;">Warehouse Work Order</h2>
             <p><strong>Work Order ID:</strong> ${currentWorkOrderId}</p>
-            <p><strong>Date:</strong> ${items[0].date_time}</p>
+            <p><strong>Date:</strong> ${formatCairoDateTime(items[0].date_time, false)}</p>
             <p><strong>Issued By:</strong> ${items[0].user}</p>
             <table>
                 <thead><tr><th>Item</th><th>Quantity</th></tr></thead>
@@ -7082,7 +7064,7 @@ async function fetchActivityLogPage() {
         <tr>
             <td><input type="checkbox" class="activity-row-checkbox" data-index="${index}" onchange="updateActivitySelectAllState()"></td>
             <td>${startIndex + index + 1}</td>
-            <td style="color: var(--muted); font-size: 11px; white-space: nowrap;">${entry.timestamp || ''}</td>
+            <td style="color: var(--muted); font-size: 11px; white-space: nowrap;">${formatCairoDateTime(entry.timestamp) || ''}</td>
             <td>${entry.username || '—'}</td>
             <td><span class="pill ${activityEventPillClass(entry.event_type)}">${activityEventLabel(entry.event_type)}</span></td>
             <td>${entry.resource || ''}${entry.resource_id ? ' #' + entry.resource_id : ''}</td>

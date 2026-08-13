@@ -1,5 +1,6 @@
 from datetime import datetime
 from src.models.user import db
+from src.utils.timezone import utc_to_cairo
 
 
 # One row per tracked event: auth (login/logout/failed login), a mutating API call
@@ -28,7 +29,7 @@ class ActivityLog(db.Model):
     def to_dict(self):
         return {
             'id': self.id,
-            'timestamp': self.timestamp.strftime('%Y-%m-%d %H:%M:%S') if self.timestamp else None,
+            'timestamp': utc_to_cairo(self.timestamp).strftime('%Y-%m-%d %H:%M:%S') if self.timestamp else None,
             'username': self.username,
             'role': self.role,
             'workspace': self.workspace,

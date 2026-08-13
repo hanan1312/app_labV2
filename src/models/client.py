@@ -1,5 +1,6 @@
 from src.models.user import db
 from datetime import datetime, date, time
+from src.utils.timezone import utc_to_cairo
 
 class Client(db.Model):
     """Represents a client/patient in the laboratory management system."""
@@ -111,8 +112,8 @@ class Client(db.Model):
             'sample_status': self.sample_status,
             'technician_notes': self.technician_notes,
             'status': self.status,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+            'created_at': utc_to_cairo(self.created_at).isoformat() if self.created_at else None,
+            'updated_at': utc_to_cairo(self.updated_at).isoformat() if self.updated_at else None
         }
     
     def __repr__(self):

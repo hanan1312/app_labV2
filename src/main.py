@@ -59,6 +59,7 @@ from src.utils.audit import (
     GENERIC_LOG_EXCLUDED_PATHS,
 )
 from src.utils.email_sender import is_email_configured, send_email
+from src.utils.timezone import now_cairo, utc_to_cairo
 
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), 'static'))
@@ -816,6 +817,12 @@ def get_physicians():
 def save_transaction():
     data = request.json
 
+    # Booking timestamp is always server-generated (Cairo local time), never trusted from
+    # the client — the client's own clock/timezone could be wrong or misconfigured, and this
+    # value is what every Dashboard/Transaction History table displays. Computed once and
+    # reused for both rows below so they always agree exactly.
+    booking_date = now_cairo().strftime('%Y-%m-%d %H:%M:%S')
+
     # 1. Save to TransactionList (Billing info)
     final_payment = float(data['final_payment'])
     # amount_paid defaults to the full due amount (fully paid) when the field is omitted;
@@ -827,7 +834,7 @@ def save_transaction():
         patient_id=data['patient_id'],
         patient_name=data['patient_name'],
         patient_phone=data['patient_phone'],
-        date=data['date'],
+        date=booking_date,
         total_price=data['total_price'],
         discount_percentage=data['discount_percentage'],
         payment_method=data['payment_method'],
@@ -842,7 +849,7 @@ def save_transaction():
         patient_id=data['patient_id'],
         patient_name=data['patient_name'],
         visit_id=data['transaction_id'],
-        date=data['date'],
+        date=booking_date,
         status='pending', # Explicitly set this to pending
         referred_by=data.get('physician_name') or 'Self',
     )
@@ -1234,7 +1241,7 @@ def get_warehouse():
     return jsonify([{
         'id': i.id, 'name': i.name, 'category': i.category,
         'quantity': i.quantity, 'critical_level': i.critical_level, 'unit': i.unit,
-        'updated_at': i.updated_at.strftime("%Y-%m-%d") if i.updated_at else "",
+        'updated_at': utc_to_cairo(i.updated_at).strftime("%Y-%m-%d") if i.updated_at else "",
         'has_expired_batch': i.id in expired_item_ids,
     } for i in items])
 
@@ -1297,7 +1304,9 @@ def create_warehouse_bill():
         order_id=data['order_id'], item_id=data['item_id'], item_name=data['item_name'],
         present_stock=data['present_stock'], ordered_stock=data['ordered_stock'],
         unit=data['unit'], price_per_unit=data['price_per_unit'], total_price=data['total_price'],
-        category=data['category'], user=data['user'], date_time=data['date_time'], status='demanded'
+        category=data['category'], user=data['user'],
+        date_time=now_cairo().strftime('%Y-%m-%d %H:%M:%S'),  # server-authoritative, never the client's clock
+        status='demanded'
     )
     db.session.add(bill)
     db.session.commit()
@@ -1343,10 +1352,11 @@ def create_bulk_bill():
     if not items:
         return jsonify({'error': 'No items selected'}), 400
 
-    now = datetime.utcnow()
+    now = now_cairo()
     work_order_id = 'BB-' + now.strftime('%Y%m%d%H%M%S')
     user = data.get('user', 'Unknown User')
-    date_time = data.get('date_time') or now.strftime('%Y-%m-%d %H:%M:%S')
+    # Server-authoritative — never the client's clock (see save_transaction()'s booking_date).
+    date_time = now.strftime('%Y-%m-%d %H:%M:%S')
 
     created = []
     for entry in items:
@@ -1466,7 +1476,7 @@ def get_warehouse_batches():
         'quantity_received': b.quantity_received, 'quantity_remaining': b.quantity_remaining,
         'status': b.status, 'is_expired': b.status == 'active' and b.expiry_date < today,
         'received_by': b.received_by,
-        'received_at': b.received_at.strftime('%Y-%m-%d %H:%M') if b.received_at else '',
+        'received_at': utc_to_cairo(b.received_at).strftime('%Y-%m-%d %H:%M') if b.received_at else '',
     } for b in batches])
 
 @app.route('/api/warehouse/batches/<int:batch_id>/dispose', methods=['POST'])
@@ -1519,7 +1529,7 @@ def get_work_orders():
         'user': r.user, 'date_time': r.date_time,
         'status': r.status, 'quantity_fulfilled': r.quantity_fulfilled,
         'approved_by': r.approved_by,
-        'approved_at': r.approved_at.strftime('%Y-%m-%d %H:%M') if r.approved_at else '',
+        'approved_at': utc_to_cairo(r.approved_at).strftime('%Y-%m-%d %H:%M') if r.approved_at else '',
     } for r in rows])
 
 @app.route('/api/warehouse/work-orders', methods=['POST'])
@@ -1549,10 +1559,11 @@ def create_work_order():
     if not resolved:
         return jsonify({'error': 'No valid items to issue'}), 400
 
-    now = datetime.utcnow()
+    now = now_cairo()
     work_order_id = 'WO-' + now.strftime('%Y%m%d%H%M%S')
     user = data.get('user', 'Unknown User')
-    date_time = data.get('date_time') or now.strftime('%Y-%m-%d %H:%M:%S')
+    # Server-authoritative — never the client's clock (see save_transaction()'s booking_date).
+    date_time = now.strftime('%Y-%m-%d %H:%M:%S')
 
     for item, quantity in resolved:
         db.session.add(WarehouseWorkOrder(

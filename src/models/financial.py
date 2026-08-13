@@ -76,6 +76,7 @@ from decimal import Decimal
 from src.models.user import db
 from datetime import datetime
 from decimal import Decimal
+from src.utils.timezone import utc_to_cairo
 
 class ServiceType(db.Model):
     __tablename__ = 'service_types'
@@ -102,9 +103,9 @@ class ServiceType(db.Model):
             'description': self.description,
             'default_price': float(self.default_price) if self.default_price else 0,
             'is_active': self.is_active,
-            'created_at': self.created_at.isoformat() if self.created_at else None
+            'created_at': utc_to_cairo(self.created_at).isoformat() if self.created_at else None
         }
-    
+
     def __repr__(self):
         return f'<ServiceType {self.name}>'
 
@@ -146,15 +147,15 @@ class Transaction(db.Model):
             'service_type_name': self.service_type.name if self.service_type else None,
             'amount': float(self.amount) if self.amount else 0,
             'payment_method': self.payment_method,
-            'transaction_date': self.transaction_date.isoformat() if self.transaction_date else None,
+            'transaction_date': utc_to_cairo(self.transaction_date).isoformat() if self.transaction_date else None,
             'description': self.description,
             'status': self.status,
             'created_by': self.created_by,
             'created_by_username': self.created_by_user.username if self.created_by_user else None,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+            'created_at': utc_to_cairo(self.created_at).isoformat() if self.created_at else None,
+            'updated_at': utc_to_cairo(self.updated_at).isoformat() if self.updated_at else None
         }
-    
+
     def __repr__(self):
         return f'<Transaction {self.id}: {self.amount} - {self.payment_method}>'
 
