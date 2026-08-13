@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 from functools import wraps
 from sqlalchemy import create_engine, text, event, or_
@@ -188,6 +189,42 @@ with app.app_context():
                 db.session.commit()
             except Exception:
                 db.session.rollback()
+        # Parameter-to-parameter auto-calculation (e.g. MCV derived from WBC) — see
+        # relation_formula in src/models/test_parameter.py.
+        db.session.bind = engine
+        for statement in [
+            "ALTER TABLE test_parameter_templates ADD COLUMN related_template_id INTEGER REFERENCES test_parameter_templates(id)",
+            "ALTER TABLE test_parameter_templates ADD COLUMN relation_formula VARCHAR(300)",
+        ]:
+            try:
+                db.session.execute(text(statement))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
+        # One-time reformat: this feature originally supported only a single dependency, via
+        # a related_template_id FK column plus a formula using a bare "X" placeholder for that
+        # one parameter's value. It was replaced with a multi-parameter model where each
+        # referenced parameter is embedded directly in the formula as a stable "{id}" token
+        # (e.g. "{55} / {56} * 10", see relation_formula's docstring) — so any row saved under
+        # the old single-relation model is rewritten in place here. Guarded by "'{' not in
+        # formula" so it only ever touches an old-format row once; a formula already containing
+        # a token (new-format, or already converted) is left untouched.
+        db.session.bind = engine
+        try:
+            old_format_rows = db.session.execute(text(
+                "SELECT id, related_template_id, relation_formula FROM test_parameter_templates "
+                "WHERE related_template_id IS NOT NULL AND relation_formula IS NOT NULL")).fetchall()
+            for row_id, related_id, formula in old_format_rows:
+                if formula and '{' not in formula:
+                    new_formula = re.sub(r'(?i)\bx\b', f'{{{related_id}}}', formula)
+                    db.session.execute(
+                        text("UPDATE test_parameter_templates SET relation_formula = :f WHERE id = :id"),
+                        {'f': new_formula, 'id': row_id})
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
         # Guarded backfill: every transaction that existed before partial payments were
         # possible was, by definition, paid in full — a blind column DEFAULT would instead
         # read as "$0 paid" for every historical transaction. Runs once (amount_paid stays

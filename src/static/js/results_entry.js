@@ -69,7 +69,8 @@ function render() {
                     ${param.method ? `<span class="re-method">Method: ${param.method}</span>` : ''}
                 </td>
                 <td>
-                    <input type="text" id="re-input-${testIndex}-${paramIndex}" value="${escapeAttr(param.result_value)}">
+                    <input type="text" id="re-input-${testIndex}-${paramIndex}" value="${escapeAttr(param.result_value)}"
+                           oninput="handleParamInput(${testIndex})">
                 </td>
                 <td class="re-unit">${param.unit || '-'}</td>
                 <td class="re-range">${param.reference_range_text || '-'}</td>
@@ -102,6 +103,172 @@ function render() {
         </div>
         <div id="re-preview-panel"></div>
     `;
+}
+
+// --- PARAMETER AUTO-CALCULATION ("Formula" from the Result Parameters modal) ---
+// Fires on every keystroke in any parameter's own input. A formula can reference any number
+// of sibling parameters (each embedded as a "{id}" token — see relation_formula's docstring
+// in src/models/test_parameter.py), so instead of tracing a single source -> dependent edge,
+// every formula-bearing parameter in the test is recomputed from whatever's currently in its
+// referenced inputs. Written values are the same as if the technician had typed them by hand
+// — still overridable afterward, and picked up as-is by collectFormData().
+function handleParamInput(testIndex) {
+    recalcAllFormulas(testIndex);
+}
+
+function recalcAllFormulas(testIndex) {
+    const test = schema.tests[testIndex];
+    // Repeat passes so a chain (A feeds B, B feeds C) fully settles in one keystroke — capped
+    // at parameters.length+1 as a safety net in case a cycle ever slips past server validation.
+    const maxPasses = test.parameters.length + 1;
+    for (let pass = 0; pass < maxPasses; pass++) {
+        let changed = false;
+
+        test.parameters.forEach((dependent, dependentIndex) => {
+            if (!dependent.relation_formula) return;
+
+            const referencedIds = extractReferencedIds(dependent.relation_formula);
+            const values = {};
+            let allNumeric = true;
+            referencedIds.forEach((id) => {
+                const sourceIndex = test.parameters.findIndex((p) => p.template_id === id);
+                const sourceInput = sourceIndex >= 0 ? document.getElementById(`re-input-${testIndex}-${sourceIndex}`) : null;
+                const numeric = parseFloat(sourceInput ? sourceInput.value : '');
+                if (Number.isNaN(numeric)) allNumeric = false;
+                else values[id] = numeric;
+            });
+            if (!allNumeric) return; // wait until every referenced field holds a real number
+
+            const computed = evaluateFormula(dependent.relation_formula, values);
+            if (computed === null) return;
+            const dependentInput = document.getElementById(`re-input-${testIndex}-${dependentIndex}`);
+            if (!dependentInput) return;
+            const rounded = String(roundForDisplay(computed));
+            if (dependentInput.value !== rounded) {
+                dependentInput.value = rounded;
+                changed = true;
+            }
+        });
+
+        if (!changed) break;
+    }
+}
+
+function roundForDisplay(value) {
+    return Math.round(value * 1000) / 1000; // trims float noise (e.g. 2.9999999999996) without hiding real precision
+}
+
+function extractReferencedIds(formula) {
+    const ids = [];
+    const re = /\{(\d+)\}/g;
+    let match;
+    while ((match = re.exec(formula))) ids.push(parseInt(match[1], 10));
+    return ids;
+}
+
+// Restricted arithmetic evaluator — mirrors _validate_formula_syntax/_ALLOWED_BIN_OPS in
+// src/routes/reports.py. Deliberately not eval()/Function()-based: a formula is technician-
+// authored config, but there's no reason to run it as arbitrary JS. Grammar: numbers, + - * /
+// ** and parentheses, and any number of "{id}" reference tokens, each resolved from `values`
+// (an id -> number map built by the caller from that referenced parameter's own input).
+function evaluateFormula(formula, values) {
+    if (!formula) return null;
+    try {
+        const tokens = tokenizeFormula(formula);
+        let pos = 0;
+        const peek = () => tokens[pos];
+        const consume = () => tokens[pos++];
+
+        const parseExpr = () => {
+            let value = parseTerm();
+            while (peek() && (peek().type === '+' || peek().type === '-')) {
+                const op = consume().type;
+                const rhs = parseTerm();
+                value = op === '+' ? value + rhs : value - rhs;
+            }
+            return value;
+        };
+        const parseTerm = () => {
+            let value = parseUnary();
+            while (peek() && (peek().type === '*' || peek().type === '/')) {
+                const op = consume().type;
+                const rhs = parseUnary();
+                value = op === '*' ? value * rhs : value / rhs;
+            }
+            return value;
+        };
+        // Matches Python's precedence: ** binds tighter than unary +/- on its LEFT but looser
+        // on its RIGHT, so "-{55} ** 2" is "-({55} ** 2)" while "{55} ** -2" is "{55} ** (-2)"
+        // — both fall out of parseUnary/parsePow calling each other rather than a linear chain.
+        const parseUnary = () => {
+            if (peek() && (peek().type === '+' || peek().type === '-')) {
+                const op = consume().type;
+                const value = parseUnary();
+                return op === '-' ? -value : value;
+            }
+            return parsePow();
+        };
+        const parsePow = () => {
+            const base = parseAtom();
+            if (peek() && peek().type === '**') {
+                consume();
+                return Math.pow(base, parseUnary()); // right-associative, right side may be signed
+            }
+            return base;
+        };
+        const parseAtom = () => {
+            const token = consume();
+            if (!token) throw new Error('Unexpected end of formula');
+            if (token.type === 'num') return token.value;
+            if (token.type === 'ref') {
+                const value = values[token.id];
+                if (value === undefined) throw new Error('Missing value for referenced parameter');
+                return value;
+            }
+            if (token.type === '(') {
+                const value = parseExpr();
+                if (!peek() || peek().type !== ')') throw new Error('Missing closing parenthesis');
+                consume();
+                return value;
+            }
+            throw new Error('Unexpected token in formula');
+        };
+
+        const result = parseExpr();
+        if (pos !== tokens.length) throw new Error('Unexpected trailing tokens');
+        return Number.isFinite(result) ? result : null;
+    } catch (error) {
+        return null; // malformed formula — already rejected at save time in the normal case
+    }
+}
+
+function tokenizeFormula(formula) {
+    const tokens = [];
+    let i = 0;
+    while (i < formula.length) {
+        const ch = formula[i];
+        if (/\s/.test(ch)) { i++; continue; }
+        if (ch === '{') {
+            const close = formula.indexOf('}', i);
+            if (close === -1) throw new Error('Unterminated reference token');
+            const idStr = formula.slice(i + 1, close);
+            if (!/^\d+$/.test(idStr)) throw new Error('Invalid reference token');
+            tokens.push({ type: 'ref', id: parseInt(idStr, 10) });
+            i = close + 1;
+            continue;
+        }
+        if (ch === '*' && formula[i + 1] === '*') { tokens.push({ type: '**' }); i += 2; continue; }
+        if ('+-*/()'.includes(ch)) { tokens.push({ type: ch }); i++; continue; }
+        if (/[0-9.]/.test(ch)) {
+            let j = i;
+            while (j < formula.length && /[0-9.]/.test(formula[j])) j++;
+            tokens.push({ type: 'num', value: parseFloat(formula.slice(i, j)) });
+            i = j;
+            continue;
+        }
+        throw new Error('Unexpected character in formula: ' + ch);
+    }
+    return tokens;
 }
 
 // Shared by previewReport() (non-destructive) and saveResults() (the real save) — same

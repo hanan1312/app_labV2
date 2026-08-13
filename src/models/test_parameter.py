@@ -26,6 +26,23 @@ class TestParameterTemplate(db.Model):
     ref_low_female = db.Column(db.Float)
     ref_high_female = db.Column(db.Float)
 
+    # Optional auto-calculation: this parameter's value can be derived from one or more other
+    # parameters of the same LabTest (e.g. MCV derived from HCT and RBC). relation_formula is
+    # an arithmetic expression where each referenced parameter appears as a stable "{id}"
+    # token, e.g. "{55} / {56} * 10" — see _validate_relation_formula in src/routes/reports.py
+    # for how it's built/validated, and the Result Parameters modal (script_lab.js) for the
+    # Excel-like "[Name]" editing form the {id} tokens are translated to/from. Purely a
+    # results-entry auto-fill convenience (see results_entry.js) — never evaluated or enforced
+    # server-side against a saved TestResult, so a technician can always override the
+    # auto-filled value by hand.
+    #
+    # An earlier version of this feature supported only a single dependency via a
+    # related_template_id FK column (still physically present in the database — SQLite can't
+    # cheaply drop a column, and it's harmless left unused) plus a formula using a bare "X"
+    # placeholder; main.py's startup migration rewrites any such old-format row into the
+    # {id}-token form the first time it runs against a given database.
+    relation_formula = db.Column(db.String(300))
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -43,4 +60,5 @@ class TestParameterTemplate(db.Model):
             'ref_high_male': self.ref_high_male,
             'ref_low_female': self.ref_low_female,
             'ref_high_female': self.ref_high_female,
+            'relation_formula': self.relation_formula,
         }

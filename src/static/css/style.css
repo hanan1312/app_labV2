@@ -237,10 +237,10 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--t
    an overflowing table. */
 #parameters-modal .modal-content {
     position: relative;
-    width: 95vw;
-    max-width: 1100px;
-    height: 90vh;
-    max-height: 90vh;
+    width: 98vw;
+    max-width: none;
+    height: 96vh;
+    max-height: 96vh;
     display: flex;
     flex-direction: column;
 }

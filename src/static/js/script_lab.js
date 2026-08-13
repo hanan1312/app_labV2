@@ -3533,9 +3533,37 @@ let currentParameterTestId = null;
 let currentParameterRows = []; // {id: null|number, name, unit, method, ref_low, ref_high, reference_range_text, abnormal_note}
 let deletedParameterIds = [];
 
+// Excel-like formula builder state: which row's Formula field last had focus, and where its
+// caret was — the 🔗 button next to another row's name inserts a [Name] reference there.
+let activeFormulaIndex = null;
+let formulaCaretPos = {};
+
+// The server stores/validates formulas with stable {id} tokens (e.g. "{55} / {56} * 2") so
+// renaming a parameter never breaks a formula that references it. The modal shows/edits a
+// friendlier "[Name]" form instead — these two converters translate between them.
+function formulaToDisplay(formula) {
+    if (!formula) return '';
+    return formula.replace(/\{(\d+)\}/g, (match, idStr) => {
+        const referenced = currentParameterRows.find((r) => r.id === parseInt(idStr, 10));
+        return referenced ? `[${referenced.name}]` : match; // dangling ref (deleted param) — left as-is
+    });
+}
+
+function formulaToStored(display) {
+    if (!display) return '';
+    let cleaned = display.trim();
+    if (cleaned.startsWith('=')) cleaned = cleaned.slice(1).trim(); // "=" is just familiar Excel styling
+    return cleaned.replace(/\[([^\]]+)\]/g, (match, name) => {
+        const referenced = currentParameterRows.find((r) => r.name && r.name.trim() === name.trim());
+        return referenced && referenced.id ? `{${referenced.id}}` : match; // unresolved — backend will reject
+    });
+}
+
 async function openParametersModal(testId, testName) {
     currentParameterTestId = testId;
     deletedParameterIds = [];
+    activeFormulaIndex = null;
+    formulaCaretPos = {};
     document.getElementById('parameters-modal-subtitle').textContent = testName;
 
     try {
@@ -3545,6 +3573,10 @@ async function openParametersModal(testId, testName) {
         currentParameterRows = [];
         showAlert('Could not load parameters: ' + error.message, 'error');
     }
+
+    currentParameterRows.forEach((row) => {
+        row.relation_formula = formulaToDisplay(row.relation_formula || '');
+    });
 
     renderParameterRows();
     document.getElementById('parameters-modal').style.display = 'block';
@@ -3565,10 +3597,25 @@ function renderParameterRows() {
                style="width: 100%; min-width: 70px;">
     `;
     const miniCell = (row, field, label) => `
-        <div style="display:flex; align-items:center; gap:4px; margin-bottom:4px;">
-            <span style="font-size:10px; color:var(--muted); width:20px;">${label}</span>
+        <div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">
+            <span style="font-size:12px; color:var(--muted); width:28px;">${label}</span>
             ${cell(row, field, 'number')}
         </div>
+    `;
+    const nameCell = (row, idx) => `
+        <div style="display:flex; align-items:center; gap:4px;">
+            ${cell(row, 'name')}
+            <button type="button" title="Insert this parameter into the active Formula field"
+                    onclick="insertParamReference(${idx})"
+                    style="flex-shrink:0; padding:3px 7px; font-size:12px; cursor:pointer; border-radius:4px; border:1px solid var(--border); background:var(--bg-2); color:var(--text);">🔗</button>
+        </div>
+    `;
+    const formulaCell = (row, idx) => `
+        <input type="text" id="param-formula-${idx}" value="${(row.relation_formula ?? '').toString().replace(/"/g, '&quot;')}"
+               oninput="currentParameterRows[${idx}].relation_formula = this.value"
+               onfocus="trackFormulaCaret(${idx})" onclick="trackFormulaCaret(${idx})" onkeyup="trackFormulaCaret(${idx})"
+               placeholder="= click a parameter's 🔗, then an operator, e.g. [WBC] / [RBC] * 2"
+               style="width: 100%; min-width: 220px;">
     `;
 
     tbody.innerHTML = currentParameterRows.map((row) => {
@@ -3579,7 +3626,7 @@ function renderParameterRows() {
             : `<div style="display:flex; gap:4px;">${cell(row, 'ref_low', 'number')}${cell(row, 'ref_high', 'number')}</div>`;
         return `
         <tr>
-            <td>${cell(row, 'name')}</td>
+            <td style="min-width: 160px;">${nameCell(row, idx)}</td>
             <td>${cell(row, 'unit')}</td>
             <td>${cell(row, 'method')}</td>
             <td style="text-align: center;">
@@ -3587,15 +3634,16 @@ function renderParameterRows() {
                        title="Different reference range for male/female"
                        onchange="currentParameterRows[${idx}].gender_specific = this.checked; renderParameterRows()">
             </td>
-            <td style="min-width: 150px;">${rangeCell}</td>
+            <td style="min-width: 170px;">${rangeCell}</td>
             <td>${cell(row, 'reference_range_text')}</td>
             <td>${cell(row, 'abnormal_note')}</td>
+            <td style="min-width: 240px;">${formulaCell(row, idx)}</td>
             <td style="text-align: center;">
-                <span style="cursor: pointer; color: var(--danger);" onclick="removeParameterRow(${idx})">&times;</span>
+                <span style="cursor: pointer; color: var(--danger); font-size: 18px;" onclick="removeParameterRow(${idx})">&times;</span>
             </td>
         </tr>
         `;
-    }).join('') || `<tr><td colspan="8" style="text-align: center; color: var(--muted); padding: 15px;">No parameters yet — click "+ Add Parameter" below.</td></tr>`;
+    }).join('') || `<tr><td colspan="9" style="text-align: center; color: var(--muted); padding: 15px;">No parameters yet — click "+ Add Parameter" below.</td></tr>`;
 }
 
 function addParameterRow() {
@@ -3603,6 +3651,7 @@ function addParameterRow() {
         id: null, name: '', unit: '', method: '',
         ref_low: '', ref_high: '', reference_range_text: '', abnormal_note: '',
         gender_specific: false, ref_low_male: '', ref_high_male: '', ref_low_female: '', ref_high_female: '',
+        relation_formula: '',
     });
     renderParameterRows();
 }
@@ -3611,7 +3660,53 @@ function removeParameterRow(index) {
     const row = currentParameterRows[index];
     if (row.id) deletedParameterIds.push(row.id);
     currentParameterRows.splice(index, 1);
+    if (activeFormulaIndex === index) activeFormulaIndex = null;
     renderParameterRows();
+}
+
+// Remembers where the caret sits inside a Formula field as the technician clicks/types in it,
+// so a later click on some other row's 🔗 button knows exactly where to splice the reference in.
+function trackFormulaCaret(idx) {
+    activeFormulaIndex = idx;
+    const input = document.getElementById(`param-formula-${idx}`);
+    if (input) formulaCaretPos[idx] = input.selectionStart;
+}
+
+// Excel-like "click a cell to insert its reference" — inserts "[Name]" at the last-known
+// caret position of whichever Formula field was last focused. namedIdx is the row whose 🔗
+// was clicked (the parameter being referenced), not the formula being edited.
+function insertParamReference(namedIdx) {
+    if (activeFormulaIndex === null || activeFormulaIndex === undefined) {
+        showAlert('Click into a Formula field first, then click a parameter\'s 🔗 to insert it.', 'error');
+        return;
+    }
+    if (namedIdx === activeFormulaIndex) {
+        showAlert('A parameter cannot reference itself.', 'error');
+        return;
+    }
+    const namedRow = currentParameterRows[namedIdx];
+    if (!namedRow || !namedRow.name || !namedRow.name.trim()) {
+        showAlert('Name that parameter before referencing it.', 'error');
+        return;
+    }
+
+    const targetRow = currentParameterRows[activeFormulaIndex];
+    const current = targetRow.relation_formula || '';
+    const pos = formulaCaretPos[activeFormulaIndex] != null ? formulaCaretPos[activeFormulaIndex] : current.length;
+    const insertText = `[${namedRow.name.trim()}]`;
+    targetRow.relation_formula = current.slice(0, pos) + insertText + current.slice(pos);
+
+    const restoreIndex = activeFormulaIndex;
+    renderParameterRows();
+    requestAnimationFrame(() => {
+        const refreshedInput = document.getElementById(`param-formula-${restoreIndex}`);
+        if (!refreshedInput) return;
+        refreshedInput.focus();
+        const newPos = pos + insertText.length;
+        refreshedInput.setSelectionRange(newPos, newPos);
+        activeFormulaIndex = restoreIndex;
+        formulaCaretPos[restoreIndex] = newPos;
+    });
 }
 
 async function saveParameterRows() {
@@ -3620,6 +3715,9 @@ async function saveParameterRows() {
             await apiFetch(`/api/parameters/${id}`, { method: 'DELETE' });
         }
 
+        // Pass 1: save every row's own fields (not its relation — a "Depends On" selection
+        // may point at another row that doesn't have a real id yet either, so relations are
+        // only resolvable once every row here has been created/updated at least once).
         for (const row of currentParameterRows) {
             if (!row.name || !row.name.trim()) continue; // skip blank rows silently
 
@@ -3642,7 +3740,24 @@ async function saveParameterRows() {
             if (row.id) {
                 await apiFetch(`/api/parameters/${row.id}`, { method: 'PUT', body: JSON.stringify(payload) });
             } else {
-                await apiFetch(`/api/lab-tests/${currentParameterTestId}/parameters`, { method: 'POST', body: JSON.stringify(payload) });
+                const response = await apiFetch(`/api/lab-tests/${currentParameterTestId}/parameters`, { method: 'POST', body: JSON.stringify(payload) });
+                if (response.ok) row.id = (await response.json()).id;
+            }
+        }
+
+        // Pass 2: now that every saved row has a real id, resolve each formula's "[Name]"
+        // references (which may point at a row that only just got its id in pass 1 above)
+        // into the stable "{id}" tokens the server stores and validates.
+        for (const row of currentParameterRows) {
+            if (!row.id) continue; // blank row skipped above — nothing to attach a formula to
+            const stored = formulaToStored(row.relation_formula || '');
+            const response = await apiFetch(`/api/parameters/${row.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ relation_formula: stored || null }),
+            });
+            if (!response.ok) {
+                const body = await response.json().catch(() => ({}));
+                showAlert(`Formula for "${row.name}" was not saved: ${body.error || 'unknown error'}`, 'error');
             }
         }
 

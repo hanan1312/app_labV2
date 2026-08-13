@@ -1,3 +1,4 @@
+import ast
 import base64
 import os
 import re
@@ -31,6 +32,90 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 
 # --- PARAMETER TEMPLATE CRUD (per LabTest — Settings > Test List > "Parameters") ---
 
+# Auto-calculation formulas can reference any number of sibling parameters, each embedded as
+# a stable "{id}" token (e.g. "{55} / {56} * 10" — see relation_formula's docstring on the
+# model; the Result Parameters modal shows/edits these as Excel-like "[Name]" references and
+# converts to/from {id} client-side). Restricted to this tiny arithmetic grammar rather than
+# eval()'d directly — no attribute access, no function calls, no name other than a reference
+# token. Validated at save time (_validate_relation_formula) and (identically, in JS)
+# evaluated live during results entry; never evaluated server-side against a real result,
+# since the auto-fill is a convenience the technician can always override by hand.
+_ALLOWED_BIN_OPS = (ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow)
+_ALLOWED_UNARY_OPS = (ast.UAdd, ast.USub)
+_REF_TOKEN_RE = re.compile(r'\{(\d+)\}')
+
+
+def _validate_formula_syntax(formula, referenced_ids):
+    # {id} isn't valid Python syntax on its own, so swap each token for a plain identifier
+    # (P<id>) before parsing — the set of ids that were actually swapped in is exactly the
+    # set of Names the walk below is allowed to accept.
+    substituted = _REF_TOKEN_RE.sub(lambda m: f'P{m.group(1)}', formula)
+    try:
+        tree = ast.parse(substituted, mode='eval')
+    except SyntaxError:
+        raise ValueError('Formula is not a valid arithmetic expression')
+
+    allowed_names = {f'P{i}' for i in referenced_ids}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Expression, ast.Load)):
+            continue  # ast.walk also visits a Name's ctx (Load()) as a separate node
+        if isinstance(node, _ALLOWED_BIN_OPS + _ALLOWED_UNARY_OPS):
+            continue  # BinOp/UnaryOp's .op is itself walked as a standalone node (e.g. Add())
+        if isinstance(node, ast.BinOp) and isinstance(node.op, _ALLOWED_BIN_OPS):
+            continue
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, _ALLOWED_UNARY_OPS):
+            continue
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+            continue
+        if isinstance(node, ast.Name) and node.id in allowed_names:
+            continue
+        raise ValueError('Formula may only reference this test\'s parameters, numbers, + - * / ** and parentheses')
+
+
+def _validate_relation_formula(row_id, lab_test_id, formula):
+    """Validates a parameter's auto-calculation formula — e.g. "{55} / {56} * 10", where each
+    {id} references another TestParameterTemplate row (see relation_formula on the model).
+    Returns the cleaned formula string to persist ('' clears any existing formula). Raises
+    ValueError with a user-facing message on anything invalid: no referenced parameters,
+    self-reference, a reference outside this test, a circular chain, or a formula that
+    doesn't parse under the restricted grammar above."""
+    formula = (formula or '').strip()
+    if formula.startswith('='):
+        formula = formula[1:].strip()  # "=" is just familiar Excel styling, not part of the grammar
+    if not formula:
+        return ''
+
+    referenced_ids = {int(m) for m in _REF_TOKEN_RE.findall(formula)}
+    if not referenced_ids:
+        raise ValueError('Formula must reference at least one other parameter')
+    if row_id is not None and row_id in referenced_ids:
+        raise ValueError('A parameter cannot depend on itself')
+
+    referenced_rows = {r.id: r for r in TestParameterTemplate.query.filter(
+        TestParameterTemplate.id.in_(referenced_ids)).all()}
+    for referenced_id in referenced_ids:
+        related = referenced_rows.get(referenced_id)
+        if not related or related.lab_test_id != lab_test_id:
+            raise ValueError('Formula references a parameter outside this test')
+
+    # Follow every referenced parameter's own formula outward — if that chain ever leads back
+    # to this row, the relation would make the auto-fill recompute forever.
+    seen = set()
+    queue = list(referenced_ids)
+    while queue:
+        current_id = queue.pop()
+        if row_id is not None and current_id == row_id:
+            raise ValueError('This relation would create a circular reference')
+        if current_id in seen:
+            continue
+        seen.add(current_id)
+        current_row = referenced_rows.get(current_id) or TestParameterTemplate.query.get(current_id)
+        if current_row and current_row.relation_formula:
+            queue.extend(int(m) for m in _REF_TOKEN_RE.findall(current_row.relation_formula))
+
+    _validate_formula_syntax(formula, referenced_ids)
+    return formula
+
 
 @reports_bp.route('/lab-tests/<int:lab_test_id>/parameters', methods=['GET'])
 def get_test_parameters(lab_test_id):
@@ -50,6 +135,11 @@ def create_test_parameter(lab_test_id):
     if not data.get('name'):
         return jsonify({'error': 'Missing required field: name'}), 400
 
+    try:
+        relation_formula = _validate_relation_formula(None, lab_test_id, data.get('relation_formula'))
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+
     max_order = db.session.query(db.func.max(TestParameterTemplate.display_order)) \
         .filter_by(lab_test_id=lab_test_id).scalar()
 
@@ -68,6 +158,7 @@ def create_test_parameter(lab_test_id):
         ref_high_male=data.get('ref_high_male'),
         ref_low_female=data.get('ref_low_female'),
         ref_high_female=data.get('ref_high_female'),
+        relation_formula=relation_formula or None,
     )
     db.session.add(row)
     db.session.commit()
@@ -81,6 +172,14 @@ def update_test_parameter(param_id):
         return jsonify({'error': 'Parameter not found'}), 404
 
     data = request.json or {}
+
+    if 'relation_formula' in data:
+        try:
+            relation_formula = _validate_relation_formula(row.id, row.lab_test_id, data.get('relation_formula'))
+        except ValueError as error:
+            return jsonify({'error': str(error)}), 400
+        row.relation_formula = relation_formula or None
+
     for field in ('name', 'unit', 'method', 'ref_low', 'ref_high',
                   'reference_range_text', 'abnormal_note', 'display_order',
                   'gender_specific', 'ref_low_male', 'ref_high_male',
@@ -97,6 +196,18 @@ def delete_test_parameter(param_id):
     row = TestParameterTemplate.query.get(param_id)
     if not row:
         return jsonify({'error': 'Parameter not found'}), 404
+
+    # Any other parameter in the same test whose formula references this one is left with a
+    # dangling {id} token once it's gone — clearing the whole formula (rather than trying to
+    # surgically remove just that token, which could leave a malformed expression like
+    # "/{56}") is the safe choice; the technician can rebuild it via the click-to-insert UI.
+    token = f'{{{row.id}}}'
+    dependents = TestParameterTemplate.query.filter(
+        TestParameterTemplate.lab_test_id == row.lab_test_id,
+        TestParameterTemplate.relation_formula.like(f'%{token}%')
+    ).all()
+    for dependent in dependents:
+        dependent.relation_formula = None
 
     db.session.delete(row)
     db.session.commit()
@@ -170,6 +281,7 @@ def get_results_schema(visit_id):
                 'ref_high': ref_high,
                 'reference_range_text': ref_text,
                 'result_value': existing.result_value if existing else '',
+                'relation_formula': tpl.relation_formula,
             })
         tests_payload.append({
             'lab_test_id': test.id,

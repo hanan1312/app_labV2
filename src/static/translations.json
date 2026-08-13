@@ -90,7 +90,8 @@
       "param_ref_low": "Ref. Low",
       "param_ref_high": "Ref. High",
       "param_ref_text": "Reference Range (display)",
-      "param_abnormal_note": "Abnormal Interpretation"
+      "param_abnormal_note": "Abnormal Interpretation",
+      "param_formula": "Formula"
     },
     "settings": {
       "report_branding": "Report Branding",
@@ -121,7 +122,8 @@
       "visit_history": "Visit History",
       "no_visits": "No laboratory visits recorded for this patient yet.",
       "parameters_title": "Result Parameters",
-      "parameters_hint": "These rows appear as the results-entry table for this test on every visit that books it."
+      "parameters_hint": "These rows appear as the results-entry table for this test on every visit that books it.",
+      "parameters_formula_hint": "\"Formula\" auto-calculates a parameter's value from others during results entry, Excel-style: click into a Formula field, click the 🔗 next to another parameter's name to insert it, then type an operator — e.g. \"[WBC] / [RBC] * 2\"."
     },
     "financials": {
       "title": "Financial  Statistics",
@@ -257,7 +259,8 @@
       "param_ref_low": "الحد الأدنى",
       "param_ref_high": "الحد الأعلى",
       "param_ref_text": "المعدل الطبيعي (للعرض)",
-      "param_abnormal_note": "تفسير النتيجة غير الطبيعية"
+      "param_abnormal_note": "تفسير النتيجة غير الطبيعية",
+      "param_formula": "المعادلة"
     },
     "settings": {
       "report_branding": "بيانات التقرير",
@@ -288,7 +291,8 @@
       "visit_history": "تاريخ الزيارات",
       "no_visits": "لا توجد زيارات سابقة مسجلة لهذا المريض.",
       "parameters_title": "معايير النتائج",
-      "parameters_hint": "تظهر هذه الصفوف كجدول إدخال النتائج لهذا التحليل في كل زيارة يتم فيها حجزه."
+      "parameters_hint": "تظهر هذه الصفوف كجدول إدخال النتائج لهذا التحليل في كل زيارة يتم فيها حجزه.",
+      "parameters_formula_hint": "\"المعادلة\" تحسب قيمة معيار تلقائيًا من معايير أخرى أثناء إدخال النتائج، بأسلوب إكسل: اضغط داخل حقل المعادلة، ثم اضغط 🔗 بجانب اسم معيار آخر لإدراجه، ثم اكتب عملية حسابية — مثال: \"[WBC] / [RBC] * 2\"."
     },
     "financials": {
       "title": "الاحصائيات المالية",
