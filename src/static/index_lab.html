@@ -461,6 +461,7 @@
                         <p id="parameters-modal-subtitle" style="color: var(--muted); font-size: 12px; margin-bottom: 15px;"></p>
                         <p style="color: var(--muted); font-size: 12px; margin-bottom: 15px;" data-i18n="modals.parameters_hint">These rows appear as the results-entry table for this test on every visit that books it.</p>
                         <p style="color: var(--muted); font-size: 12px; margin-bottom: 15px;" data-i18n="modals.parameters_formula_hint">"Formula" auto-calculates a parameter's value from others during results entry, Excel-style: click into a Formula field, click the 🔗 next to another parameter's name to insert it, then type an operator — e.g. "[WBC] / [RBC] * 2".</p>
+                        <p style="color: var(--muted); font-size: 12px; margin-bottom: 15px;" data-i18n="modals.parameters_absolute_hint">"Absolute Count" is a separate computed value with its own unit and reference range (e.g. Absolute Neutrophil Count) — its formula works the same way and, unlike "Formula", may reference the parameter's own value, e.g. "[Neutrophils] / 100 * [WBC]".</p>
 
                         <div class="table-container">
                             <table style="width: 100%;">
@@ -474,6 +475,9 @@
                                         <th data-i18n="forms.param_ref_text">Ref. Range (display)</th>
                                         <th data-i18n="forms.param_abnormal_note">Abnormal Interpretation</th>
                                         <th data-i18n="forms.param_formula" title="Click into this field, then click the 🔗 next to another parameter's name to insert it, e.g. [WBC] / [RBC] * 2">Formula</th>
+                                        <th data-i18n="forms.param_absolute_formula" title="A separate computed value — may reference this parameter's own value, e.g. [Neutrophils] / 100 * [WBC]">Absolute Count Formula</th>
+                                        <th data-i18n="forms.param_absolute_unit">Absolute Unit</th>
+                                        <th data-i18n="forms.param_absolute_ref">Absolute Ref. Low/High</th>
                                         <th style="width: 40px;"></th>
                                     </tr>
                                 </thead>

@@ -43,6 +43,19 @@ class TestParameterTemplate(db.Model):
     # {id}-token form the first time it runs against a given database.
     relation_formula = db.Column(db.String(300))
 
+    # Optional "Absolute Count" — a second, independently-tracked derived value alongside the
+    # main result (e.g. Absolute Neutrophil Count computed from Neutrophils% and WBC). Same
+    # {id}-token formula grammar/validation as relation_formula (_validate_absolute_count_formula
+    # in src/routes/reports.py), but — unlike relation_formula — self-reference is expected and
+    # allowed: an absolute count is very often computed from the parameter's own percentage
+    # value, and since it's never fed back in as another formula's input there's no cycle to
+    # guard against. Carries its own unit and (non-gender-specific) reference range, since an
+    # absolute count's normal range is numerically unrelated to the percentage's.
+    absolute_count_formula = db.Column(db.String(300))
+    absolute_count_unit = db.Column(db.String(50))
+    absolute_ref_low = db.Column(db.Float)
+    absolute_ref_high = db.Column(db.Float)
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -61,4 +74,8 @@ class TestParameterTemplate(db.Model):
             'ref_low_female': self.ref_low_female,
             'ref_high_female': self.ref_high_female,
             'relation_formula': self.relation_formula,
+            'absolute_count_formula': self.absolute_count_formula,
+            'absolute_count_unit': self.absolute_count_unit,
+            'absolute_ref_low': self.absolute_ref_low,
+            'absolute_ref_high': self.absolute_ref_high,
         }

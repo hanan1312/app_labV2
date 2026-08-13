@@ -226,6 +226,25 @@ with app.app_context():
         except Exception:
             db.session.rollback()
 
+        # "Absolute Count" — a second, independently-tracked derived value per parameter (e.g.
+        # Absolute Neutrophil Count alongside Neutrophils%) — see absolute_count_formula's
+        # docstring in src/models/test_parameter.py.
+        db.session.bind = engine
+        for statement in [
+            "ALTER TABLE test_parameter_templates ADD COLUMN absolute_count_formula VARCHAR(300)",
+            "ALTER TABLE test_parameter_templates ADD COLUMN absolute_count_unit VARCHAR(50)",
+            "ALTER TABLE test_parameter_templates ADD COLUMN absolute_ref_low FLOAT",
+            "ALTER TABLE test_parameter_templates ADD COLUMN absolute_ref_high FLOAT",
+            "ALTER TABLE test_results ADD COLUMN absolute_count VARCHAR(100)",
+            "ALTER TABLE test_results ADD COLUMN absolute_unit VARCHAR(50)",
+            "ALTER TABLE test_results ADD COLUMN absolute_reference_range VARCHAR(100)",
+        ]:
+            try:
+                db.session.execute(text(statement))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
         # Guarded backfill: every transaction that existed before partial payments were
         # possible was, by definition, paid in full — a blind column DEFAULT would instead
         # read as "$0 paid" for every historical transaction. Runs once (amount_paid stays

@@ -263,6 +263,11 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--t
     min-height: 0;
     max-height: none;
     overflow-y: auto !important;
+    /* The table has grown too wide (Formula + Absolute Count columns) to fit even at 98vw —
+       scroll horizontally rather than letting columns spill past the modal's edge (the
+       blanket ".table-container { overflow: visible }" rule elsewhere in this file, needed
+       so row-action dropdowns aren't clipped, would otherwise leave overflow-x unset here). */
+    overflow-x: auto !important;
     margin-bottom: 15px;
 }
 #parameters-modal .modal-content > div:not(.table-container) {

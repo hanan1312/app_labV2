@@ -118,6 +118,33 @@ def _validate_relation_formula(row_id, lab_test_id, formula):
     return formula
 
 
+def _validate_absolute_count_formula(row_id, lab_test_id, formula):
+    """Validates a parameter's "Absolute Count" formula — same {id}-token grammar as
+    relation_formula, but self-reference is expected and allowed here: an absolute count is
+    very often computed from the parameter's own percentage value (e.g. Absolute Neutrophil
+    Count = Neutrophils% / 100 * WBC), and since it produces a value nothing else ever reads
+    as an input, there's no circular-reference chain to guard against either."""
+    formula = (formula or '').strip()
+    if formula.startswith('='):
+        formula = formula[1:].strip()
+    if not formula:
+        return ''
+
+    referenced_ids = {int(m) for m in _REF_TOKEN_RE.findall(formula)}
+    if not referenced_ids:
+        raise ValueError('Formula must reference at least one parameter')
+
+    referenced_rows = {r.id: r for r in TestParameterTemplate.query.filter(
+        TestParameterTemplate.id.in_(referenced_ids)).all()}
+    for referenced_id in referenced_ids:
+        related = referenced_rows.get(referenced_id)
+        if not related or related.lab_test_id != lab_test_id:
+            raise ValueError('Formula references a parameter outside this test')
+
+    _validate_formula_syntax(formula, referenced_ids)
+    return formula
+
+
 @reports_bp.route('/lab-tests/<int:lab_test_id>/parameters', methods=['GET'])
 def get_test_parameters(lab_test_id):
     rows = (TestParameterTemplate.query
@@ -138,6 +165,7 @@ def create_test_parameter(lab_test_id):
 
     try:
         relation_formula = _validate_relation_formula(None, lab_test_id, data.get('relation_formula'))
+        absolute_count_formula = _validate_absolute_count_formula(None, lab_test_id, data.get('absolute_count_formula'))
     except ValueError as error:
         return jsonify({'error': str(error)}), 400
 
@@ -160,6 +188,10 @@ def create_test_parameter(lab_test_id):
         ref_low_female=data.get('ref_low_female'),
         ref_high_female=data.get('ref_high_female'),
         relation_formula=relation_formula or None,
+        absolute_count_formula=absolute_count_formula or None,
+        absolute_count_unit=data.get('absolute_count_unit'),
+        absolute_ref_low=data.get('absolute_ref_low'),
+        absolute_ref_high=data.get('absolute_ref_high'),
     )
     db.session.add(row)
     db.session.commit()
@@ -181,10 +213,19 @@ def update_test_parameter(param_id):
             return jsonify({'error': str(error)}), 400
         row.relation_formula = relation_formula or None
 
+    if 'absolute_count_formula' in data:
+        try:
+            absolute_count_formula = _validate_absolute_count_formula(
+                row.id, row.lab_test_id, data.get('absolute_count_formula'))
+        except ValueError as error:
+            return jsonify({'error': str(error)}), 400
+        row.absolute_count_formula = absolute_count_formula or None
+
     for field in ('name', 'unit', 'method', 'ref_low', 'ref_high',
                   'reference_range_text', 'abnormal_note', 'display_order',
                   'gender_specific', 'ref_low_male', 'ref_high_male',
-                  'ref_low_female', 'ref_high_female'):
+                  'ref_low_female', 'ref_high_female',
+                  'absolute_count_unit', 'absolute_ref_low', 'absolute_ref_high'):
         if field in data:
             setattr(row, field, data[field])
 
@@ -202,13 +243,21 @@ def delete_test_parameter(param_id):
     # dangling {id} token once it's gone — clearing the whole formula (rather than trying to
     # surgically remove just that token, which could leave a malformed expression like
     # "/{56}") is the safe choice; the technician can rebuild it via the click-to-insert UI.
+    # relation_formula and absolute_count_formula are independent columns, so both need
+    # scanning separately.
     token = f'{{{row.id}}}'
     dependents = TestParameterTemplate.query.filter(
         TestParameterTemplate.lab_test_id == row.lab_test_id,
-        TestParameterTemplate.relation_formula.like(f'%{token}%')
+        db.or_(
+            TestParameterTemplate.relation_formula.like(f'%{token}%'),
+            TestParameterTemplate.absolute_count_formula.like(f'%{token}%'),
+        )
     ).all()
     for dependent in dependents:
-        dependent.relation_formula = None
+        if dependent.relation_formula and token in dependent.relation_formula:
+            dependent.relation_formula = None
+        if dependent.absolute_count_formula and token in dependent.absolute_count_formula:
+            dependent.absolute_count_formula = None
 
     db.session.delete(row)
     db.session.commit()
@@ -283,6 +332,11 @@ def get_results_schema(visit_id):
                 'reference_range_text': ref_text,
                 'result_value': existing.result_value if existing else '',
                 'relation_formula': tpl.relation_formula,
+                'absolute_count_formula': tpl.absolute_count_formula,
+                'absolute_count_unit': tpl.absolute_count_unit,
+                'absolute_ref_low': tpl.absolute_ref_low,
+                'absolute_ref_high': tpl.absolute_ref_high,
+                'absolute_count': existing.absolute_count if existing else '',
             })
         tests_payload.append({
             'lab_test_id': test.id,
@@ -338,6 +392,19 @@ def save_results(visit_id):
             except ValueError:
                 pass
 
+        # Absolute Count — computed client-side (evaluateFormula in results_entry.js) and
+        # submitted as-is, same trust model as result_value; stored alongside it. unit/
+        # reference_range are a snapshot of the template at save time, mirroring how the main
+        # value's own unit/reference_range are captured (non-gender-specific by design — see
+        # absolute_count_formula's docstring).
+        absolute_count = (entry.get('absolute_count') or '').strip()
+        absolute_unit = None
+        absolute_reference_range = None
+        if absolute_count and template:
+            absolute_unit = template.absolute_count_unit
+            if template.absolute_ref_low is not None and template.absolute_ref_high is not None:
+                absolute_reference_range = f'{template.absolute_ref_low:g} - {template.absolute_ref_high:g}'
+
         db.session.add(TestResult(
             client_id=visit.patient_id,
             visit_id=visit.id,
@@ -349,6 +416,9 @@ def save_results(visit_id):
             reference_range=reference_range,
             status=status,
             test_completion_date=datetime.utcnow(),
+            absolute_count=absolute_count or None,
+            absolute_unit=absolute_unit,
+            absolute_reference_range=absolute_reference_range,
         ))
 
     # Per-test technician comments (shown in the report footer) — independent of whether
@@ -655,6 +725,32 @@ def get_statistics_results():
 
 # --- REPORT CONTEXT + PDF GENERATION ---
 
+def _absolute_count_row(parameter_name, absolute_count, absolute_unit, absolute_reference_range, tpl):
+    """Synthetic second report row for a parameter's Absolute Count, appended right after its
+    main row — same {'name','result_value','unit','reference_range','abnormal','hl'} shape the
+    PDF/HTML rendering already expects, so no changes are needed there to show it. hl is
+    (re)computed fresh from the template's current absolute_ref_low/high, mirroring how the
+    main row's hl is (re)computed rather than trusted from a stored flag."""
+    hl = None
+    if absolute_count and tpl:
+        try:
+            numeric = float(absolute_count)
+            if tpl.absolute_ref_low is not None and numeric < tpl.absolute_ref_low:
+                hl = 'low'
+            elif tpl.absolute_ref_high is not None and numeric > tpl.absolute_ref_high:
+                hl = 'high'
+        except ValueError:
+            pass
+    return {
+        'name': f'{parameter_name} (Absolute Count)',
+        'result_value': absolute_count,
+        'unit': absolute_unit,
+        'reference_range': absolute_reference_range,
+        'abnormal': hl is not None,
+        'hl': hl,
+    }
+
+
 def _build_test_dict(test, results_by_test, templates_by_key, gender, interpretations):
     """Per-test {'lab_test_id', 'name', 'rows'} dict for the report, or None if it has no
     saved results yet. Gender-resolves each row's reference range (Unit 5) and classifies
@@ -682,6 +778,9 @@ def _build_test_dict(test, results_by_test, templates_by_key, gender, interpreta
             'abnormal': r.status == 'abnormal',
             'hl': hl,
         })
+        if r.absolute_count:
+            rows.append(_absolute_count_row(
+                r.parameter_name, r.absolute_count, r.absolute_unit, r.absolute_reference_range, tpl))
         if r.status == 'abnormal' and tpl and tpl.abnormal_note:
             interpretations.append({'parameter': r.parameter_name, 'note': tpl.abnormal_note})
     return {'lab_test_id': test.id, 'name': test.name, 'rows': rows} if rows else None
@@ -819,6 +918,16 @@ def build_preview_context(visit_id, entries, comments_map):
             'hl': hl,
         }
         rows_by_test.setdefault(lab_test_id, []).append(row)
+
+        absolute_count = (entry.get('absolute_count') or '').strip()
+        if absolute_count:
+            absolute_unit = template.absolute_count_unit if template else None
+            absolute_reference_range = None
+            if template and template.absolute_ref_low is not None and template.absolute_ref_high is not None:
+                absolute_reference_range = f'{template.absolute_ref_low:g} - {template.absolute_ref_high:g}'
+            rows_by_test[lab_test_id].append(
+                _absolute_count_row(row['name'], absolute_count, absolute_unit, absolute_reference_range, template))
+
         if abnormal and template and template.abnormal_note:
             interpretations.append({'parameter': row['name'], 'note': template.abnormal_note})
 

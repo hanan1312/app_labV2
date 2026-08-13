@@ -36,6 +36,16 @@ function formatCairoDateTime(value, includeSeconds = true) {
     return `${datePart} ${timePart}`;
 }
 
+// Mirrors the "{lo:g} - {hi:g}" format save_results()/_effective_ref_range use in reports.py
+// for the main value's reference range — absolute_ref_low/high aren't pre-formatted into a
+// text field server-side the way the main range is, so this schema-driven display formats
+// them the same way instead of showing raw numbers.
+function absoluteRefRangeText(param) {
+    if (param.absolute_ref_low == null || param.absolute_ref_high == null) return '-';
+    const trim = (n) => (Number.isInteger(n) ? String(n) : String(parseFloat(n.toFixed(6))));
+    return `${trim(param.absolute_ref_low)} - ${trim(param.absolute_ref_high)}`;
+}
+
 async function loadSchema() {
     try {
         const response = await apiFetch(`/api/visits/${visitId}/results-schema`);
@@ -88,6 +98,11 @@ function render() {
                 </td>
                 <td class="re-unit">${param.unit || '-'}</td>
                 <td class="re-range">${param.reference_range_text || '-'}</td>
+                <td>
+                    <input type="text" id="re-abs-${testIndex}-${paramIndex}" value="${escapeAttr(param.absolute_count)}">
+                </td>
+                <td class="re-unit">${param.absolute_count_unit || '-'}</td>
+                <td class="re-range">${absoluteRefRangeText(param)}</td>
             </tr>
         `).join('');
 
@@ -96,7 +111,7 @@ function render() {
                 <h3>${test.test_name}</h3>
                 <table class="re-table">
                     <thead>
-                        <tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Ref. Range</th></tr>
+                        <tr><th>Parameter</th><th>Result</th><th>Unit</th><th>Ref. Range</th><th>Absolute Count</th><th>Unit</th><th>Ref. Range</th></tr>
                     </thead>
                     <tbody>${rows}</tbody>
                 </table>
@@ -140,32 +155,51 @@ function recalcAllFormulas(testIndex) {
 
         test.parameters.forEach((dependent, dependentIndex) => {
             if (!dependent.relation_formula) return;
+            const applied = applyFormula(testIndex, test, dependent.relation_formula, `re-input-${testIndex}-${dependentIndex}`);
+            changed = changed || applied;
+        });
 
-            const referencedIds = extractReferencedIds(dependent.relation_formula);
-            const values = {};
-            let allNumeric = true;
-            referencedIds.forEach((id) => {
-                const sourceIndex = test.parameters.findIndex((p) => p.template_id === id);
-                const sourceInput = sourceIndex >= 0 ? document.getElementById(`re-input-${testIndex}-${sourceIndex}`) : null;
-                const numeric = parseFloat(sourceInput ? sourceInput.value : '');
-                if (Number.isNaN(numeric)) allNumeric = false;
-                else values[id] = numeric;
-            });
-            if (!allNumeric) return; // wait until every referenced field holds a real number
-
-            const computed = evaluateFormula(dependent.relation_formula, values);
-            if (computed === null) return;
-            const dependentInput = document.getElementById(`re-input-${testIndex}-${dependentIndex}`);
-            if (!dependentInput) return;
-            const rounded = String(roundForDisplay(computed));
-            if (dependentInput.value !== rounded) {
-                dependentInput.value = rounded;
-                changed = true;
-            }
+        // Absolute Count formulas read from the SAME main-value inputs (often including the
+        // parameter's own — self-reference is allowed here, unlike relation_formula) and
+        // write into a separate input, so they're recomputed after this pass's relation_formula
+        // updates are already in the DOM, using whatever the main values settle to.
+        test.parameters.forEach((param, paramIndex) => {
+            if (!param.absolute_count_formula) return;
+            const applied = applyFormula(testIndex, test, param.absolute_count_formula, `re-abs-${testIndex}-${paramIndex}`);
+            changed = changed || applied;
         });
 
         if (!changed) break;
     }
+}
+
+// Evaluates `formula` against the CURRENT main-result inputs of whichever parameters it
+// references, and writes the result into the input at `targetInputId` if it changed. Shared
+// by relation_formula (target = the parameter's own main input) and absolute_count_formula
+// (target = its separate Absolute Count input). Returns whether the target's value changed.
+function applyFormula(testIndex, test, formula, targetInputId) {
+    const referencedIds = extractReferencedIds(formula);
+    const values = {};
+    let allNumeric = true;
+    referencedIds.forEach((id) => {
+        const sourceIndex = test.parameters.findIndex((p) => p.template_id === id);
+        const sourceInput = sourceIndex >= 0 ? document.getElementById(`re-input-${testIndex}-${sourceIndex}`) : null;
+        const numeric = parseFloat(sourceInput ? sourceInput.value : '');
+        if (Number.isNaN(numeric)) allNumeric = false;
+        else values[id] = numeric;
+    });
+    if (!allNumeric) return false; // wait until every referenced field holds a real number
+
+    const computed = evaluateFormula(formula, values);
+    if (computed === null) return false;
+    const targetInput = document.getElementById(targetInputId);
+    if (!targetInput) return false;
+    const rounded = String(roundForDisplay(computed));
+    if (targetInput.value !== rounded) {
+        targetInput.value = rounded;
+        return true;
+    }
+    return false;
 }
 
 function roundForDisplay(value) {
@@ -295,6 +329,7 @@ function collectFormData() {
             const input = document.getElementById(`re-input-${testIndex}-${paramIndex}`);
             const value = input ? input.value.trim() : '';
             if (!value) return; // blank — skip, matches backend's "skip blanks" behavior
+            const absInput = document.getElementById(`re-abs-${testIndex}-${paramIndex}`);
             results.push({
                 lab_test_id: test.lab_test_id,
                 test_name: test.test_name,
@@ -303,6 +338,7 @@ function collectFormData() {
                 unit: param.unit,
                 reference_range_text: param.reference_range_text,
                 result_value: value,
+                absolute_count: absInput ? absInput.value.trim() : '',
             });
         });
 

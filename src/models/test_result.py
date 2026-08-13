@@ -22,6 +22,17 @@ class TestResult(db.Model):
     unit = db.Column(db.String(50))  # e.g., "cells/µL", "g/dL"
     reference_range = db.Column(db.String(100))  # e.g., "4.5-11.0"
     status = db.Column(db.String(50), default='pending')  # pending, completed, abnormal, normal
+
+    # Optional "Absolute Count" — a second value alongside result_value, computed client-side
+    # from TestParameterTemplate.absolute_count_formula (see that column's docstring) and
+    # submitted as-is at save time, same trust model as result_value itself. Its high/low
+    # status is recomputed at report-render time from the template's current
+    # absolute_ref_low/absolute_ref_high rather than stored here, mirroring how the main
+    # value's H/L mark is (re)computed fresh in _build_test_dict rather than trusted from
+    # `status` above.
+    absolute_count = db.Column(db.String(100))
+    absolute_unit = db.Column(db.String(50))
+    absolute_reference_range = db.Column(db.String(100))
     
     # Dates
     sample_collection_date = db.Column(db.DateTime)
@@ -48,6 +59,9 @@ class TestResult(db.Model):
             'unit': self.unit,
             'reference_range': self.reference_range,
             'status': self.status,
+            'absolute_count': self.absolute_count,
+            'absolute_unit': self.absolute_unit,
+            'absolute_reference_range': self.absolute_reference_range,
             'sample_collection_date': self.sample_collection_date.isoformat() if self.sample_collection_date else None,
             'test_completion_date': self.test_completion_date.isoformat() if self.test_completion_date else None,
             'technician_notes': self.technician_notes,

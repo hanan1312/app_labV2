@@ -3535,10 +3535,11 @@ let currentParameterTestId = null;
 let currentParameterRows = []; // {id: null|number, name, unit, method, ref_low, ref_high, reference_range_text, abnormal_note}
 let deletedParameterIds = [];
 
-// Excel-like formula builder state: which row's Formula field last had focus, and where its
-// caret was — the 🔗 button next to another row's name inserts a [Name] reference there.
-let activeFormulaIndex = null;
-let formulaCaretPos = {};
+// Excel-like formula builder state: which row/field (relation_formula or
+// absolute_count_formula — a parameter can have both) last had focus, and where its caret
+// was — the 🔗 button next to another row's name inserts a [Name] reference there.
+let activeFormulaTarget = null; // { rowIndex, field } | null
+let formulaCaretPos = {}; // keyed by `${rowIndex}:${field}`
 
 // The server stores/validates formulas with stable {id} tokens (e.g. "{55} / {56} * 2") so
 // renaming a parameter never breaks a formula that references it. The modal shows/edits a
@@ -3564,7 +3565,7 @@ function formulaToStored(display) {
 async function openParametersModal(testId, testName) {
     currentParameterTestId = testId;
     deletedParameterIds = [];
-    activeFormulaIndex = null;
+    activeFormulaTarget = null;
     formulaCaretPos = {};
     document.getElementById('parameters-modal-subtitle').textContent = testName;
 
@@ -3578,6 +3579,7 @@ async function openParametersModal(testId, testName) {
 
     currentParameterRows.forEach((row) => {
         row.relation_formula = formulaToDisplay(row.relation_formula || '');
+        row.absolute_count_formula = formulaToDisplay(row.absolute_count_formula || '');
     });
 
     renderParameterRows();
@@ -3612,12 +3614,12 @@ function renderParameterRows() {
                     style="flex-shrink:0; padding:3px 7px; font-size:12px; cursor:pointer; border-radius:4px; border:1px solid var(--border); background:var(--bg-2); color:var(--text);">🔗</button>
         </div>
     `;
-    const formulaCell = (row, idx) => `
-        <input type="text" id="param-formula-${idx}" value="${(row.relation_formula ?? '').toString().replace(/"/g, '&quot;')}"
-               oninput="currentParameterRows[${idx}].relation_formula = this.value"
-               onfocus="trackFormulaCaret(${idx})" onclick="trackFormulaCaret(${idx})" onkeyup="trackFormulaCaret(${idx})"
-               placeholder="= click a parameter's 🔗, then an operator, e.g. [WBC] / [RBC] * 2"
-               style="width: 100%; min-width: 220px;">
+    const formulaCell = (row, idx, field, placeholder) => `
+        <input type="text" id="param-formula-${field}-${idx}" value="${(row[field] ?? '').toString().replace(/"/g, '&quot;')}"
+               oninput="currentParameterRows[${idx}].${field} = this.value"
+               onfocus="trackFormulaCaret(${idx}, '${field}')" onclick="trackFormulaCaret(${idx}, '${field}')" onkeyup="trackFormulaCaret(${idx}, '${field}')"
+               placeholder="${placeholder}"
+               style="width: 100%; min-width: 200px;">
     `;
 
     tbody.innerHTML = currentParameterRows.map((row) => {
@@ -3626,6 +3628,7 @@ function renderParameterRows() {
             ? miniCell(row, 'ref_low_male', 'M ↓') + miniCell(row, 'ref_high_male', 'M ↑')
               + miniCell(row, 'ref_low_female', 'F ↓') + miniCell(row, 'ref_high_female', 'F ↑')
             : `<div style="display:flex; gap:4px;">${cell(row, 'ref_low', 'number')}${cell(row, 'ref_high', 'number')}</div>`;
+        const absoluteRangeCell = `<div style="display:flex; gap:4px;">${cell(row, 'absolute_ref_low', 'number')}${cell(row, 'absolute_ref_high', 'number')}</div>`;
         return `
         <tr>
             <td style="min-width: 160px;">${nameCell(row, idx)}</td>
@@ -3639,13 +3642,16 @@ function renderParameterRows() {
             <td style="min-width: 170px;">${rangeCell}</td>
             <td>${cell(row, 'reference_range_text')}</td>
             <td>${cell(row, 'abnormal_note')}</td>
-            <td style="min-width: 240px;">${formulaCell(row, idx)}</td>
+            <td style="min-width: 220px;">${formulaCell(row, idx, 'relation_formula', "= click a parameter's 🔗, then an operator, e.g. [WBC] / [RBC] * 2")}</td>
+            <td style="min-width: 220px;">${formulaCell(row, idx, 'absolute_count_formula', "= e.g. [Neutrophils] / 100 * [WBC]")}</td>
+            <td>${cell(row, 'absolute_count_unit')}</td>
+            <td style="min-width: 150px;">${absoluteRangeCell}</td>
             <td style="text-align: center;">
                 <span style="cursor: pointer; color: var(--danger); font-size: 18px;" onclick="removeParameterRow(${idx})">&times;</span>
             </td>
         </tr>
         `;
-    }).join('') || `<tr><td colspan="9" style="text-align: center; color: var(--muted); padding: 15px;">No parameters yet — click "+ Add Parameter" below.</td></tr>`;
+    }).join('') || `<tr><td colspan="12" style="text-align: center; color: var(--muted); padding: 15px;">No parameters yet — click "+ Add Parameter" below.</td></tr>`;
 }
 
 function addParameterRow() {
@@ -3654,6 +3660,7 @@ function addParameterRow() {
         ref_low: '', ref_high: '', reference_range_text: '', abnormal_note: '',
         gender_specific: false, ref_low_male: '', ref_high_male: '', ref_low_female: '', ref_high_female: '',
         relation_formula: '',
+        absolute_count_formula: '', absolute_count_unit: '', absolute_ref_low: '', absolute_ref_high: '',
     });
     renderParameterRows();
 }
@@ -3662,27 +3669,34 @@ function removeParameterRow(index) {
     const row = currentParameterRows[index];
     if (row.id) deletedParameterIds.push(row.id);
     currentParameterRows.splice(index, 1);
-    if (activeFormulaIndex === index) activeFormulaIndex = null;
+    if (activeFormulaTarget && activeFormulaTarget.rowIndex === index) activeFormulaTarget = null;
     renderParameterRows();
 }
 
 // Remembers where the caret sits inside a Formula field as the technician clicks/types in it,
-// so a later click on some other row's 🔗 button knows exactly where to splice the reference in.
-function trackFormulaCaret(idx) {
-    activeFormulaIndex = idx;
-    const input = document.getElementById(`param-formula-${idx}`);
-    if (input) formulaCaretPos[idx] = input.selectionStart;
+// so a later click on some other row's 🔗 button knows exactly where to splice the reference
+// in. field is 'relation_formula' or 'absolute_count_formula' — a parameter can have both, so
+// tracking just the row wouldn't say which of its two formula fields is actually focused.
+function trackFormulaCaret(rowIndex, field) {
+    activeFormulaTarget = { rowIndex, field };
+    const input = document.getElementById(`param-formula-${field}-${rowIndex}`);
+    if (input) formulaCaretPos[`${rowIndex}:${field}`] = input.selectionStart;
 }
 
 // Excel-like "click a cell to insert its reference" — inserts "[Name]" at the last-known
 // caret position of whichever Formula field was last focused. namedIdx is the row whose 🔗
 // was clicked (the parameter being referenced), not the formula being edited.
 function insertParamReference(namedIdx) {
-    if (activeFormulaIndex === null || activeFormulaIndex === undefined) {
+    if (!activeFormulaTarget) {
         showAlert('Click into a Formula field first, then click a parameter\'s 🔗 to insert it.', 'error');
         return;
     }
-    if (namedIdx === activeFormulaIndex) {
+    const { rowIndex, field } = activeFormulaTarget;
+    // Self-reference is meaningless for relation_formula (a value can't be derived from
+    // itself) but is the common case for absolute_count_formula (e.g. Absolute Neutrophil
+    // Count = Neutrophils% * WBC / 100 references Neutrophils' own value) — see
+    // _validate_absolute_count_formula in reports.py.
+    if (namedIdx === rowIndex && field === 'relation_formula') {
         showAlert('A parameter cannot reference itself.', 'error');
         return;
     }
@@ -3692,22 +3706,22 @@ function insertParamReference(namedIdx) {
         return;
     }
 
-    const targetRow = currentParameterRows[activeFormulaIndex];
-    const current = targetRow.relation_formula || '';
-    const pos = formulaCaretPos[activeFormulaIndex] != null ? formulaCaretPos[activeFormulaIndex] : current.length;
+    const targetRow = currentParameterRows[rowIndex];
+    const current = targetRow[field] || '';
+    const key = `${rowIndex}:${field}`;
+    const pos = formulaCaretPos[key] != null ? formulaCaretPos[key] : current.length;
     const insertText = `[${namedRow.name.trim()}]`;
-    targetRow.relation_formula = current.slice(0, pos) + insertText + current.slice(pos);
+    targetRow[field] = current.slice(0, pos) + insertText + current.slice(pos);
 
-    const restoreIndex = activeFormulaIndex;
     renderParameterRows();
     requestAnimationFrame(() => {
-        const refreshedInput = document.getElementById(`param-formula-${restoreIndex}`);
+        const refreshedInput = document.getElementById(`param-formula-${field}-${rowIndex}`);
         if (!refreshedInput) return;
         refreshedInput.focus();
         const newPos = pos + insertText.length;
         refreshedInput.setSelectionRange(newPos, newPos);
-        activeFormulaIndex = restoreIndex;
-        formulaCaretPos[restoreIndex] = newPos;
+        activeFormulaTarget = { rowIndex, field };
+        formulaCaretPos[key] = newPos;
     });
 }
 
@@ -3737,6 +3751,9 @@ async function saveParameterRows() {
                 ref_high_male: numOrNull(row.ref_high_male),
                 ref_low_female: numOrNull(row.ref_low_female),
                 ref_high_female: numOrNull(row.ref_high_female),
+                absolute_count_unit: row.absolute_count_unit || null,
+                absolute_ref_low: numOrNull(row.absolute_ref_low),
+                absolute_ref_high: numOrNull(row.absolute_ref_high),
             };
 
             if (row.id) {
@@ -3749,17 +3766,29 @@ async function saveParameterRows() {
 
         // Pass 2: now that every saved row has a real id, resolve each formula's "[Name]"
         // references (which may point at a row that only just got its id in pass 1 above)
-        // into the stable "{id}" tokens the server stores and validates.
+        // into the stable "{id}" tokens the server stores and validates. Sent as two separate
+        // requests (not combined into one payload) since the backend validates each field
+        // independently and bails on the first error — combining them would let an invalid
+        // relation_formula block an otherwise-valid absolute_count_formula from saving too.
         for (const row of currentParameterRows) {
             if (!row.id) continue; // blank row skipped above — nothing to attach a formula to
-            const stored = formulaToStored(row.relation_formula || '');
-            const response = await apiFetch(`/api/parameters/${row.id}`, {
+
+            const relationResponse = await apiFetch(`/api/parameters/${row.id}`, {
                 method: 'PUT',
-                body: JSON.stringify({ relation_formula: stored || null }),
+                body: JSON.stringify({ relation_formula: formulaToStored(row.relation_formula || '') || null }),
             });
-            if (!response.ok) {
-                const body = await response.json().catch(() => ({}));
+            if (!relationResponse.ok) {
+                const body = await relationResponse.json().catch(() => ({}));
                 showAlert(`Formula for "${row.name}" was not saved: ${body.error || 'unknown error'}`, 'error');
+            }
+
+            const absoluteResponse = await apiFetch(`/api/parameters/${row.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ absolute_count_formula: formulaToStored(row.absolute_count_formula || '') || null }),
+            });
+            if (!absoluteResponse.ok) {
+                const body = await absoluteResponse.json().catch(() => ({}));
+                showAlert(`Absolute Count formula for "${row.name}" was not saved: ${body.error || 'unknown error'}`, 'error');
             }
         }
 
