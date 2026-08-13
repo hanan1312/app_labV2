@@ -982,59 +982,79 @@ async function loadInitialData() {
         allVisits = await safelyProcess(visitsRes, 'visits', allVisits || []);
         
         // 4. Update the UI
-        if (typeof updateDashboard === 'function') updateDashboard();
         if (typeof updateUserInfo === 'function') updateUserInfo();
         if (typeof populateSettingsForm === 'function') populateSettingsForm();
-        
+
         // 5. Fetch transactions
         if (typeof fetchTransactionsData === 'function') {
             await fetchTransactionsData();
         }
 
-        // 6. Refresh the active tab
-        const activeTab = document.querySelector('.nav-tab.active')?.dataset?.tab;
-        if (activeTab && typeof showTab === 'function') {
-            showTab(activeTab);
-        }
-        
+        // 6. Refresh whatever's currently on screen, in place (see refreshVisibleTables()).
+        refreshVisibleTables();
+
     } catch (error) {
         console.error('Critical error in loadInitialData:', error);
         showAlert('UI update failed. Check console.', 'error');
     }
 }
 
+// Re-renders whatever tab/drill-down is currently on screen, in place, from already-loaded
+// data (clients/allVisits/allTransactions/testResults) — never goes through showTab(), since
+// several of its per-tab cases reset transient UI state that has nothing to do with the tab
+// itself having changed: resetDashboardView() collapses an open Dashboard drill-down back to
+// the default KPI view, loadPendingSamples()/loadTestResults() wipe the search/date filters
+// the technician had typed in, and 'add-client' would reset an in-progress new-client form.
+// Called after any action whose effect could be visible on more than one tab (booking a
+// test, marking samples collected, entering results, bulk actions, ...) so every already-open
+// table reflects the change without the user needing to reload the page.
+function refreshVisibleTables() {
+    // KPI badges (#count-*, #tech-count-*) sit above whichever drill-down/table is showing
+    // and read straight from the already-updated globals — cheap and safe to recompute
+    // regardless of which tab is actually active.
+    if (typeof updateDashboard === 'function') updateDashboard();
+
+    if (currentDashboardTableType && typeof renderDashboardTable === 'function') {
+        renderDashboardTable();
+    }
+    if (document.getElementById('tech-screen')?.classList.contains('active') && typeof renderTechTable === 'function') {
+        renderTechTable();
+    }
+    if (document.getElementById('clients')?.classList.contains('active') && typeof searchClients === 'function') {
+        searchClients();
+    }
+    if (document.getElementById('pending-samples')?.classList.contains('active') && typeof searchPendingSamples === 'function') {
+        searchPendingSamples();
+    }
+    if (document.getElementById('test-results')?.classList.contains('active') && typeof searchTestResults === 'function') {
+        searchTestResults();
+    }
+    if (document.getElementById('client-history')?.classList.contains('active') && typeof loadClientHistory === 'function') {
+        loadClientHistory();
+    }
+    if (document.getElementById('transaction-history')?.classList.contains('active') && typeof filterTransactions === 'function') {
+        filterTransactions();
+    }
+    if (document.getElementById('financial-overview')?.classList.contains('active') && typeof calculateFinancials === 'function') {
+        calculateFinancials();
+    }
+    if (document.getElementById('statistics')?.classList.contains('active') && typeof loadStatistics === 'function') {
+        loadStatistics();
+    }
+}
+
 // Called via window.opener from the "Enter Results" popup (results_entry.js) right after a
 // successful save — that page is a separate window with its own JS context, so without this
-// the main app's status pills stayed stale until a manual reload. Deliberately lighter than
-// loadInitialData() and does NOT call showTab()/resetDashboardView(), which would collapse a
-// currently-open Dashboard drill-down table (Total/Pending/Finished) back to the default KPI
-// view — it just re-fetches visits and re-renders whichever list is already on screen.
+// the main app's status pills stayed stale until a manual reload. Only /api/visits could have
+// changed from that popup, so this re-fetches just that before handing off to
+// refreshVisibleTables() for the actual "redraw whatever's on screen" work.
 function refreshAfterResultsEntry() {
     apiFetch('/api/visits')
         .then(response => response.ok ? response.json() : null)
         .then(data => {
             if (!data) return;
             allVisits = data;
-
-            // The KPI badges (#count-total/#count-pending/#count-finished/#count-tests) stay
-            // visible above the drill-down table at all times, so they need updateDashboard()
-            // regardless of whether a drill-down is currently open — these are NOT mutually
-            // exclusive with re-rendering the drill-down table itself.
-            if (document.getElementById('dashboard')?.classList.contains('active') && typeof updateDashboard === 'function') {
-                updateDashboard();
-            }
-            if (currentDashboardTableType && typeof renderDashboardTable === 'function') {
-                renderDashboardTable();
-            }
-            if (document.getElementById('pending-samples')?.classList.contains('active') && typeof searchPendingSamples === 'function') {
-                searchPendingSamples();
-            }
-            if (document.getElementById('test-results')?.classList.contains('active') && typeof searchTestResults === 'function') {
-                searchTestResults();
-            }
-            if (document.getElementById('statistics')?.classList.contains('active') && typeof loadStatistics === 'function') {
-                loadStatistics();
-            }
+            refreshVisibleTables();
         })
         .catch(error => console.error('Failed to refresh visits after results entry:', error));
 }
