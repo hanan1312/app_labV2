@@ -60,6 +60,12 @@ class LabConfig(db.Model):
         'financial'
     ]))
 
+    # Attendance policy. weekly_days_off is a JSON list of Python date.weekday() ints
+    # (Mon=0..Sun=6), same JSON-in-Text shape as active_features above — always read/written
+    # as a whole list, not addressed by individual id, unlike the Holiday table.
+    weekly_days_off = db.Column(db.Text, default='[4]')  # [4] = Friday only
+    standard_work_hours_per_day = db.Column(db.Float, default=8.0)
+
     @staticmethod
     def get_config():
         """Get or create the lab configuration."""
@@ -75,7 +81,12 @@ class LabConfig(db.Model):
             features = json.loads(self.active_features) if isinstance(self.active_features, str) else self.active_features
         except (json.JSONDecodeError, TypeError):
             features = []
-        
+
+        try:
+            days_off = json.loads(self.weekly_days_off) if isinstance(self.weekly_days_off, str) else (self.weekly_days_off or [])
+        except (json.JSONDecodeError, TypeError):
+            days_off = []
+
         return {
             'id': self.id,
             'lab_name': self.lab_name,
@@ -105,6 +116,8 @@ class LabConfig(db.Model):
             'force_logout_time': self.force_logout_time,
             'idle_logout_timeout': self.idle_logout_timeout,
             'login_resume_time': self.login_resume_time,
+            'weekly_days_off': days_off,
+            'standard_work_hours_per_day': self.standard_work_hours_per_day,
         }
 
 

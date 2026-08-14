@@ -243,10 +243,59 @@
                         
                         <button class="btn" style="background: var(--surface-2); color: white; border: 1px solid var(--border);" onclick="saveSessionPolicies()">💾 Save Policies</button>
                     </div>
+
+                    <div class="glass-panel" style="padding: 15px; border-radius: 8px; border: 1px dashed var(--border); margin-bottom: 20px;">
+                        <h4 style="color: var(--warn); margin-bottom: 10px;" data-i18n="hr.attendance_policy">Attendance Policy</h4>
+                        <div style="display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 15px;">
+                            <div>
+                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="hr.weekly_days_off">Weekly Days Off</label>
+                                <div id="att-weekly-days-off" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                                    <label><input type="checkbox" value="0"> Mon</label>
+                                    <label><input type="checkbox" value="1"> Tue</label>
+                                    <label><input type="checkbox" value="2"> Wed</label>
+                                    <label><input type="checkbox" value="3"> Thu</label>
+                                    <label><input type="checkbox" value="4"> Fri</label>
+                                    <label><input type="checkbox" value="5"> Sat</label>
+                                    <label><input type="checkbox" value="6"> Sun</label>
+                                </div>
+                            </div>
+                            <div>
+                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="hr.standard_hours_per_day">Standard Work Hours / Day</label>
+                                <input type="number" step="0.5" min="0.5" max="24" id="att-standard-hours" style="padding: 8px; width: 120px;">
+                            </div>
+                            <button class="btn" style="background: var(--surface-2); color: white; border: 1px solid var(--border);" onclick="saveAttendanceConfig()">💾 <span data-i18n="actions.save">Save</span></button>
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: flex-end; margin-bottom: 15px; flex-wrap: wrap;">
+                            <div>
+                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="hr.holiday_date">Date</label>
+                                <input type="date" id="att-new-holiday-date" style="padding: 8px;">
+                            </div>
+                            <div>
+                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="hr.holiday_name">Name</label>
+                                <input type="text" id="att-new-holiday-name" style="padding: 8px;">
+                            </div>
+                            <button class="btn ghost" onclick="addHoliday()" data-i18n="hr.add_holiday">+ Add Holiday</button>
+                        </div>
+                        <div id="att-holidays-list"></div>
+                    </div>
+
                     <div id="hr-list-container"></div>
-                
+
+                    <div class="glass-panel" style="padding: 20px; border-radius: 8px; margin-top: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 15px;">
+                            <h3 style="margin: 0;" data-i18n="hr.attendance_report">Attendance Report</h3>
+                            <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                <input type="date" id="att-report-from" style="padding: 6px;">
+                                <input type="date" id="att-report-to" style="padding: 6px;">
+                                <button class="btn ghost" style="padding: 6px 12px;" onclick="setAttendanceRangeToThisMonth('report'); fetchAttendancePercentageReport();" data-i18n="hr.this_month">This Month</button>
+                                <button class="btn ghost" style="padding: 6px 12px;" onclick="fetchAttendancePercentageReport()">🔎</button>
+                            </div>
+                        </div>
+                        <div id="att-percentage-report-container"></div>
+                    </div>
+
                 </div>
-                
+
                 <div id="employee-modal" class="modal" style="display: none;">
                     <div class="modal-content glass-panel" style="max-width: 500px;">
                         <span class="close" onclick="closeEmployeeModal()">&times;</span>
@@ -314,6 +363,51 @@
                         </form>
                     </div>
                 </div>
+
+                <div id="employee-attendance-modal" class="modal" style="display: none;">
+                    <div class="modal-content glass-panel" style="max-width: 800px; max-height: 85vh; overflow-y: auto;">
+                        <span class="close" onclick="closeEmployeeAttendanceModal()">&times;</span>
+                        <h2 style="margin-bottom: 5px; color: var(--text);">Attendance — <span id="eam-employee-name"></span></h2>
+                        <input type="hidden" id="eam-employee-id">
+
+                        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 15px 0;">
+                            <input type="date" id="att-eam-from" style="padding: 6px;">
+                            <input type="date" id="att-eam-to" style="padding: 6px;">
+                            <button class="btn ghost" style="padding: 6px 12px;" onclick="setAttendanceRangeToThisMonth('eam'); loadEmployeeAttendanceModalData();">This Month</button>
+                            <button class="btn ghost" style="padding: 6px 12px;" onclick="loadEmployeeAttendanceModalData()">🔎</button>
+                        </div>
+                        <div id="eam-percentage-card" style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px;"></div>
+
+                        <h4 style="color: var(--muted); border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; margin-bottom: 10px;">Sessions</h4>
+                        <form onsubmit="addEmployeeAttendanceSession(event)" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 10px;">
+                            <div><label style="font-size: 11px; color: var(--muted); display: block;">Clock In</label><input type="datetime-local" id="eam-new-clock-in" required></div>
+                            <div><label style="font-size: 11px; color: var(--muted); display: block;">Clock Out</label><input type="datetime-local" id="eam-new-clock-out"></div>
+                            <div style="flex: 1; min-width: 140px;"><label style="font-size: 11px; color: var(--muted); display: block;">Note</label><input type="text" id="eam-new-note" style="width: 100%;"></div>
+                            <button type="submit" class="btn ghost">+ Add</button>
+                        </form>
+                        <div id="eam-sessions-container" style="margin-bottom: 25px;"></div>
+
+                        <h4 style="color: var(--muted); border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; margin-bottom: 10px;">Excused Hours (Permissions)</h4>
+                        <form onsubmit="addEmployeePermission(event)" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 10px;">
+                            <div><label style="font-size: 11px; color: var(--muted); display: block;">Date</label><input type="date" id="eam-perm-date" required></div>
+                            <div><label style="font-size: 11px; color: var(--muted); display: block;">Start</label><input type="time" id="eam-perm-start" required></div>
+                            <div><label style="font-size: 11px; color: var(--muted); display: block;">End</label><input type="time" id="eam-perm-end" required></div>
+                            <div style="flex: 1; min-width: 140px;"><label style="font-size: 11px; color: var(--muted); display: block;">Reason</label><input type="text" id="eam-perm-reason" style="width: 100%;"></div>
+                            <button type="submit" class="btn ghost">+ Add</button>
+                        </form>
+                        <div id="eam-permissions-container" style="margin-bottom: 25px;"></div>
+
+                        <h4 style="color: var(--muted); border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; margin-bottom: 10px;">Vacations</h4>
+                        <form onsubmit="addEmployeeVacation(event)" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 10px;">
+                            <div><label style="font-size: 11px; color: var(--muted); display: block;">From</label><input type="date" id="eam-vac-start" required></div>
+                            <div><label style="font-size: 11px; color: var(--muted); display: block;">To</label><input type="date" id="eam-vac-end" required></div>
+                            <div style="flex: 1; min-width: 140px;"><label style="font-size: 11px; color: var(--muted); display: block;">Reason</label><input type="text" id="eam-vac-reason" style="width: 100%;"></div>
+                            <button type="submit" class="btn ghost">+ Add</button>
+                        </form>
+                        <div id="eam-vacations-container"></div>
+                    </div>
+                </div>
+
                 <div id="payment-modal" class="modal">
                     <div class="modal-content glass-panel" style="max-width: 500px;">
                         <span class="close" onclick="closePaymentModal()">&times;</span>

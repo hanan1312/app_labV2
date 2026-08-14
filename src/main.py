@@ -4,7 +4,7 @@ import sys
 from functools import wraps
 from sqlalchemy import create_engine, text, event, or_
 from sqlalchemy.engine import Engine
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import time
 import secrets
 from dotenv import load_dotenv
@@ -35,6 +35,8 @@ from src.models.test_result import TestResult
 from src.models.test_parameter import TestParameterTemplate
 from src.models.lab_config import LabConfig, is_login_blocked_for_regular_users
 from src.models.audit import ActivityLog
+from src.models.attendance import AttendanceSession, AttendancePermission, EmployeeVacation, Holiday
+from src.utils.attendance import compute_attendance_percentage, get_weekly_days_off
 # Junction tables (docs/schema_migration_plan.md) — imported so create_all() sees them;
 # sync_*/add_* helpers keep them live from the write sites below (Phase 2)
 from src.models.junctions import (
@@ -288,6 +290,49 @@ with app.app_context():
                 db.session.commit()
             except Exception:
                 db.session.rollback()
+
+        # Attendance feature — new LabConfig columns (Pattern A) + brand-new tables
+        # (Pattern B, no pre-existing rows to reconcile so no guarded backfill needed).
+        db.session.bind = engine
+        for statement in [
+            "ALTER TABLE lab_config ADD COLUMN weekly_days_off TEXT DEFAULT '[4]'",
+            "ALTER TABLE lab_config ADD COLUMN standard_work_hours_per_day FLOAT DEFAULT 8.0",
+        ]:
+            try:
+                db.session.execute(text(statement))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
+        # Attendance rebuild: the feature originally shipped keyed by username (self-service
+        # clock-in), but real employees here mostly have no system login at all (see
+        # Employee.username) — rebuilt around employee_id, managed by admin/HR instead of
+        # self-service. Safe to drop/recreate outright rather than ALTER+backfill: this
+        # shipped only minutes earlier and held no real data yet. Do NOT copy this
+        # drop-and-recreate pattern once real attendance data exists — use the guarded
+        # ALTER+backfill pattern (see the WarehouseWorkOrder migration above) instead.
+        db.session.bind = engine
+        for statement in ["DROP TABLE IF EXISTS attendance_sessions",
+                           "DROP TABLE IF EXISTS attendance_permission_requests",
+                           "DROP TABLE IF EXISTS attendance_permissions",
+                           "DROP TABLE IF EXISTS employee_vacations"]:
+            try:
+                db.session.execute(text(statement))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
+        # All four tables MUST be created in a single create_all() call that also includes
+        # Employee.__table__ (the FK target) — passing a bare-employee_id-FK table on its own
+        # (or batched without Employee alongside it) causes SQLAlchemy's SQLite DDL compiler
+        # to silently drop the ON DELETE CASCADE clause for every table after the first one in
+        # a given call. Reproduced directly: identical column/FK definitions, only the
+        # combination of "target table absent from this create_all()'s tables=[] list" made
+        # the clause vanish. Confirmed fixed by including Employee.__table__ here.
+        db.Model.metadata.create_all(bind=engine, tables=[
+            Employee.__table__, AttendanceSession.__table__, AttendancePermission.__table__,
+            EmployeeVacation.__table__, Holiday.__table__,
+        ])
 
 # Requests to these /api/* paths are allowed without a logged-in session — login itself,
 # logout (a no-op if there's no session to clear anyway), and the feature-flag endpoint the
@@ -1718,30 +1763,54 @@ def scan_work_order_batch(work_order_id):
 @require_permission('hr-management')
 def get_employees():
     employees = Employee.query.all()
+    employee_ids = [e.id for e in employees]
+
+    # Batch-fetched (not per-employee queries) — an open session per employee_id, and the
+    # set of employee_ids currently on an EmployeeVacation covering today.
+    open_sessions_by_employee = {
+        s.employee_id: s for s in AttendanceSession.query.filter(
+            AttendanceSession.employee_id.in_(employee_ids), AttendanceSession.clock_out.is_(None)
+        ).all()
+    }
+    today = now_cairo().date()
+    vacationing_employee_ids = {
+        v.employee_id for v in EmployeeVacation.query.filter(
+            EmployeeVacation.employee_id.in_(employee_ids),
+            EmployeeVacation.start_date <= today, EmployeeVacation.end_date >= today,
+        ).all()
+    }
+
     result = []
     current_time = time.time()
-    
+
     for emp in employees:
         emp_dict = emp.to_dict()
-        
+
         # Get the username linked to this employee
         username = getattr(emp, 'username', None)
         presence = 'offline' # Default fallback
-        
+
         # If they have a username, check if they are currently pinging the server
         if username and username in PRESENCE_STORE:
             user_data = PRESENCE_STORE[username]
-            
+
             # If the server hasn't heard from them in 16+ mins, assume they closed the browser abruptly
             if current_time - user_data['last_seen'] > PRESENCE_TIMEOUT_SECONDS:
                 presence = 'offline'
             else:
                 presence = user_data['status']
-                
+
         # Attach the live presence to the dictionary before sending to Javascript
         emp_dict['presence_status'] = presence
+
+        open_session = open_sessions_by_employee.get(emp.id)
+        emp_dict['attendance_status'] = {
+            'clocked_in': open_session is not None,
+            'since': open_session.clock_in.strftime('%Y-%m-%d %H:%M:%S') if open_session else None,
+            'on_vacation': emp.id in vacationing_employee_ids,
+        }
         result.append(emp_dict)
-        
+
     return jsonify(result)
 
 @app.route('/api/hr/employees', methods=['POST'])
@@ -1839,6 +1908,348 @@ def send_hr_email():
         "failed": failed,
         "message": f"Sent to {len(sent)} of {len(emails)} recipient(s).",
     })
+
+# --- ATTENDANCE (per-employee, managed by admin/HR — see src/models/attendance.py for why
+# this is keyed by employee_id rather than username: not every employee has a login) ---
+
+def _parse_attendance_date(raw, default):
+    if not raw:
+        return default
+    try:
+        return datetime.strptime(raw, '%Y-%m-%d').date()
+    except ValueError:
+        return default
+
+def _current_month_range():
+    today = now_cairo().date()
+    start = today.replace(day=1)
+    end = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    return start, end
+
+def _attendance_date_range():
+    default_from, default_to = _current_month_range()
+    date_from = _parse_attendance_date(request.args.get('from'), default_from)
+    date_to = _parse_attendance_date(request.args.get('to'), default_to)
+    return date_from, date_to
+
+def _attendance_session_overlaps(employee_id, clock_in, clock_out, exclude_id=None):
+    """True if [clock_in, clock_out) overlaps any existing session for this employee. An
+    open session (clock_out None), whether the new one or an existing one, is treated as
+    extending to "now" for overlap purposes — two simultaneous sessions for one person is
+    never legitimate, unlike FEFO's soft warn/override, so this is a hard check."""
+    effective_end = clock_out or now_cairo()
+    query = AttendanceSession.query.filter(AttendanceSession.employee_id == employee_id)
+    if exclude_id is not None:
+        query = query.filter(AttendanceSession.id != exclude_id)
+    for other in query.all():
+        other_end = other.clock_out or now_cairo()
+        if clock_in < other_end and other.clock_in < effective_end:
+            return True
+    return False
+
+def _vacation_overlaps(employee_id, start_date, end_date, exclude_id=None):
+    query = EmployeeVacation.query.filter(
+        EmployeeVacation.employee_id == employee_id,
+        EmployeeVacation.start_date <= end_date,
+        EmployeeVacation.end_date >= start_date,
+    )
+    if exclude_id is not None:
+        query = query.filter(EmployeeVacation.id != exclude_id)
+    return query.first() is not None
+
+# All attendance actions are gated the same way the rest of HR is — @require_permission
+# ('hr-management') — since attendance now lives inside the HR & Staff screen and whoever
+# can manage HR should be able to manage attendance too (no separate 'attendance' tab/
+# permission anymore).
+@app.route('/api/hr/employees/<int:emp_id>/attendance/clock-in', methods=['POST'])
+@require_permission('hr-management')
+def attendance_clock_in(emp_id):
+    if not db.session.get(Employee, emp_id):
+        return jsonify({'error': 'Employee not found'}), 404
+    if AttendanceSession.query.filter_by(employee_id=emp_id, clock_out=None).first():
+        return jsonify({'error': 'Already clocked in'}), 400
+    row = AttendanceSession(employee_id=emp_id, clock_in=now_cairo(), created_by=session.get('username'))
+    db.session.add(row)
+    db.session.commit()
+    return jsonify({'success': True, 'session': row.to_dict()})
+
+@app.route('/api/hr/employees/<int:emp_id>/attendance/clock-out', methods=['POST'])
+@require_permission('hr-management')
+def attendance_clock_out(emp_id):
+    if not db.session.get(Employee, emp_id):
+        return jsonify({'error': 'Employee not found'}), 404
+    open_session = AttendanceSession.query.filter_by(employee_id=emp_id, clock_out=None) \
+        .order_by(AttendanceSession.clock_in.desc()).first()
+    if not open_session:
+        return jsonify({'error': 'Not currently clocked in'}), 400
+    open_session.clock_out = now_cairo()
+    db.session.commit()
+    return jsonify({'success': True, 'session': open_session.to_dict()})
+
+@app.route('/api/hr/employees/<int:emp_id>/attendance/sessions', methods=['GET'])
+@require_permission('hr-management')
+def get_employee_attendance_sessions(emp_id):
+    date_from, date_to = _attendance_date_range()
+    range_start = datetime.combine(date_from, datetime.min.time())
+    range_end = datetime.combine(date_to, datetime.max.time())
+    rows = AttendanceSession.query.filter(
+        AttendanceSession.employee_id == emp_id,
+        AttendanceSession.clock_in <= range_end,
+        or_(AttendanceSession.clock_out.is_(None), AttendanceSession.clock_out >= range_start),
+    ).order_by(AttendanceSession.clock_in.desc()).all()
+    return jsonify([r.to_dict() for r in rows])
+
+@app.route('/api/hr/employees/<int:emp_id>/attendance/sessions', methods=['POST'])
+@require_permission('hr-management')
+def create_employee_attendance_session(emp_id):
+    if not db.session.get(Employee, emp_id):
+        return jsonify({'error': 'Employee not found'}), 404
+    data = request.json or {}
+    if not data.get('clock_in'):
+        return jsonify({'error': 'clock_in is required'}), 400
+    try:
+        clock_in = datetime.strptime(data['clock_in'], '%Y-%m-%d %H:%M')
+        clock_out = datetime.strptime(data['clock_out'], '%Y-%m-%d %H:%M') if data.get('clock_out') else None
+    except ValueError:
+        return jsonify({'error': 'clock_in/clock_out must be in YYYY-MM-DD HH:MM format'}), 400
+    if clock_out and clock_out <= clock_in:
+        return jsonify({'error': 'clock_out must be after clock_in'}), 400
+    if _attendance_session_overlaps(emp_id, clock_in, clock_out):
+        return jsonify({'error': 'This overlaps an existing session for this employee'}), 400
+
+    row = AttendanceSession(
+        employee_id=emp_id, clock_in=clock_in, clock_out=clock_out,
+        created_by=session.get('username'), note=data.get('note'),
+    )
+    db.session.add(row)
+    db.session.commit()
+    return jsonify({'success': True, 'session': row.to_dict()})
+
+@app.route('/api/hr/attendance/sessions/<int:session_id>', methods=['PUT'])
+@require_permission('hr-management')
+def update_attendance_session(session_id):
+    row = db.session.get(AttendanceSession, session_id)
+    if not row:
+        return jsonify({'error': 'Session not found'}), 404
+    data = request.json or {}
+    try:
+        clock_in = datetime.strptime(data['clock_in'], '%Y-%m-%d %H:%M') if data.get('clock_in') else row.clock_in
+        if 'clock_out' in data:
+            clock_out = datetime.strptime(data['clock_out'], '%Y-%m-%d %H:%M') if data.get('clock_out') else None
+        else:
+            clock_out = row.clock_out
+    except ValueError:
+        return jsonify({'error': 'clock_in/clock_out must be in YYYY-MM-DD HH:MM format'}), 400
+    if clock_out and clock_out <= clock_in:
+        return jsonify({'error': 'clock_out must be after clock_in'}), 400
+    if _attendance_session_overlaps(row.employee_id, clock_in, clock_out, exclude_id=row.id):
+        return jsonify({'error': 'This overlaps an existing session for this employee'}), 400
+
+    old_desc = f"{row.clock_in} - {row.clock_out or 'open'}"
+    row.clock_in, row.clock_out = clock_in, clock_out
+    row.note = data.get('note', row.note)
+    row.edited_by = session.get('username')
+    db.session.commit()
+
+    log_activity(
+        'update', resource='attendance_session', resource_id=row.id,
+        description=f"Corrected attendance session for employee #{row.employee_id} ({old_desc} -> {row.clock_in} - {row.clock_out or 'open'})",
+    )
+    return jsonify({'success': True, 'session': row.to_dict()})
+
+@app.route('/api/hr/attendance/sessions/<int:session_id>', methods=['DELETE'])
+@require_permission('hr-management')
+def delete_attendance_session(session_id):
+    row = db.session.get(AttendanceSession, session_id)
+    if not row:
+        return jsonify({'error': 'Session not found'}), 404
+    db.session.delete(row)
+    db.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/hr/employees/<int:emp_id>/attendance/permissions', methods=['GET'])
+@require_permission('hr-management')
+def get_employee_permissions(emp_id):
+    rows = AttendancePermission.query.filter_by(employee_id=emp_id) \
+        .order_by(AttendancePermission.permission_date.desc()).all()
+    return jsonify([r.to_dict() for r in rows])
+
+@app.route('/api/hr/employees/<int:emp_id>/attendance/permissions', methods=['POST'])
+@require_permission('hr-management')
+def create_employee_permission(emp_id):
+    """Records excused hours for this employee directly (e.g. arrived late, left early) —
+    admin/HR entering this IS the approval; there's no separate request/review step since
+    only admin/HR can create one in the first place (self-service was removed)."""
+    if not db.session.get(Employee, emp_id):
+        return jsonify({'error': 'Employee not found'}), 404
+    data = request.json or {}
+    date_raw = data.get('permission_date')
+    start_time = (data.get('start_time') or '').strip()
+    end_time = (data.get('end_time') or '').strip()
+    if not date_raw or not start_time or not end_time:
+        return jsonify({'error': 'permission_date, start_time and end_time are all required'}), 400
+    try:
+        permission_date = datetime.strptime(date_raw, '%Y-%m-%d').date()
+        start_dt = datetime.strptime(start_time, '%H:%M')
+        end_dt = datetime.strptime(end_time, '%H:%M')
+    except ValueError:
+        return jsonify({'error': 'Invalid date/time format'}), 400
+    if end_dt <= start_dt:
+        return jsonify({'error': 'end_time must be after start_time'}), 400
+
+    row = AttendancePermission(
+        employee_id=emp_id, permission_date=permission_date,
+        start_time=start_time, end_time=end_time,
+        credited_hours=round((end_dt - start_dt).total_seconds() / 3600.0, 2),
+        reason=(data.get('reason') or '').strip() or None,
+        created_by=session.get('username'), created_at=now_cairo(),
+    )
+    db.session.add(row)
+    db.session.commit()
+    return jsonify({'success': True, 'permission': row.to_dict()})
+
+@app.route('/api/hr/attendance/permissions/<int:permission_id>', methods=['DELETE'])
+@require_permission('hr-management')
+def delete_attendance_permission(permission_id):
+    row = db.session.get(AttendancePermission, permission_id)
+    if not row:
+        return jsonify({'error': 'Permission entry not found'}), 404
+    db.session.delete(row)
+    db.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/hr/employees/<int:emp_id>/attendance/vacations', methods=['GET'])
+@require_permission('hr-management')
+def get_employee_vacations(emp_id):
+    rows = EmployeeVacation.query.filter_by(employee_id=emp_id) \
+        .order_by(EmployeeVacation.start_date.desc()).all()
+    return jsonify([r.to_dict() for r in rows])
+
+@app.route('/api/hr/employees/<int:emp_id>/attendance/vacations', methods=['POST'])
+@require_permission('hr-management')
+def create_employee_vacation(emp_id):
+    if not db.session.get(Employee, emp_id):
+        return jsonify({'error': 'Employee not found'}), 404
+    data = request.json or {}
+    start_raw = data.get('start_date')
+    end_raw = data.get('end_date')
+    if not start_raw or not end_raw:
+        return jsonify({'error': 'start_date and end_date are required'}), 400
+    try:
+        start_date = datetime.strptime(start_raw, '%Y-%m-%d').date()
+        end_date = datetime.strptime(end_raw, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'error': 'start_date/end_date must be in YYYY-MM-DD format'}), 400
+    if end_date < start_date:
+        return jsonify({'error': 'end_date must be on or after start_date'}), 400
+    if _vacation_overlaps(emp_id, start_date, end_date):
+        return jsonify({'error': 'This overlaps an existing vacation for this employee'}), 400
+
+    row = EmployeeVacation(
+        employee_id=emp_id, start_date=start_date, end_date=end_date,
+        reason=(data.get('reason') or '').strip() or None,
+        created_by=session.get('username'), created_at=now_cairo(),
+    )
+    db.session.add(row)
+    db.session.commit()
+    return jsonify({'success': True, 'vacation': row.to_dict()})
+
+@app.route('/api/hr/attendance/vacations/<int:vacation_id>', methods=['DELETE'])
+@require_permission('hr-management')
+def delete_attendance_vacation(vacation_id):
+    row = db.session.get(EmployeeVacation, vacation_id)
+    if not row:
+        return jsonify({'error': 'Vacation not found'}), 404
+    db.session.delete(row)
+    db.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/hr/employees/<int:emp_id>/attendance/percentage', methods=['GET'])
+@require_permission('hr-management')
+def get_employee_attendance_percentage(emp_id):
+    date_from, date_to = _attendance_date_range()
+    return jsonify(compute_attendance_percentage(emp_id, date_from, date_to))
+
+@app.route('/api/hr/attendance/config', methods=['GET'])
+@require_permission('hr-management')
+def get_attendance_config():
+    config = LabConfig.get_config()
+    holidays = Holiday.query.order_by(Holiday.date.asc()).all()
+    return jsonify({
+        'weekly_days_off': sorted(get_weekly_days_off(config)),
+        'standard_work_hours_per_day': config.standard_work_hours_per_day,
+        'holidays': [h.to_dict() for h in holidays],
+    })
+
+@app.route('/api/hr/attendance/config', methods=['POST'])
+@require_permission('hr-management')
+def save_attendance_config():
+    data = request.json or {}
+    config = LabConfig.get_config()
+    if 'weekly_days_off' in data:
+        try:
+            days = sorted(set(int(d) for d in data['weekly_days_off'] if 0 <= int(d) <= 6))
+        except (TypeError, ValueError):
+            return jsonify({'error': 'weekly_days_off must be a list of integers 0-6'}), 400
+        config.weekly_days_off = json.dumps(days)
+    if 'standard_work_hours_per_day' in data:
+        try:
+            hours = float(data['standard_work_hours_per_day'])
+        except (TypeError, ValueError):
+            return jsonify({'error': 'standard_work_hours_per_day must be a number'}), 400
+        if not (0 < hours <= 24):
+            return jsonify({'error': 'standard_work_hours_per_day must be between 0 and 24'}), 400
+        config.standard_work_hours_per_day = hours
+    db.session.commit()
+    return jsonify({'success': True, 'config': config.to_dict()})
+
+@app.route('/api/hr/attendance/holidays', methods=['POST'])
+@require_permission('hr-management')
+def add_holiday():
+    data = request.json or {}
+    date_raw = data.get('date')
+    if not date_raw:
+        return jsonify({'error': 'date is required'}), 400
+    try:
+        holiday_date = datetime.strptime(date_raw, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'error': 'date must be in YYYY-MM-DD format'}), 400
+    if Holiday.query.filter_by(date=holiday_date).first():
+        return jsonify({'error': 'A holiday is already recorded for this date'}), 400
+
+    row = Holiday(date=holiday_date, name=data.get('name'), created_by=session.get('username'), created_at=now_cairo())
+    db.session.add(row)
+    db.session.commit()
+    return jsonify({'success': True, 'holiday': row.to_dict()})
+
+@app.route('/api/hr/attendance/holidays/<int:holiday_id>', methods=['DELETE'])
+@require_permission('hr-management')
+def delete_holiday(holiday_id):
+    row = db.session.get(Holiday, holiday_id)
+    if not row:
+        return jsonify({'error': 'Holiday not found'}), 404
+    db.session.delete(row)
+    db.session.commit()
+    return jsonify({'success': True})
+
+@app.route('/api/hr/attendance/percentage', methods=['GET'])
+@require_permission('hr-management')
+def get_all_attendance_percentage():
+    date_from, date_to = _attendance_date_range()
+    employee_id_filter = request.args.get('employee_id')
+
+    employees = Employee.query.all()
+    if employee_id_filter:
+        employees = [e for e in employees if e.id == int(employee_id_filter)]
+
+    report = []
+    for emp in employees:
+        entry = compute_attendance_percentage(emp.id, date_from, date_to)
+        entry['name'] = emp.name
+        entry['role'] = emp.role
+        report.append(entry)
+
+    return jsonify(report)
 
 @app.route('/api/workspace/change', methods=['POST'])
 def change_workspace():

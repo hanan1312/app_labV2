@@ -170,6 +170,18 @@
       "title": "Activity Log",
       "subtitle": "Every login, action, and page view across the system",
       "online_now": "Online Now"
+    },
+    "hr": {
+      "title": "HR & Staff Management",
+      "subtitle": "Manage lab employees, roles, and payroll",
+      "attendance_policy": "Attendance Policy",
+      "weekly_days_off": "Weekly Days Off",
+      "standard_hours_per_day": "Standard Work Hours / Day",
+      "holiday_date": "Date",
+      "holiday_name": "Name",
+      "add_holiday": "+ Add Holiday",
+      "attendance_report": "Attendance Report",
+      "this_month": "This Month"
     }
   },
   "AR": {
@@ -343,6 +355,18 @@
       "title": "سجل النشاط",
       "subtitle": "كل تسجيل دخول وإجراء ومشاهدة صفحة عبر النظام",
       "online_now": "متصل الآن"
+    },
+    "hr": {
+      "title": "إدارة الموظفين",
+      "subtitle": "إدارة موظفي المعمل، الأدوار، والرواتب",
+      "attendance_policy": "سياسة الحضور والانصراف",
+      "weekly_days_off": "أيام العطلة الأسبوعية",
+      "standard_hours_per_day": "ساعات العمل المعتادة/اليوم",
+      "holiday_date": "التاريخ",
+      "holiday_name": "الاسم",
+      "add_holiday": "+ إضافة إجازة",
+      "attendance_report": "تقرير الحضور",
+      "this_month": "هذا الشهر"
     }
   }
 }

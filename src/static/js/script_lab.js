@@ -498,13 +498,15 @@ let employees = [];
 
 async function fetchHRData() {
     console.log("Fetching HR data from database..."); // Debugging log
-    
+
     try {
         const response = await apiFetch('/api/hr/employees');
         if (response.ok) {
             employees = await response.json();
             console.log(`Success! Loaded ${employees.length} employees.`);
             renderHRTable();
+            fetchAttendanceConfig();
+            fetchAttendancePercentageReport();
         } else {
             // If Python throws an error, catch it and show it!
             const errorText = await response.text();
@@ -565,9 +567,24 @@ function renderHRTable() {
         }
         
         // Style the username column nicely
-        let usernameDisplay = emp.username 
-            ? `<span style="color: var(--teal); font-weight: 500;">${emp.username}</span>` 
+        let usernameDisplay = emp.username
+            ? `<span style="color: var(--teal); font-weight: 500;">${emp.username}</span>`
             : `<span style="color: var(--muted); font-style: italic; font-size: 12px;">Not assigned</span>`;
+
+        // Attendance status/quick-actions — admin/HR clocks employees in/out directly here,
+        // regardless of whether they have a system login (see clockInEmployee/clockOutEmployee).
+        const att = emp.attendance_status || { clocked_in: false, since: null, on_vacation: false };
+        let attendanceBadge;
+        if (att.on_vacation) {
+            attendanceBadge = '<span class="pill info">On Vacation</span>';
+        } else if (att.clocked_in) {
+            attendanceBadge = `<span class="pill ok">In since ${formatCairoDateTime(att.since, false)}</span>`;
+        } else {
+            attendanceBadge = '<span class="pill ghost">Not clocked in</span>';
+        }
+        const clockBtn = att.clocked_in
+            ? `<button class="btn ghost" style="padding: 4px 10px; font-size: 12px; color: var(--danger);" onclick="clockOutEmployee(${emp.id})">Clock Out</button>`
+            : `<button class="btn ghost" style="padding: 4px 10px; font-size: 12px; color: var(--ok);" onclick="clockInEmployee(${emp.id})">Clock In</button>`;
 
         return `
         <tr>
@@ -587,6 +604,13 @@ function renderHRTable() {
             <td>${emp.phone || 'N/A'}</td>
             <td><strong>${safeSalary.toFixed(2)} EGP</strong></td>
             <td><span class="pill ${statusClass}">${emp.status}</span></td>
+            <td>
+                ${attendanceBadge}
+                <div style="margin-top: 4px; display: flex; gap: 4px;">
+                    ${clockBtn}
+                    <button class="btn ghost" style="padding: 4px 10px; font-size: 12px;" onclick="openEmployeeAttendanceModal(${emp.id})">Manage</button>
+                </div>
+            </td>
             <td style="text-align: right;">
                 <button class="btn ghost" style="padding: 4px 10px; font-size: 12px;" onclick="openEmployeeModal(${emp.id})">Edit</button>
             </td>
@@ -611,6 +635,7 @@ function renderHRTable() {
                         <th>Phone</th>
                         <th>Salary</th>
                         <th>Status</th>
+                        <th>Attendance</th>
                         <th style="text-align: right;">Action</th>
                     </tr>
                 </thead>
@@ -801,7 +826,7 @@ async function saveEmployeeRecord(event) {
 
 async function deleteEmployee(empId) {
     if (!confirm('Are you sure you want to delete this employee record?')) return;
-    
+
     try {
         const response = await apiFetch(`/api/hr/employees/${empId}`, { method: 'DELETE' });
         if (response.ok) {
@@ -811,6 +836,470 @@ async function deleteEmployee(empId) {
     } catch (error) {
         showAlert('Error deleting employee.', 'error');
     }
+}
+
+// ==========================================
+// ATTENDANCE — managed entirely by admin/HR per employee (not all employees have a system
+// login, so this is never self-service; see src/models/attendance.py).
+// ==========================================
+let attendanceConfig = { weekly_days_off: [], standard_work_hours_per_day: 8, holidays: [] };
+let eamSessions = [];
+let eamPermissions = [];
+let eamVacations = [];
+let eamEditingSessionId = null;
+
+// Fills the from/to inputs for a given picker (`report`/`eam`) with the current Cairo-local
+// month, using pure UTC-based arithmetic on cairoDateStr()'s components — never a local Date
+// getter — so the boundary isn't skewed by the viewer's own browser timezone.
+function setAttendanceRangeToThisMonth(scope) {
+    const [y, m] = cairoDateStr().split('-').map(Number);
+    const first = `${y}-${String(m).padStart(2, '0')}-01`;
+    const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const last = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    const fromInput = document.getElementById(`att-${scope}-from`);
+    const toInput = document.getElementById(`att-${scope}-to`);
+    if (fromInput) fromInput.value = first;
+    if (toInput) toInput.value = last;
+}
+
+function attendanceRangeQuery(scope) {
+    const from = document.getElementById(`att-${scope}-from`)?.value;
+    const to = document.getElementById(`att-${scope}-to`)?.value;
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    return params.toString();
+}
+
+function renderPercentageCard(containerId, data) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const pctColor = data.percentage >= 90 ? 'var(--ok)' : (data.percentage >= 70 ? 'var(--warn)' : 'var(--danger)');
+    container.innerHTML = `
+        <div style="text-align: center;">
+            <div style="font-size: 12px; color: var(--muted);">Attendance %</div>
+            <div style="font-size: 30px; font-weight: bold; color: ${pctColor};">${data.percentage}%</div>
+        </div>
+        <div style="text-align: center;">
+            <div style="font-size: 12px; color: var(--muted);">Worked</div>
+            <div style="font-size: 18px; font-weight: bold; color: var(--text);">${data.worked_hours}h</div>
+        </div>
+        <div style="text-align: center;">
+            <div style="font-size: 12px; color: var(--muted);">Credited</div>
+            <div style="font-size: 18px; font-weight: bold; color: var(--text);">${data.credited_hours}h</div>
+        </div>
+        <div style="text-align: center;">
+            <div style="font-size: 12px; color: var(--muted);">Expected</div>
+            <div style="font-size: 18px; font-weight: bold; color: var(--text);">${data.expected_hours}h</div>
+        </div>
+    `;
+}
+
+// --- HR row quick actions ---
+async function clockInEmployee(empId) {
+    try {
+        const response = await apiFetch(`/api/hr/employees/${empId}/attendance/clock-in`, { method: 'POST' });
+        const data = await response.json();
+        if (response.ok) {
+            fetchHRData();
+        } else {
+            showAlert(data.error || 'Failed to clock in.', 'error');
+        }
+    } catch (error) {
+        showAlert('Network error clocking in.', 'error');
+    }
+}
+
+async function clockOutEmployee(empId) {
+    try {
+        const response = await apiFetch(`/api/hr/employees/${empId}/attendance/clock-out`, { method: 'POST' });
+        const data = await response.json();
+        if (response.ok) {
+            fetchHRData();
+        } else {
+            showAlert(data.error || 'Failed to clock out.', 'error');
+        }
+    } catch (error) {
+        showAlert('Network error clocking out.', 'error');
+    }
+}
+
+// --- Per-employee attendance drill-down modal ---
+function openEmployeeAttendanceModal(empId) {
+    const emp = employees.find(e => e.id === empId);
+    document.getElementById('eam-employee-id').value = empId;
+    document.getElementById('eam-employee-name').textContent = emp ? emp.name : '';
+    eamEditingSessionId = null;
+    if (!document.getElementById('att-eam-from').value) setAttendanceRangeToThisMonth('eam');
+    document.getElementById('employee-attendance-modal').style.display = 'block';
+    loadEmployeeAttendanceModalData();
+}
+
+function closeEmployeeAttendanceModal() {
+    document.getElementById('employee-attendance-modal').style.display = 'none';
+}
+
+async function loadEmployeeAttendanceModalData() {
+    const empId = document.getElementById('eam-employee-id').value;
+    if (!empId) return;
+    const range = attendanceRangeQuery('eam');
+    try {
+        const [sessionsRes, permissionsRes, vacationsRes, percentageRes] = await Promise.all([
+            apiFetch(`/api/hr/employees/${empId}/attendance/sessions?${range}`),
+            apiFetch(`/api/hr/employees/${empId}/attendance/permissions`),
+            apiFetch(`/api/hr/employees/${empId}/attendance/vacations`),
+            apiFetch(`/api/hr/employees/${empId}/attendance/percentage?${range}`),
+        ]);
+        eamSessions = sessionsRes.ok ? await sessionsRes.json() : [];
+        eamPermissions = permissionsRes.ok ? await permissionsRes.json() : [];
+        eamVacations = vacationsRes.ok ? await vacationsRes.json() : [];
+        renderEamSessionsTable();
+        renderEamPermissionsTable();
+        renderEamVacationsTable();
+        if (percentageRes.ok) renderPercentageCard('eam-percentage-card', await percentageRes.json());
+    } catch (error) {
+        console.error('Failed to load employee attendance data', error);
+    }
+}
+
+function renderEamSessionsTable() {
+    const container = document.getElementById('eam-sessions-container');
+    if (!container) return;
+    if (!eamSessions.length) {
+        container.innerHTML = '<p style="color: var(--muted); font-size: 12px;">No sessions found.</p>';
+        return;
+    }
+    const rows = eamSessions.map(s => {
+        const durationHours = s.clock_out
+            ? ((new Date(s.clock_out.replace(' ', 'T')) - new Date(s.clock_in.replace(' ', 'T'))) / 3600000).toFixed(2)
+            : '—';
+        const openBadge = s.is_open ? '<span class="pill warn">Open</span>' : '<span class="pill ok">Closed</span>';
+        return `
+        <tr>
+            <td>${formatCairoDateTime(s.clock_in)}</td>
+            <td>${s.clock_out ? formatCairoDateTime(s.clock_out) : '—'}</td>
+            <td>${durationHours}</td>
+            <td>${openBadge}</td>
+            <td style="color: var(--muted); font-size: 12px;">${s.note || ''}</td>
+            <td style="text-align: right;">
+                <button type="button" class="btn ghost" style="padding: 4px 10px; font-size: 12px;" onclick="startEditEamSession(${s.id})">Edit</button>
+                <button type="button" class="btn ghost" style="padding: 4px 10px; font-size: 12px; color: var(--danger);" onclick="deleteEamSession(${s.id})">Delete</button>
+            </td>
+        </tr>`;
+    }).join('');
+    container.innerHTML = `
+        <div class="table-container">
+            <table>
+                <thead><tr><th>Clock In</th><th>Clock Out</th><th>Hours</th><th>Status</th><th>Note</th><th style="text-align:right;">Action</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>`;
+}
+
+function startEditEamSession(id) {
+    const row = eamSessions.find(s => s.id === id);
+    if (!row) return;
+    eamEditingSessionId = id;
+    document.getElementById('eam-new-clock-in').value = row.clock_in.replace(' ', 'T').slice(0, 16);
+    document.getElementById('eam-new-clock-out').value = row.clock_out ? row.clock_out.replace(' ', 'T').slice(0, 16) : '';
+    document.getElementById('eam-new-note').value = row.note || '';
+}
+
+async function addEmployeeAttendanceSession(event) {
+    event.preventDefault();
+    const empId = document.getElementById('eam-employee-id').value;
+    const toServerFormat = (val) => val ? val.replace('T', ' ') : '';
+    const payload = {
+        clock_in: toServerFormat(document.getElementById('eam-new-clock-in').value),
+        clock_out: toServerFormat(document.getElementById('eam-new-clock-out').value),
+        note: document.getElementById('eam-new-note').value,
+    };
+    const isEdit = !!eamEditingSessionId;
+    const endpoint = isEdit ? `/api/hr/attendance/sessions/${eamEditingSessionId}` : `/api/hr/employees/${empId}/attendance/sessions`;
+    try {
+        const response = await apiFetch(endpoint, { method: isEdit ? 'PUT' : 'POST', body: JSON.stringify(payload) });
+        const data = await response.json();
+        if (response.ok) {
+            showAlert(isEdit ? 'Session updated.' : 'Session added.', 'success');
+            eamEditingSessionId = null;
+            document.getElementById('eam-new-clock-in').value = '';
+            document.getElementById('eam-new-clock-out').value = '';
+            document.getElementById('eam-new-note').value = '';
+            loadEmployeeAttendanceModalData();
+            fetchHRData();
+        } else {
+            showAlert(data.error || 'Failed to save session.', 'error');
+        }
+    } catch (error) {
+        showAlert('Network error saving session.', 'error');
+    }
+}
+
+async function deleteEamSession(id) {
+    if (!confirm('Delete this session?')) return;
+    try {
+        const response = await apiFetch(`/api/hr/attendance/sessions/${id}`, { method: 'DELETE' });
+        if (response.ok) {
+            loadEmployeeAttendanceModalData();
+            fetchHRData();
+        }
+    } catch (error) {
+        showAlert('Error deleting session.', 'error');
+    }
+}
+
+function renderEamPermissionsTable() {
+    const container = document.getElementById('eam-permissions-container');
+    if (!container) return;
+    if (!eamPermissions.length) {
+        container.innerHTML = '<p style="color: var(--muted); font-size: 12px;">No excused-hours entries.</p>';
+        return;
+    }
+    const rows = eamPermissions.map(p => `
+        <tr>
+            <td>${p.permission_date}</td>
+            <td>${p.start_time} - ${p.end_time}</td>
+            <td>${p.credited_hours}h</td>
+            <td>${p.reason || ''}</td>
+            <td style="text-align: right;"><button type="button" class="btn ghost" style="padding: 4px 10px; font-size: 12px; color: var(--danger);" onclick="deleteEamPermission(${p.id})">Delete</button></td>
+        </tr>`).join('');
+    container.innerHTML = `
+        <div class="table-container">
+            <table>
+                <thead><tr><th>Date</th><th>Time</th><th>Hours</th><th>Reason</th><th style="text-align:right;">Action</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>`;
+}
+
+async function addEmployeePermission(event) {
+    event.preventDefault();
+    const empId = document.getElementById('eam-employee-id').value;
+    const payload = {
+        permission_date: document.getElementById('eam-perm-date').value,
+        start_time: document.getElementById('eam-perm-start').value,
+        end_time: document.getElementById('eam-perm-end').value,
+        reason: document.getElementById('eam-perm-reason').value,
+    };
+    try {
+        const response = await apiFetch(`/api/hr/employees/${empId}/attendance/permissions`, { method: 'POST', body: JSON.stringify(payload) });
+        const data = await response.json();
+        if (response.ok) {
+            showAlert('Excused hours recorded.', 'success');
+            document.getElementById('eam-perm-date').value = '';
+            document.getElementById('eam-perm-start').value = '';
+            document.getElementById('eam-perm-end').value = '';
+            document.getElementById('eam-perm-reason').value = '';
+            loadEmployeeAttendanceModalData();
+        } else {
+            showAlert(data.error || 'Failed to record excused hours.', 'error');
+        }
+    } catch (error) {
+        showAlert('Network error recording excused hours.', 'error');
+    }
+}
+
+async function deleteEamPermission(id) {
+    if (!confirm('Delete this entry?')) return;
+    try {
+        const response = await apiFetch(`/api/hr/attendance/permissions/${id}`, { method: 'DELETE' });
+        if (response.ok) loadEmployeeAttendanceModalData();
+    } catch (error) {
+        showAlert('Error deleting entry.', 'error');
+    }
+}
+
+function renderEamVacationsTable() {
+    const container = document.getElementById('eam-vacations-container');
+    if (!container) return;
+    if (!eamVacations.length) {
+        container.innerHTML = '<p style="color: var(--muted); font-size: 12px;">No vacations recorded.</p>';
+        return;
+    }
+    const rows = eamVacations.map(v => `
+        <tr>
+            <td>${v.start_date} → ${v.end_date}</td>
+            <td>${v.reason || ''}</td>
+            <td style="text-align: right;"><button type="button" class="btn ghost" style="padding: 4px 10px; font-size: 12px; color: var(--danger);" onclick="deleteEamVacation(${v.id})">Delete</button></td>
+        </tr>`).join('');
+    container.innerHTML = `
+        <div class="table-container">
+            <table>
+                <thead><tr><th>Dates</th><th>Reason</th><th style="text-align:right;">Action</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>`;
+}
+
+async function addEmployeeVacation(event) {
+    event.preventDefault();
+    const empId = document.getElementById('eam-employee-id').value;
+    const payload = {
+        start_date: document.getElementById('eam-vac-start').value,
+        end_date: document.getElementById('eam-vac-end').value,
+        reason: document.getElementById('eam-vac-reason').value,
+    };
+    try {
+        const response = await apiFetch(`/api/hr/employees/${empId}/attendance/vacations`, { method: 'POST', body: JSON.stringify(payload) });
+        const data = await response.json();
+        if (response.ok) {
+            showAlert('Vacation added.', 'success');
+            document.getElementById('eam-vac-start').value = '';
+            document.getElementById('eam-vac-end').value = '';
+            document.getElementById('eam-vac-reason').value = '';
+            loadEmployeeAttendanceModalData();
+            fetchHRData();
+        } else {
+            showAlert(data.error || 'Failed to add vacation.', 'error');
+        }
+    } catch (error) {
+        showAlert('Network error adding vacation.', 'error');
+    }
+}
+
+async function deleteEamVacation(id) {
+    if (!confirm('Delete this vacation?')) return;
+    try {
+        const response = await apiFetch(`/api/hr/attendance/vacations/${id}`, { method: 'DELETE' });
+        if (response.ok) {
+            loadEmployeeAttendanceModalData();
+            fetchHRData();
+        }
+    } catch (error) {
+        showAlert('Error deleting vacation.', 'error');
+    }
+}
+
+// --- Company-wide policy (weekly days off, standard hours/day, holidays) ---
+async function fetchAttendanceConfig() {
+    try {
+        const response = await apiFetch('/api/hr/attendance/config');
+        if (!response.ok) return;
+        attendanceConfig = await response.json();
+        document.querySelectorAll('#att-weekly-days-off input[type="checkbox"]').forEach(cb => {
+            cb.checked = attendanceConfig.weekly_days_off.includes(parseInt(cb.value, 10));
+        });
+        const hoursInput = document.getElementById('att-standard-hours');
+        if (hoursInput) hoursInput.value = attendanceConfig.standard_work_hours_per_day;
+        renderHolidaysList();
+    } catch (error) {
+        console.error('Failed to load attendance config', error);
+    }
+}
+
+function renderHolidaysList() {
+    const container = document.getElementById('att-holidays-list');
+    if (!container) return;
+    if (!attendanceConfig.holidays || !attendanceConfig.holidays.length) {
+        container.innerHTML = '<p style="color: var(--muted); font-size: 12px;">No holidays configured.</p>';
+        return;
+    }
+    container.innerHTML = attendanceConfig.holidays.map(h => `
+        <span class="pill ghost" style="margin: 3px; display: inline-flex; align-items: center; gap: 6px;">
+            ${h.date}${h.name ? ' — ' + h.name : ''}
+            <span style="cursor: pointer; color: var(--danger);" onclick="deleteHoliday(${h.id})">✕</span>
+        </span>
+    `).join('');
+}
+
+async function saveAttendanceConfig() {
+    const days = Array.from(document.querySelectorAll('#att-weekly-days-off input[type="checkbox"]:checked')).map(cb => parseInt(cb.value, 10));
+    const hours = parseFloat(document.getElementById('att-standard-hours').value);
+    try {
+        const response = await apiFetch('/api/hr/attendance/config', {
+            method: 'POST',
+            body: JSON.stringify({ weekly_days_off: days, standard_work_hours_per_day: hours }),
+        });
+        const data = await response.json();
+        if (response.ok) {
+            showAlert('Attendance policy saved.', 'success');
+            fetchAttendanceConfig();
+            fetchAttendancePercentageReport();
+        } else {
+            showAlert(data.error || 'Failed to save policy.', 'error');
+        }
+    } catch (error) {
+        showAlert('Network error saving policy.', 'error');
+    }
+}
+
+async function addHoliday() {
+    const date = document.getElementById('att-new-holiday-date').value;
+    const name = document.getElementById('att-new-holiday-name').value;
+    if (!date) { showAlert('Pick a date first.', 'error'); return; }
+    try {
+        const response = await apiFetch('/api/hr/attendance/holidays', {
+            method: 'POST', body: JSON.stringify({ date, name }),
+        });
+        const data = await response.json();
+        if (response.ok) {
+            document.getElementById('att-new-holiday-date').value = '';
+            document.getElementById('att-new-holiday-name').value = '';
+            fetchAttendanceConfig();
+            fetchAttendancePercentageReport();
+        } else {
+            showAlert(data.error || 'Failed to add holiday.', 'error');
+        }
+    } catch (error) {
+        showAlert('Network error adding holiday.', 'error');
+    }
+}
+
+async function deleteHoliday(id) {
+    if (!confirm('Remove this holiday?')) return;
+    try {
+        const response = await apiFetch(`/api/hr/attendance/holidays/${id}`, { method: 'DELETE' });
+        if (response.ok) {
+            fetchAttendanceConfig();
+            fetchAttendancePercentageReport();
+        }
+    } catch (error) {
+        showAlert('Error removing holiday.', 'error');
+    }
+}
+
+// --- All-employees percentage report ---
+async function fetchAttendancePercentageReport() {
+    if (!document.getElementById('att-report-from').value) setAttendanceRangeToThisMonth('report');
+    const params = new URLSearchParams(attendanceRangeQuery('report'));
+    try {
+        const response = await apiFetch(`/api/hr/attendance/percentage?${params.toString()}`);
+        if (!response.ok) return;
+        renderAttendancePercentageReportTable(await response.json());
+    } catch (error) {
+        console.error('Failed to load attendance percentage report', error);
+    }
+}
+
+function renderAttendancePercentageReportTable(report) {
+    const container = document.getElementById('att-percentage-report-container');
+    if (!container) return;
+    if (!report.length) {
+        container.innerHTML = '<div class="table-container"><table style="width:100%;"><tr><td style="text-align:center; padding: 20px; color: var(--muted);">No employees found.</td></tr></table></div>';
+        return;
+    }
+    const rows = report.slice().sort((a, b) => a.percentage - b.percentage).map(r => {
+        const pctColor = r.percentage >= 90 ? 'var(--ok)' : (r.percentage >= 70 ? 'var(--warn)' : 'var(--danger)');
+        return `
+        <tr>
+            <td><strong>${r.name}</strong></td>
+            <td style="color: var(--muted);">${r.role || ''}</td>
+            <td>${r.worked_hours}h</td>
+            <td>${r.credited_hours}h</td>
+            <td>${r.expected_hours}h</td>
+            <td><strong style="color: ${pctColor};">${r.percentage}%</strong></td>
+            <td style="text-align: right;"><button type="button" class="btn ghost" style="padding: 4px 10px; font-size: 12px;" onclick="openEmployeeAttendanceModal(${r.employee_id})">Manage</button></td>
+        </tr>`;
+    }).join('');
+    container.innerHTML = `
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr><th>Name</th><th>Role</th><th>Worked</th><th>Credited</th><th>Expected</th><th>%</th><th style="text-align:right;">Action</th></tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>`;
 }
 
 // ==========================================
