@@ -603,10 +603,12 @@ function renderHRTable() {
             <td style="color: var(--muted);">${emp.role}</td>
             <td>${emp.phone || 'N/A'}</td>
             <td><strong>${safeSalary.toFixed(2)} EGP</strong></td>
-            <td><span class="pill ${statusClass}">${emp.status}</span></td>
             <td>
-                ${attendanceBadge}
-                <div style="margin-top: 4px; display: flex; gap: 4px;">
+                <span class="pill ${statusClass}">${emp.status}</span><br>
+                <span style="margin-top: 4px; display: inline-block;">${attendanceBadge}</span>
+            </td>
+            <td>
+                <div style="display: flex; gap: 4px;">
                     ${clockBtn}
                     <button class="btn ghost" style="padding: 4px 10px; font-size: 12px;" onclick="openEmployeeAttendanceModal(${emp.id})">Manage</button>
                 </div>
