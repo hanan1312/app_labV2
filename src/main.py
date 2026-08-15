@@ -36,7 +36,7 @@ from src.models.test_parameter import TestParameterTemplate
 from src.models.lab_config import LabConfig, is_login_blocked_for_regular_users
 from src.models.audit import ActivityLog
 from src.models.attendance import AttendanceSession, AttendancePermission, EmployeeVacation, Holiday
-from src.utils.attendance import compute_attendance_percentage, get_weekly_days_off
+from src.utils.attendance import compute_attendance_percentage, compute_daily_trend, get_weekly_days_off
 # Junction tables (docs/schema_migration_plan.md) — imported so create_all() sees them;
 # sync_*/add_* helpers keep them live from the write sites below (Phase 2)
 from src.models.junctions import (
@@ -297,6 +297,7 @@ with app.app_context():
         for statement in [
             "ALTER TABLE lab_config ADD COLUMN weekly_days_off TEXT DEFAULT '[4]'",
             "ALTER TABLE lab_config ADD COLUMN standard_work_hours_per_day FLOAT DEFAULT 8.0",
+            "ALTER TABLE employees ADD COLUMN photo_path TEXT",
         ]:
             try:
                 db.session.execute(text(statement))
@@ -1832,18 +1833,21 @@ def save_employee():
         emp = db.session.get(Employee, emp_id)
         if not emp: return jsonify({'error': 'Employee not found'}), 404
         
-        # Update existing fields
+        # Update existing fields. status is intentionally left untouched here — it's no
+        # longer editable from the Add/Edit Employee form (the HR table's "Status" column is
+        # now derived live from attendance clock-in/out + vacations instead).
         emp.name = data.get('name')
         emp.role = data.get('role')
         emp.phone = data.get('phone')
         emp.salary = float(data.get('salary', 0))
-        emp.status = data.get('status', 'Active')
-        
+
         # 🚨 NEW ASSIGNMENTS
         emp.email = data.get('email')
         emp.join_date = parsed_date
         emp.username = data.get('username') # <-- Add this line!
-        
+        if 'photo_path' in data:
+            emp.photo_path = data.get('photo_path') or None
+
     else:
         # Create new
         emp = Employee(
@@ -1851,11 +1855,12 @@ def save_employee():
             role=data.get('role'),
             phone=data.get('phone'),
             salary=float(data.get('salary', 0)),
-            status=data.get('status', 'Active'),
+            status='Active',
             # 🚨 NEW ASSIGNMENTS
             email=data.get('email'),
             join_date=parsed_date,
-            username=data.get('username') # <-- Add this line!
+            username=data.get('username'), # <-- Add this line!
+            photo_path=data.get('photo_path') or None,
         )
         db.session.add(emp)
     
@@ -2169,6 +2174,13 @@ def delete_attendance_vacation(vacation_id):
 def get_employee_attendance_percentage(emp_id):
     date_from, date_to = _attendance_date_range()
     return jsonify(compute_attendance_percentage(emp_id, date_from, date_to))
+
+@app.route('/api/hr/employees/<int:emp_id>/attendance/trend', methods=['GET'])
+@require_permission('hr-management')
+def get_employee_attendance_trend(emp_id):
+    """Day-by-day breakdown behind the attendance line chart and the calendar view."""
+    date_from, date_to = _attendance_date_range()
+    return jsonify(compute_daily_trend(emp_id, date_from, date_to))
 
 @app.route('/api/hr/attendance/config', methods=['GET'])
 @require_permission('hr-management')

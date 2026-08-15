@@ -554,3 +554,34 @@ input::placeholder { color: rgba(255, 255, 255, 0.4) !important; }
     .dashboard-top-cards { grid-template-columns: 1fr; }
 }
 
+/* Floating notifications (showAlert) — fixed so a confirmation is always visible in front of
+   the user regardless of scroll position or an open modal, instead of appearing inline in
+   the page flow where it could go unnoticed. */
+#alert-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10000;
+    width: 340px;
+    max-width: calc(100vw - 40px);
+    pointer-events: none;
+}
+#alert-container > div {
+    pointer-events: auto;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+}
+
+/* Employee avatar — photo if uploaded, otherwise initials on a color derived from the name. */
+.employee-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-weight: 700;
+    color: #fff;
+    flex-shrink: 0;
+    object-fit: cover;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+

@@ -196,6 +196,14 @@
                                     <option value="offline">🔴 Offline</option>
                                 </select>
                             </div>
+                            <div style="width: 150px; margin-right: 10px;">
+                                <select id="hr-filter-attendance" onchange="renderHRTable()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                                    <option value="">All Attendance</option>
+                                    <option value="in">🟢 In</option>
+                                    <option value="out">⚪ Out</option>
+                                    <option value="vacation">🏖️ On Vacation</option>
+                                </select>
+                            </div>
                             <input type="file" id="import-hr-excel" accept=".xlsx, .xls, .csv" style="display: none;" onchange="processHRExcelImport(event)">
                             
                             <button class="btn ghost" style="border-color: #3b82f6; color: #3b82f6;" onclick="document.getElementById('import-hr-excel').click()">
@@ -287,7 +295,13 @@
                             <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                                 <input type="date" id="att-report-from" style="padding: 6px;">
                                 <input type="date" id="att-report-to" style="padding: 6px;">
-                                <button class="btn ghost" style="padding: 6px 12px;" onclick="setAttendanceRangeToThisMonth('report'); fetchAttendancePercentageReport();" data-i18n="hr.this_month">This Month</button>
+                                <select onchange="setAttendanceRangePreset('report', this.value); fetchAttendancePercentageReport();" style="padding: 6px;">
+                                    <option value="">Quick range…</option>
+                                    <option value="today">Today</option>
+                                    <option value="week">This Week</option>
+                                    <option value="month" selected>This Month</option>
+                                    <option value="year">This Year</option>
+                                </select>
                                 <button class="btn ghost" style="padding: 6px 12px;" onclick="fetchAttendancePercentageReport()">🔎</button>
                             </div>
                         </div>
@@ -303,33 +317,33 @@
                         
                         <form id="employee-form" onsubmit="saveEmployeeRecord(event)">
                             <input type="hidden" id="emp-id">
-                            
+                            <input type="hidden" id="emp-photo-path">
+
+                            <div style="display: flex; gap: 15px; align-items: center; margin-bottom: 20px;">
+                                <div id="emp-photo-preview" style="width: 64px; height: 64px; flex-shrink: 0;"></div>
+                                <div>
+                                    <input type="file" id="emp-photo-input" accept="image/*" style="display: none;" onchange="handleEmployeePhotoSelected(event)">
+                                    <button type="button" class="btn ghost" style="padding: 6px 12px; font-size: 12px;" onclick="document.getElementById('emp-photo-input').click()">📷 Upload Photo</button>
+                                    <button type="button" class="btn ghost" id="emp-photo-remove-btn" style="padding: 6px 12px; font-size: 12px; display: none;" onclick="removeEmployeePhoto()">Remove</button>
+                                </div>
+                            </div>
+
                             <div style="margin-bottom: 15px;">
                                 <label style="color: var(--muted); font-size: 12px; text-transform: uppercase;">Full Name *</label>
-                                <input type="text" id="emp-name" required style="width: 100%; margin-top: 5px;">
+                                <input type="text" id="emp-name" required style="width: 100%; margin-top: 5px;" oninput="refreshEmployeePhotoPreview()">
                             </div>
-                            
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
-                                <div>
-                                    <label style="color: var(--muted); font-size: 12px; text-transform: uppercase;">Role *</label>
-                                    <select id="emp-role" required style="width: 100%; margin-top: 5px;">
-                                        <option value="Pathologist">Pathologist</option>
-                                        <option value="Phlebotomist">Phlebotomist</option>
-                                        <option value="Lab Technician">Lab Technician</option>
-                                        <option value="User">User</option>
-                                        <option value="Admin">Admin</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label style="color: var(--muted); font-size: 12px; text-transform: uppercase;">Status</label>
-                                    <select id="emp-status" required style="width: 100%; margin-top: 5px;">
-                                        <option value="Active">Active</option>
-                                        <option value="On Leave">On Leave</option>
-                                        <option value="Terminated">Terminated</option>
-                                    </select>
-                                </div>
+
+                            <div style="margin-bottom: 15px;">
+                                <label style="color: var(--muted); font-size: 12px; text-transform: uppercase;">Role *</label>
+                                <select id="emp-role" required style="width: 100%; margin-top: 5px;">
+                                    <option value="Pathologist">Pathologist</option>
+                                    <option value="Phlebotomist">Phlebotomist</option>
+                                    <option value="Lab Technician">Lab Technician</option>
+                                    <option value="User">User</option>
+                                    <option value="Admin">Admin</option>
+                                </select>
                             </div>
-                
+
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 25px;">
                                 <div>
                                     <label style="color: var(--muted); font-size: 12px; text-transform: uppercase;">Phone</label>
@@ -367,16 +381,29 @@
                 <div id="employee-attendance-modal" class="modal" style="display: none;">
                     <div class="modal-content glass-panel" style="max-width: 800px; max-height: 85vh; overflow-y: auto;">
                         <span class="close" onclick="closeEmployeeAttendanceModal()">&times;</span>
-                        <h2 style="margin-bottom: 5px; color: var(--text);">Attendance — <span id="eam-employee-name"></span></h2>
+                        <h2 style="margin-bottom: 5px; color: var(--text); display: flex; align-items: center; gap: 10px;">
+                            <span id="eam-employee-avatar"></span>
+                            <span>Attendance — <span id="eam-employee-name"></span></span>
+                        </h2>
                         <input type="hidden" id="eam-employee-id">
 
                         <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 15px 0;">
                             <input type="date" id="att-eam-from" style="padding: 6px;">
                             <input type="date" id="att-eam-to" style="padding: 6px;">
-                            <button class="btn ghost" style="padding: 6px 12px;" onclick="setAttendanceRangeToThisMonth('eam'); loadEmployeeAttendanceModalData();">This Month</button>
+                            <select onchange="setAttendanceRangePreset('eam', this.value); loadEmployeeAttendanceModalData();" style="padding: 6px;">
+                                <option value="">Quick range…</option>
+                                <option value="today">Today</option>
+                                <option value="week">This Week</option>
+                                <option value="month" selected>This Month</option>
+                                <option value="year">This Year</option>
+                            </select>
                             <button class="btn ghost" style="padding: 6px 12px;" onclick="loadEmployeeAttendanceModalData()">🔎</button>
                         </div>
                         <div id="eam-percentage-card" style="display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px;"></div>
+                        <h4 style="color: var(--muted); margin-bottom: 10px;">Attendance Performance</h4>
+                        <div style="height: 220px; margin-bottom: 25px;">
+                            <canvas id="eam-trend-chart"></canvas>
+                        </div>
 
                         <h4 style="color: var(--muted); border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; margin-bottom: 10px;">Sessions</h4>
                         <form onsubmit="addEmployeeAttendanceSession(event)" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 10px;">
@@ -405,6 +432,23 @@
                             <button type="submit" class="btn ghost">+ Add</button>
                         </form>
                         <div id="eam-vacations-container"></div>
+
+                        <h4 style="color: var(--muted); border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; margin: 20px 0 10px 0;">Calendar</h4>
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+                            <div style="display: flex; gap: 6px; align-items: center;">
+                                <button type="button" class="btn ghost" style="padding: 6px 10px;" onclick="shiftEamCalendar(-1)">◀</button>
+                                <strong id="eam-calendar-label" style="min-width: 160px; text-align: center; display: inline-block;"></strong>
+                                <button type="button" class="btn ghost" style="padding: 6px 10px;" onclick="shiftEamCalendar(1)">▶</button>
+                            </div>
+                            <div style="display: flex; gap: 6px;">
+                                <button type="button" id="eam-cal-btn-day" class="btn ghost" style="padding: 6px 12px;" onclick="setEamCalendarView('day')">Day</button>
+                                <button type="button" id="eam-cal-btn-week" class="btn ghost" style="padding: 6px 12px;" onclick="setEamCalendarView('week')">Week</button>
+                                <button type="button" id="eam-cal-btn-month" class="btn ghost" style="padding: 6px 12px;" onclick="setEamCalendarView('month')">Month</button>
+                                <button type="button" class="btn" style="padding: 6px 12px; background: var(--gold); color: #04121d;" onclick="toggleAttendanceBestPractice()">💡 Best Practice</button>
+                            </div>
+                        </div>
+                        <div id="eam-best-practice-panel" class="glass-panel" style="display: none; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px dashed var(--gold);"></div>
+                        <div id="eam-calendar-grid"></div>
                     </div>
                 </div>
 

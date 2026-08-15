@@ -196,6 +196,7 @@ class Employee(db.Model):
     status = db.Column(db.String(20), default='Active') # Active, On Leave, Terminated
     join_date = db.Column(db.DateTime, nullable=True)
     username = db.Column(db.String(80), nullable=True)
+    photo_path = db.Column(db.Text, nullable=True)  # data: URI or /static path — same convention as LabConfig.logo_path
 
     def to_dict(self):
         return {
@@ -207,7 +208,8 @@ class Employee(db.Model):
             'salary': self.salary,
             'status': self.status,
             'join_date': self.join_date.strftime("%Y-%m-%d") if self.join_date else "",
-            'username': self.username
+            'username': self.username,
+            'photo_path': self.photo_path,
         }
     
 

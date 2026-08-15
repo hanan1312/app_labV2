@@ -530,16 +530,26 @@ function renderHRTable() {
         else return;
     }
     
-    // 1. Get the current filter value
+    // 1. Get the current filter values
     const presenceFilter = document.getElementById('hr-filter-presence')?.value || "";
+    const attendanceFilter = document.getElementById('hr-filter-attendance')?.value || "";
 
-    // 2. Apply the filter
+    // 2. Apply the filters
     let filteredEmployees = employees;
     if (presenceFilter) {
         filteredEmployees = filteredEmployees.filter(emp => {
             // Default to 'offline' if the backend hasn't provided this data yet
             const currentPresence = emp.presence_status || 'offline';
             return currentPresence === presenceFilter;
+        });
+    }
+    if (attendanceFilter) {
+        filteredEmployees = filteredEmployees.filter(emp => {
+            const att = emp.attendance_status || {};
+            if (attendanceFilter === 'vacation') return !!att.on_vacation;
+            if (attendanceFilter === 'in') return att.clocked_in && !att.on_vacation;
+            if (attendanceFilter === 'out') return !att.clocked_in && !att.on_vacation;
+            return true;
         });
     }
 
@@ -550,9 +560,8 @@ function renderHRTable() {
 
     // 3. Render the filtered rows
     let rows = filteredEmployees.map((emp, index) => {
-        let statusClass = emp.status === 'Active' ? 'ok' : (emp.status === 'On Leave' ? 'warn' : 'danger');
         let safeSalary = parseFloat(emp.salary) || 0;
-        
+
         // Determine presence status and corresponding CSS class
         let presence = emp.presence_status || 'offline'; // Fallback
         let presenceClass = 'presence-offline';
@@ -565,22 +574,24 @@ function renderHRTable() {
             presenceClass = 'presence-idle';
             presenceText = 'Idle';
         }
-        
+
         // Style the username column nicely
         let usernameDisplay = emp.username
             ? `<span style="color: var(--teal); font-weight: 500;">${emp.username}</span>`
             : `<span style="color: var(--muted); font-style: italic; font-size: 12px;">Not assigned</span>`;
 
-        // Attendance status/quick-actions — admin/HR clocks employees in/out directly here,
-        // regardless of whether they have a system login (see clockInEmployee/clockOutEmployee).
+        // Status is now fully derived live from attendance clock-in/out + vacations — admin/HR
+        // clocks employees in/out directly here, regardless of whether they have a system
+        // login (see clockInEmployee/clockOutEmployee). There is no manually-set status
+        // anymore (see the Add/Edit Employee form).
         const att = emp.attendance_status || { clocked_in: false, since: null, on_vacation: false };
-        let attendanceBadge;
+        let statusBadge;
         if (att.on_vacation) {
-            attendanceBadge = '<span class="pill info">On Vacation</span>';
+            statusBadge = '<span class="pill info">On Vacation</span>';
         } else if (att.clocked_in) {
-            attendanceBadge = `<span class="pill ok">In since ${formatCairoDateTime(att.since, false)}</span>`;
+            statusBadge = `<span class="pill ok">In since ${formatCairoDateTime(att.since, false)}</span>`;
         } else {
-            attendanceBadge = '<span class="pill ghost">Not clocked in</span>';
+            statusBadge = '<span class="pill ghost">Out</span>';
         }
         const clockBtn = att.clocked_in
             ? `<button class="btn ghost" style="padding: 4px 10px; font-size: 12px; color: var(--danger);" onclick="clockOutEmployee(${emp.id})">Clock Out</button>`
@@ -591,10 +602,13 @@ function renderHRTable() {
             <td><input type="checkbox" class="hr-checkbox" data-id="${emp.id}" data-email="${emp.email || ''}" data-phone="${emp.phone || ''}" data-name="${emp.name || ''}" onchange="updateHRBulkActions()"></td>
             <td>${index + 1}</td>
             <td>
-                <div style="display: flex; align-items: center;">
-                    <span class="presence-dot ${presenceClass}" title="${presenceText}"></span>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    ${renderAvatarHtml(emp.photo_path, emp.name, 36)}
                     <div>
-                        <strong>${emp.name}</strong><br>
+                        <div style="display: flex; align-items: center;">
+                            <span class="presence-dot ${presenceClass}" title="${presenceText}"></span>
+                            <strong>${emp.name}</strong>
+                        </div>
                         <small style="color: var(--muted); font-size: 11px;">${emp.email || 'No email'}</small>
                     </div>
                 </div>
@@ -603,10 +617,7 @@ function renderHRTable() {
             <td style="color: var(--muted);">${emp.role}</td>
             <td>${emp.phone || 'N/A'}</td>
             <td><strong>${safeSalary.toFixed(2)} EGP</strong></td>
-            <td>
-                <span class="pill ${statusClass}">${emp.status}</span><br>
-                <span style="margin-top: 4px; display: inline-block;">${attendanceBadge}</span>
-            </td>
+            <td>${statusBadge}</td>
             <td>
                 <div style="display: flex; gap: 4px;">
                     ${clockBtn}
@@ -768,7 +779,8 @@ function openEmployeeModal(empId = null) {
     document.getElementById('employee-form').reset();
     document.getElementById('emp-id').value = '';
     document.getElementById('emp-username').value = ''; // Reset new field
-    
+    document.getElementById('emp-photo-path').value = '';
+
     if (empId) {
         title.textContent = 'Edit Employee';
         const emp = employees.find(e => e.id === empId);
@@ -776,17 +788,18 @@ function openEmployeeModal(empId = null) {
             document.getElementById('emp-id').value = emp.id;
             document.getElementById('emp-name').value = emp.name;
             document.getElementById('emp-role').value = emp.role;
-            document.getElementById('emp-status').value = emp.status;
             document.getElementById('emp-phone').value = emp.phone || '';
             document.getElementById('emp-salary').value = emp.salary || '';
             document.getElementById('emp-email').value = emp.email || '';
             // Load existing username if it exists
-            document.getElementById('emp-username').value = emp.username || ''; 
+            document.getElementById('emp-username').value = emp.username || '';
+            document.getElementById('emp-photo-path').value = emp.photo_path || '';
         }
     } else {
         title.textContent = 'Add New Employee';
     }
-    
+
+    refreshEmployeePhotoPreview();
     document.getElementById('employee-modal').style.display = 'block';
 }
 
@@ -794,18 +807,73 @@ function closeEmployeeModal() {
     document.getElementById('employee-modal').style.display = 'none';
 }
 
+// --- Employee photo upload / initials-avatar fallback ---
+const AVATAR_COLORS = ['#F87171', '#FB923C', '#FBBF24', '#34D399', '#22D3EE', '#60A5FA', '#A78BFA', '#F472B6', '#4ADE80', '#38BDF8'];
+
+function getInitials(name) {
+    if (!name) return '?';
+    const parts = name.trim().split(/\s+/);
+    const first = parts[0] ? parts[0][0] : '';
+    const second = parts[1] ? parts[1][0] : '';
+    return (first + second).toUpperCase() || '?';
+}
+
+function avatarColorForName(name) {
+    let hash = 0;
+    const str = name || '';
+    for (let i = 0; i < str.length; i++) {
+        hash = (hash * 31 + str.charCodeAt(i)) | 0;
+    }
+    return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+function renderAvatarHtml(photoPath, name, sizePx) {
+    if (photoPath) {
+        return `<img src="${photoPath}" class="employee-avatar" style="width:${sizePx}px;height:${sizePx}px;">`;
+    }
+    const fontSize = Math.round(sizePx * 0.4);
+    return `<div class="employee-avatar" style="width:${sizePx}px;height:${sizePx}px;font-size:${fontSize}px;background:${avatarColorForName(name)};">${getInitials(name)}</div>`;
+}
+
+function refreshEmployeePhotoPreview() {
+    const preview = document.getElementById('emp-photo-preview');
+    if (!preview) return;
+    const photoPath = document.getElementById('emp-photo-path').value;
+    const name = document.getElementById('emp-name').value;
+    preview.innerHTML = renderAvatarHtml(photoPath, name, 64);
+    const removeBtn = document.getElementById('emp-photo-remove-btn');
+    if (removeBtn) removeBtn.style.display = photoPath ? 'inline-block' : 'none';
+}
+
+function handleEmployeePhotoSelected(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        document.getElementById('emp-photo-path').value = e.target.result;
+        refreshEmployeePhotoPreview();
+    };
+    reader.readAsDataURL(file);
+}
+
+function removeEmployeePhoto() {
+    document.getElementById('emp-photo-path').value = '';
+    document.getElementById('emp-photo-input').value = '';
+    refreshEmployeePhotoPreview();
+}
+
 async function saveEmployeeRecord(event) {
     event.preventDefault();
-    
+
     const payload = {
         id: document.getElementById('emp-id').value,
         name: document.getElementById('emp-name').value,
         role: document.getElementById('emp-role').value,
-        status: document.getElementById('emp-status').value,
         phone: document.getElementById('emp-phone').value,
         salary: document.getElementById('emp-salary').value,
         email: document.getElementById('emp-email').value,
-        username: document.getElementById('emp-username').value // Send new field to backend
+        username: document.getElementById('emp-username').value, // Send new field to backend
+        photo_path: document.getElementById('emp-photo-path').value,
     };
 
     try {
@@ -850,18 +918,41 @@ let eamPermissions = [];
 let eamVacations = [];
 let eamEditingSessionId = null;
 
-// Fills the from/to inputs for a given picker (`report`/`eam`) with the current Cairo-local
-// month, using pure UTC-based arithmetic on cairoDateStr()'s components — never a local Date
-// getter — so the boundary isn't skewed by the viewer's own browser timezone.
-function setAttendanceRangeToThisMonth(scope) {
-    const [y, m] = cairoDateStr().split('-').map(Number);
+// Fills the from/to inputs for a given picker (`report`/`eam`) with a preset range —
+// 'today' / 'week' (Mon-Sun) / 'month' / 'year' — using pure UTC-based arithmetic on
+// cairoDateStr()'s components — never a local Date getter — so the boundary isn't skewed by
+// the viewer's own browser timezone.
+function attendancePresetRange(preset, refDateStr) {
+    const [y, m, d] = (refDateStr || cairoDateStr()).split('-').map(Number);
+    if (preset === 'today') {
+        const today = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        return { from: today, to: today };
+    }
+    if (preset === 'week') {
+        const refUTC = Date.UTC(y, m - 1, d);
+        const weekday = new Date(refUTC).getUTCDay(); // 0=Sun..6=Sat
+        const isoWeekday = weekday === 0 ? 7 : weekday; // 1=Mon..7=Sun
+        const mondayMs = refUTC - (isoWeekday - 1) * 86400000;
+        const sundayMs = mondayMs + 6 * 86400000;
+        return { from: new Date(mondayMs).toISOString().slice(0, 10), to: new Date(sundayMs).toISOString().slice(0, 10) };
+    }
+    if (preset === 'year') {
+        return { from: `${y}-01-01`, to: `${y}-12-31` };
+    }
+    // 'month' (default)
     const first = `${y}-${String(m).padStart(2, '0')}-01`;
     const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
     const last = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    return { from: first, to: last };
+}
+
+function setAttendanceRangePreset(scope, preset) {
+    if (!preset) return;
+    const { from, to } = attendancePresetRange(preset);
     const fromInput = document.getElementById(`att-${scope}-from`);
     const toInput = document.getElementById(`att-${scope}-to`);
-    if (fromInput) fromInput.value = first;
-    if (toInput) toInput.value = last;
+    if (fromInput) fromInput.value = from;
+    if (toInput) toInput.value = to;
 }
 
 function attendanceRangeQuery(scope) {
@@ -931,14 +1022,26 @@ function openEmployeeAttendanceModal(empId) {
     const emp = employees.find(e => e.id === empId);
     document.getElementById('eam-employee-id').value = empId;
     document.getElementById('eam-employee-name').textContent = emp ? emp.name : '';
+    const avatarSlot = document.getElementById('eam-employee-avatar');
+    if (avatarSlot) avatarSlot.innerHTML = emp ? renderAvatarHtml(emp.photo_path, emp.name, 40) : '';
     eamEditingSessionId = null;
-    if (!document.getElementById('att-eam-from').value) setAttendanceRangeToThisMonth('eam');
+    if (!document.getElementById('att-eam-from').value) setAttendanceRangePreset('eam', 'month');
+    document.getElementById('eam-best-practice-panel').style.display = 'none';
     document.getElementById('employee-attendance-modal').style.display = 'block';
     loadEmployeeAttendanceModalData();
+
+    eamCalendarView = 'month';
+    eamCalendarRefDate = cairoDateStr();
+    updateEamCalendarViewButtons();
+    loadEamCalendar();
 }
 
 function closeEmployeeAttendanceModal() {
     document.getElementById('employee-attendance-modal').style.display = 'none';
+    if (eamTrendChartInstance) {
+        eamTrendChartInstance.destroy();
+        eamTrendChartInstance = null;
+    }
 }
 
 async function loadEmployeeAttendanceModalData() {
@@ -946,11 +1049,12 @@ async function loadEmployeeAttendanceModalData() {
     if (!empId) return;
     const range = attendanceRangeQuery('eam');
     try {
-        const [sessionsRes, permissionsRes, vacationsRes, percentageRes] = await Promise.all([
+        const [sessionsRes, permissionsRes, vacationsRes, percentageRes, trendRes] = await Promise.all([
             apiFetch(`/api/hr/employees/${empId}/attendance/sessions?${range}`),
             apiFetch(`/api/hr/employees/${empId}/attendance/permissions`),
             apiFetch(`/api/hr/employees/${empId}/attendance/vacations`),
             apiFetch(`/api/hr/employees/${empId}/attendance/percentage?${range}`),
+            apiFetch(`/api/hr/employees/${empId}/attendance/trend?${range}`),
         ]);
         eamSessions = sessionsRes.ok ? await sessionsRes.json() : [];
         eamPermissions = permissionsRes.ok ? await permissionsRes.json() : [];
@@ -959,8 +1063,208 @@ async function loadEmployeeAttendanceModalData() {
         renderEamPermissionsTable();
         renderEamVacationsTable();
         if (percentageRes.ok) renderPercentageCard('eam-percentage-card', await percentageRes.json());
+        if (trendRes.ok) renderEamTrendChart(await trendRes.json());
     } catch (error) {
         console.error('Failed to load employee attendance data', error);
+    }
+}
+
+// --- Attendance performance line chart ---
+let eamTrendChartInstance = null;
+
+function renderEamTrendChart(trend) {
+    const canvas = document.getElementById('eam-trend-chart');
+    if (!canvas || typeof Chart === 'undefined') return;
+    if (eamTrendChartInstance) {
+        eamTrendChartInstance.destroy();
+        eamTrendChartInstance = null;
+    }
+    // Read the app's own theme tokens so the chart matches dark/light mode automatically
+    // instead of hardcoding colors that would clash if the user toggles theme.
+    const style = getComputedStyle(document.documentElement);
+    const teal = style.getPropertyValue('--teal').trim() || '#5cbdb9';
+    const muted = style.getPropertyValue('--muted').trim() || '#8aa6b8';
+    const border = style.getPropertyValue('--border').trim() || 'rgba(255,255,255,.07)';
+
+    const dense = trend.length > 45; // hide point markers when the range is long (e.g. a year)
+
+    eamTrendChartInstance = new Chart(canvas.getContext('2d'), {
+        type: 'line',
+        data: {
+            labels: trend.map(t => t.date.slice(5)), // MM-DD, compact
+            datasets: [{
+                label: 'Attendance %',
+                data: trend.map(t => t.percentage),
+                borderColor: teal,
+                backgroundColor: teal + '26', // ~15% alpha fill under the line
+                borderWidth: 2,
+                pointRadius: dense ? 0 : 3,
+                pointHoverRadius: 5,
+                pointBackgroundColor: teal,
+                tension: 0.25,
+                fill: true,
+            }],
+        },
+        options: {
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false }, // single series — the section title already names it
+                tooltip: {
+                    callbacks: {
+                        title: (items) => trend[items[0].dataIndex].date,
+                        label: (item) => {
+                            const t = trend[item.dataIndex];
+                            return [`Attendance: ${t.percentage}%`, `Worked: ${t.worked_hours}h`, `Expected: ${t.expected_hours}h`];
+                        },
+                    },
+                },
+            },
+            scales: {
+                y: {
+                    min: 0, max: 100,
+                    ticks: { color: muted, callback: (v) => v + '%' },
+                    grid: { color: border },
+                },
+                x: {
+                    ticks: { color: muted, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 },
+                    grid: { display: false },
+                },
+            },
+        },
+    });
+}
+
+// --- Calendar (day/week/month), Jira-Tempo-style heatmap of hours worked ---
+let eamCalendarView = 'month';
+let eamCalendarRefDate = null;
+let eamCalendarDaySessions = [];
+
+function updateEamCalendarViewButtons() {
+    ['day', 'week', 'month'].forEach(v => {
+        const btn = document.getElementById(`eam-cal-btn-${v}`);
+        if (!btn) return;
+        btn.style.background = (v === eamCalendarView) ? 'var(--teal)' : '';
+        btn.style.color = (v === eamCalendarView) ? '#04121d' : '';
+    });
+}
+
+function setEamCalendarView(view) {
+    eamCalendarView = view;
+    updateEamCalendarViewButtons();
+    loadEamCalendar();
+}
+
+function shiftEamCalendar(direction) {
+    const [y, m, d] = eamCalendarRefDate.split('-').map(Number);
+    let newMs;
+    if (eamCalendarView === 'month') newMs = Date.UTC(y, m - 1 + direction, 1);
+    else if (eamCalendarView === 'week') newMs = Date.UTC(y, m - 1, d + direction * 7);
+    else newMs = Date.UTC(y, m - 1, d + direction);
+    eamCalendarRefDate = new Date(newMs).toISOString().slice(0, 10);
+    loadEamCalendar();
+}
+
+function viewEamCalendarDay(dateStr) {
+    eamCalendarView = 'day';
+    eamCalendarRefDate = dateStr;
+    updateEamCalendarViewButtons();
+    loadEamCalendar();
+}
+
+async function loadEamCalendar() {
+    const empId = document.getElementById('eam-employee-id').value;
+    if (!empId || !eamCalendarRefDate) return;
+    const { from, to } = attendancePresetRange(eamCalendarView === 'day' ? 'today' : eamCalendarView, eamCalendarRefDate);
+    try {
+        const requests = [apiFetch(`/api/hr/employees/${empId}/attendance/trend?from=${from}&to=${to}`)];
+        if (eamCalendarView === 'day') {
+            requests.push(apiFetch(`/api/hr/employees/${empId}/attendance/sessions?from=${from}&to=${to}`));
+        }
+        const [trendRes, sessionsRes] = await Promise.all(requests);
+        const trend = trendRes.ok ? await trendRes.json() : [];
+        eamCalendarDaySessions = (sessionsRes && sessionsRes.ok) ? await sessionsRes.json() : [];
+        renderEamCalendar(trend, from, to);
+    } catch (error) {
+        console.error('Failed to load calendar', error);
+    }
+}
+
+function renderEamCalendar(trend, from, to) {
+    const container = document.getElementById('eam-calendar-grid');
+    const label = document.getElementById('eam-calendar-label');
+    if (!container) return;
+
+    const byDate = {};
+    trend.forEach(t => { byDate[t.date] = t; });
+
+    if (eamCalendarView === 'month') {
+        const [y, m] = from.split('-').map(Number);
+        label.textContent = new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    } else if (eamCalendarView === 'week') {
+        label.textContent = `${from} → ${to}`;
+    } else {
+        label.textContent = from;
+    }
+
+    if (eamCalendarView === 'day') {
+        const t = byDate[from] || { worked_hours: 0, expected_hours: 0, percentage: 0 };
+        const sessionRows = eamCalendarDaySessions.length
+            ? eamCalendarDaySessions.map(s => `<div style="padding: 6px 0; border-bottom: 1px solid var(--border);">${formatCairoDateTime(s.clock_in)} → ${s.clock_out ? formatCairoDateTime(s.clock_out) : 'Open'}</div>`).join('')
+            : '<p style="color: var(--muted); font-size: 12px;">No sessions this day.</p>';
+        container.innerHTML = `
+            <div style="text-align: center; padding: 15px 0;">
+                <div style="font-size: 32px; font-weight: bold; color: var(--teal);">${t.worked_hours}h</div>
+                <div style="color: var(--muted); font-size: 12px;">worked of ${t.expected_hours}h expected — ${t.percentage}%</div>
+            </div>
+            ${sessionRows}`;
+        return;
+    }
+
+    const startWeekday = eamCalendarView === 'month' ? (new Date(from + 'T00:00:00Z').getUTCDay() + 6) % 7 : 0;
+    const cells = Array(startWeekday).fill(null);
+    for (let ms = new Date(from + 'T00:00:00Z').getTime(); ms <= new Date(to + 'T00:00:00Z').getTime(); ms += 86400000) {
+        cells.push(new Date(ms).toISOString().slice(0, 10));
+    }
+
+    const maxHours = Math.max(1, ...trend.map(t => t.worked_hours));
+    const dayCells = cells.map(dateStr => {
+        if (!dateStr) return '<div></div>';
+        const t = byDate[dateStr] || { worked_hours: 0, expected_hours: 0, percentage: 0 };
+        const intensity = Math.min(1, t.worked_hours / maxHours);
+        const bg = t.worked_hours > 0 ? `rgba(92, 209, 163, ${0.12 + intensity * 0.55})` : 'rgba(128,128,128,0.06)';
+        const dayNum = parseInt(dateStr.slice(8, 10), 10);
+        const isToday = dateStr === cairoDateStr();
+        return `
+        <div onclick="viewEamCalendarDay('${dateStr}')" style="background: ${bg}; border-radius: 6px; padding: 8px; min-height: ${eamCalendarView === 'month' ? '56px' : '80px'}; cursor: pointer; border: 1px solid ${isToday ? 'var(--teal)' : 'transparent'};" title="${dateStr}">
+            <div style="font-size: 11px; color: var(--muted);">${dayNum}</div>
+            <div style="font-size: 13px; font-weight: bold; color: var(--text);">${t.worked_hours > 0 ? t.worked_hours + 'h' : ''}</div>
+        </div>`;
+    }).join('');
+
+    container.innerHTML = `
+        <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 6px; font-size: 11px; color: var(--muted); text-align: center;">
+            <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px;">${dayCells}</div>`;
+}
+
+function toggleAttendanceBestPractice() {
+    const panel = document.getElementById('eam-best-practice-panel');
+    if (!panel) return;
+    const isHidden = panel.style.display === 'none' || !panel.style.display;
+    if (isHidden) {
+        panel.innerHTML = `
+            <h4 style="color: var(--gold); margin-bottom: 8px;">💡 Attendance Best Practices</h4>
+            <ul style="margin: 0; padding-left: 18px; font-size: 13px; color: var(--text); line-height: 1.6;">
+                <li>Keep a single continuous shift where possible — several short split sessions in one day usually signal a forgotten clock-out rather than an intentional schedule.</li>
+                <li>Flag any session left open longer than ~12–16 hours for correction — it's almost always a missed clock-out, not real hours worked.</li>
+                <li>Wait for at least a month of data before relying on the percentage for a performance conversation — a single bad week can skew a short window.</li>
+                <li>Use "Excused Hours" for occasional lateness/early leave, and "Vacations" for planned multi-day leave — mixing the two makes the monthly percentage harder to read.</li>
+                <li>Revisit the weekly-days-off policy each quarter — a mismatch between the configured day off and actual staffing patterns quietly drags every employee's percentage down.</li>
+            </ul>`;
+        panel.style.display = 'block';
+    } else {
+        panel.style.display = 'none';
     }
 }
 
@@ -1262,7 +1566,7 @@ async function deleteHoliday(id) {
 
 // --- All-employees percentage report ---
 async function fetchAttendancePercentageReport() {
-    if (!document.getElementById('att-report-from').value) setAttendanceRangeToThisMonth('report');
+    if (!document.getElementById('att-report-from').value) setAttendanceRangePreset('report', 'month');
     const params = new URLSearchParams(attendanceRangeQuery('report'));
     try {
         const response = await apiFetch(`/api/hr/attendance/percentage?${params.toString()}`);

@@ -108,3 +108,63 @@ def compute_attendance_percentage(employee_id, date_from, date_to):
         'credited_hours': round(credited, 2),
         'percentage': percentage,
     }
+
+
+def compute_daily_trend(employee_id, date_from, date_to):
+    """One entry per calendar day in [date_from, date_to] — the day-by-day breakdown behind
+    both the attendance line chart and the calendar view, so both read from the same numbers
+    compute_attendance_percentage() would give for that single day. Pulls sessions/permissions
+    for the whole range ONCE and buckets them by day in Python, rather than calling the
+    single-range helpers once per day (which would re-query the DB per day)."""
+    config = LabConfig.get_config()
+    days_off = get_weekly_days_off(config)
+    holidays = get_holiday_dates(date_from, date_to)
+    vacation_dates = get_vacation_dates(employee_id, date_from, date_to)
+    standard_hours = config.standard_work_hours_per_day or 0.0
+    today = now_cairo().date()
+
+    range_start = datetime.combine(date_from, time.min)
+    range_end = datetime.combine(date_to, time.max)
+    sessions = AttendanceSession.query.filter(
+        AttendanceSession.employee_id == employee_id,
+        AttendanceSession.clock_out.isnot(None),
+        AttendanceSession.clock_in <= range_end,
+        AttendanceSession.clock_out >= range_start,
+    ).all()
+    permissions = AttendancePermission.query.filter(
+        AttendancePermission.employee_id == employee_id,
+        AttendancePermission.permission_date >= date_from,
+        AttendancePermission.permission_date <= date_to,
+    ).all()
+    credited_by_date = {}
+    for p in permissions:
+        credited_by_date[p.permission_date] = credited_by_date.get(p.permission_date, 0.0) + p.credited_hours
+
+    trend = []
+    d = date_from
+    while d <= date_to:
+        day_start = datetime.combine(d, time.min)
+        day_end = datetime.combine(d, time.max)
+        worked = 0.0
+        for s in sessions:
+            if s.clock_in <= day_end and s.clock_out >= day_start:
+                clipped_start = max(s.clock_in, day_start)
+                clipped_end = min(s.clock_out, day_end)
+                worked += max((clipped_end - clipped_start).total_seconds(), 0) / 3600.0
+
+        credited = credited_by_date.get(d, 0.0)
+        if d > today or d.weekday() in days_off or d in holidays or d in vacation_dates:
+            expected = 0.0
+        else:
+            expected = standard_hours
+        percentage = 0.0 if expected == 0 else min(100.0, round((worked + credited) / expected * 100, 1))
+
+        trend.append({
+            'date': d.isoformat(),
+            'worked_hours': round(worked, 2),
+            'credited_hours': round(credited, 2),
+            'expected_hours': round(expected, 2),
+            'percentage': percentage,
+        })
+        d += timedelta(days=1)
+    return trend
