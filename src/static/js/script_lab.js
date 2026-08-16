@@ -62,11 +62,11 @@ async function saveSessionPolicies() {
         });
         
         if (response.ok) {
-            showAlert('Security policies updated successfully!', 'success');
+            showAlert(t('hr_policies_saved', 'Security policies updated successfully!'), 'success');
             applyGlobalSettings(); // Reloads settings into memory
         }
     } catch (error) {
-        showAlert('Failed to save policies.', 'error');
+        showAlert(t('hr_policies_save_failed', 'Failed to save policies.'), 'error');
     }
 }
 
@@ -86,7 +86,7 @@ function saveToOfflineQueue(url, method, payload) {
             });
             
             tx.oncomplete = () => {
-                showAlert("You are offline. Data saved locally and will sync later.", "warn");
+                showAlert(t('offline_saved_locally', 'You are offline. Data saved locally and will sync later.'), 'warn');
                 resolve();
             };
         };
@@ -130,7 +130,7 @@ async function initializeTopbar() {
         }
     } catch (error) {
         console.error("Error checking admin status:", error);
-        addNotification(`Error: ${error}`, 'danger');
+        addNotification(t('generic_error_colon', 'Error: {msg}', {msg: error}), 'danger');
     }
 }
 
@@ -257,7 +257,8 @@ function applyTranslations(lang) {
 
     // Set Right-to-Left for Arabic, Left-to-Right for English
     document.body.dir = lang === 'AR' ? 'rtl' : 'ltr';
-    
+    document.documentElement.lang = lang === 'AR' ? 'ar' : 'en';
+
     // Optional: Add a CSS class to body if you need to adjust specific fonts for Arabic
     if (lang === 'AR') {
         document.body.classList.add('arabic-layout');
@@ -290,6 +291,26 @@ function applyTranslations(lang) {
     });
 }
 
+// --- Dynamic (runtime-composed) string translations — toast/alert/confirm messages built
+// in JS rather than sitting in the DOM already, so data-i18n (which only rewrites elements
+// already present in the page) can't reach them. Looks up
+// translations[currentLang].alerts[key]; {name}-style placeholders in the template are
+// substituted from `vars`. Falls back to `fallback` (the original English text) if the key
+// or the whole translations file isn't loaded yet, so a bad/missing key degrades to English
+// instead of showing "undefined".
+function t(key, fallback, vars) {
+    let template = translations && translations[currentLang] && translations[currentLang].alerts
+        ? translations[currentLang].alerts[key]
+        : undefined;
+    if (template === undefined || template === null) template = fallback;
+    if (vars) {
+        Object.keys(vars).forEach(k => {
+            template = template.split(`{${k}}`).join(vars[k]);
+        });
+    }
+    return template;
+}
+
 function initializeWorkspaceDropdown() {
     const selector = document.getElementById('workspace-selector');
     if (selector) {
@@ -313,11 +334,11 @@ async function changeWorkspace() {
             // Full page reload to serve the correct HTML shell from the backend
             window.location.reload();
         } else {
-            showAlert('Failed to update workspace on server.', 'danger');
+            showAlert(t('workspace_update_failed', 'Failed to update workspace on server.'), 'danger');
         }
     } catch (error) {
         console.error('Error updating workspace:', error);
-        showAlert('An error occurred while switching workspaces.', 'danger');
+        showAlert(t('workspace_switch_error', 'An error occurred while switching workspaces.'), 'danger');
     }
 }
 
@@ -325,7 +346,7 @@ async function changeWorkspace() {
 window.addEventListener('online', syncOfflineData);
 
 async function syncOfflineData() {
-    showAlert("Internet restored! Syncing data in background...", "info");
+    showAlert(t('internet_restored', 'Internet restored! Syncing data in background...'), 'info');
     
     // 1. THE DELAY FIX: Wait 2 seconds for the internet routing to actually wake up
     await new Promise(resolve => setTimeout(resolve, 2000));
@@ -374,7 +395,7 @@ async function syncOfflineData() {
                 }
                 
                 if (successCount > 0) {
-                    showAlert(`Successfully synced ${successCount} offline actions!`, "success");
+                    showAlert(t('offline_sync_success', 'Successfully synced {count} offline actions!', {count: successCount}), 'success');
                     if (typeof loadInitialData === 'function') await loadInitialData(); 
                 }
             };
@@ -432,7 +453,7 @@ async function apiFetch(endpoint, options = {}) {
             } else {
                 // 5. Handle Data Fetching Requests (GET) gracefully
                 if (typeof showAlert === 'function') {
-                    showAlert("You are offline. Showing cached data.", "warn");
+                    showAlert(t('offline_cached_data', 'You are offline. Showing cached data.'), 'warn');
                 }
                 
                 // Return a safe "failed" response instead of crashing
@@ -511,11 +532,11 @@ async function fetchHRData() {
             // If Python throws an error, catch it and show it!
             const errorText = await response.text();
             console.error("Backend Error:", errorText);
-            showAlert("Server Error: Check Python Console", "error");
+            showAlert(t('server_error_console', 'Server Error: Check Python Console'), 'error');
         }
     } catch (error) {
         console.error("Failed to load HR data", error);
-        showAlert("Network error loading employee data", "error");
+        showAlert(t('hr_load_network_error', 'Network error loading employee data'), 'error');
     }
 }
 
@@ -554,7 +575,7 @@ function renderHRTable() {
     }
 
     if (filteredEmployees.length === 0) {
-        container.innerHTML = '<div class="table-container"><table style="width:100%;"><tr><td style="text-align:center; padding: 30px; color: var(--muted);">No employees found matching your filters.</td></tr></table></div>';
+        container.innerHTML = `<div class="table-container"><table style="width:100%;"><tr><td style="text-align:center; padding: 30px; color: var(--muted);">${t('empty_no_employees_filtered', 'No employees found matching your filters.')}</td></tr></table></div>`;
         return;
     }
 
@@ -681,7 +702,7 @@ async function handleBulkDeleteHR() {
     const ids = Array.from(checkboxes).map(cb => cb.dataset.id);
     
     if (ids.length === 0) return;
-    if (!confirm(`Are you sure you want to delete ${ids.length} employee(s)? This cannot be undone.`)) return;
+    if (!confirm(t('confirm_delete_employees', 'Are you sure you want to delete {count} employee(s)? This cannot be undone.', {count: ids.length}))) return;
 
     try {
         let successCount = 0;
@@ -689,10 +710,10 @@ async function handleBulkDeleteHR() {
             const response = await apiFetch(`/api/hr/employees/${id}`, { method: 'DELETE' });
             if (response.ok) successCount++;
         }
-        showAlert(`Successfully deleted ${successCount} employees!`, 'success');
+        showAlert(t('hr_employees_deleted', 'Successfully deleted {count} employees!', {count: successCount}), 'success');
         fetchHRData(); // Refresh the table
     } catch (error) {
-        showAlert('Error deleting employees.', 'error');
+        showAlert(t('hr_employees_delete_error', 'Error deleting employees.'), 'error');
     }
 }
 
@@ -714,7 +735,7 @@ async function handleBulkEmailHR() {
     const phoneRecipients = recipients.filter(r => r.phone && r.phone !== 'null');
 
     if (emailRecipients.length === 0 && phoneRecipients.length === 0) {
-        showAlert('None of the selected employees have an email or phone number saved.', 'warn');
+        showAlert(t('hr_no_contact_info', 'None of the selected employees have an email or phone number saved.'), 'warn');
         return;
     }
 
@@ -726,6 +747,7 @@ async function handleBulkEmailHR() {
 
     // --- Email, via the backend's real SMTP sender ---
     let emailResultText;
+    let emailFailed = false;
     if (emailRecipients.length > 0) {
         try {
             const response = await apiFetch('/api/hr/employees/email', {
@@ -734,15 +756,19 @@ async function handleBulkEmailHR() {
             });
             const body = await response.json();
             if (response.ok) {
-                emailResultText = `Email: sent to ${body.sent ?? emailRecipients.length}${body.failed && body.failed.length ? `, failed for ${body.failed.length}` : ''}.`;
+                const hadPartialFailure = body.failed && body.failed.length;
+                emailFailed = !!hadPartialFailure;
+                emailResultText = `${t('hr_email_sent', 'Email: sent to {count}', {count: body.sent ?? emailRecipients.length})}${hadPartialFailure ? t('hr_email_failed_count', ', failed for {count}', {count: body.failed.length}) : ''}.`;
             } else {
-                emailResultText = `Email: failed — ${body.error || 'unknown error'}.`;
+                emailFailed = true;
+                emailResultText = t('hr_email_failed_reason', 'Email: failed — {reason}.', {reason: body.error || t('hr_unknown_error', 'unknown error')});
             }
         } catch (error) {
-            emailResultText = 'Email: failed — network error.';
+            emailFailed = true;
+            emailResultText = t('hr_email_failed_network', 'Email: failed — network error.');
         }
     } else {
-        emailResultText = 'Email: skipped (no addresses saved).';
+        emailResultText = t('hr_email_skipped', 'Email: skipped (no addresses saved).');
     }
 
     // --- WhatsApp, direct to the Node bot (same pattern as the results-delivery flow) ---
@@ -763,10 +789,10 @@ async function handleBulkEmailHR() {
         }
     }
     const waResultText = phoneRecipients.length === 0
-        ? 'WhatsApp: skipped (no phone numbers saved).'
-        : `WhatsApp: sent to ${waSent}${waFailed ? `, failed for ${waFailed}` : ''}.`;
+        ? t('hr_whatsapp_skipped', 'WhatsApp: skipped (no phone numbers saved).')
+        : `${t('hr_whatsapp_sent', 'WhatsApp: sent to {count}', {count: waSent})}${waFailed ? t('hr_whatsapp_failed_count', ', failed for {count}', {count: waFailed}) : ''}.`;
 
-    const hadFailure = emailResultText.includes('failed') || waFailed > 0;
+    const hadFailure = emailFailed || waFailed > 0;
     showAlert(`${emailResultText} ${waResultText}`, hadFailure ? 'warn' : 'success');
 
     document.querySelectorAll('.hr-checkbox').forEach(cb => cb.checked = false);
@@ -883,28 +909,28 @@ async function saveEmployeeRecord(event) {
         });
         
         if (response.ok) {
-            showAlert('Employee saved successfully!', 'success');
+            showAlert(t('hr_employee_saved', 'Employee saved successfully!'), 'success');
             closeEmployeeModal();
             fetchHRData(); // Refresh the table
         } else {
-            showAlert('Failed to save employee.', 'error');
+            showAlert(t('hr_employee_save_failed', 'Failed to save employee.'), 'error');
         }
     } catch (error) {
-        showAlert('Error saving employee data.', 'error');
+        showAlert(t('hr_employee_save_error', 'Error saving employee data.'), 'error');
     }
 }
 
 async function deleteEmployee(empId) {
-    if (!confirm('Are you sure you want to delete this employee record?')) return;
+    if (!confirm(t('confirm_delete_employee_record', 'Are you sure you want to delete this employee record?'))) return;
 
     try {
         const response = await apiFetch(`/api/hr/employees/${empId}`, { method: 'DELETE' });
         if (response.ok) {
-            showAlert('Employee deleted.', 'success');
+            showAlert(t('hr_employee_deleted', 'Employee deleted.'), 'success');
             fetchHRData();
         }
     } catch (error) {
-        showAlert('Error deleting employee.', 'error');
+        showAlert(t('hr_employee_delete_error', 'Error deleting employee.'), 'error');
     }
 }
 
@@ -996,10 +1022,10 @@ async function clockInEmployee(empId) {
         if (response.ok) {
             fetchHRData();
         } else {
-            showAlert(data.error || 'Failed to clock in.', 'error');
+            showAlert(data.error || t('attendance_clockin_failed', 'Failed to clock in.'), 'error');
         }
     } catch (error) {
-        showAlert('Network error clocking in.', 'error');
+        showAlert(t('attendance_clockin_network_error', 'Network error clocking in.'), 'error');
     }
 }
 
@@ -1010,10 +1036,10 @@ async function clockOutEmployee(empId) {
         if (response.ok) {
             fetchHRData();
         } else {
-            showAlert(data.error || 'Failed to clock out.', 'error');
+            showAlert(data.error || t('attendance_clockout_failed', 'Failed to clock out.'), 'error');
         }
     } catch (error) {
-        showAlert('Network error clocking out.', 'error');
+        showAlert(t('attendance_clockout_network_error', 'Network error clocking out.'), 'error');
     }
 }
 
@@ -1272,7 +1298,7 @@ function renderEamSessionsTable() {
     const container = document.getElementById('eam-sessions-container');
     if (!container) return;
     if (!eamSessions.length) {
-        container.innerHTML = '<p style="color: var(--muted); font-size: 12px;">No sessions found.</p>';
+        container.innerHTML = `<p style="color: var(--muted); font-size: 12px;">${t('empty_no_sessions', 'No sessions found.')}</p>`;
         return;
     }
     const rows = eamSessions.map(s => {
@@ -1326,7 +1352,7 @@ async function addEmployeeAttendanceSession(event) {
         const response = await apiFetch(endpoint, { method: isEdit ? 'PUT' : 'POST', body: JSON.stringify(payload) });
         const data = await response.json();
         if (response.ok) {
-            showAlert(isEdit ? 'Session updated.' : 'Session added.', 'success');
+            showAlert(isEdit ? t('attendance_session_updated', 'Session updated.') : t('attendance_session_added', 'Session added.'), 'success');
             eamEditingSessionId = null;
             document.getElementById('eam-new-clock-in').value = '';
             document.getElementById('eam-new-clock-out').value = '';
@@ -1334,15 +1360,15 @@ async function addEmployeeAttendanceSession(event) {
             loadEmployeeAttendanceModalData();
             fetchHRData();
         } else {
-            showAlert(data.error || 'Failed to save session.', 'error');
+            showAlert(data.error || t('attendance_session_save_failed', 'Failed to save session.'), 'error');
         }
     } catch (error) {
-        showAlert('Network error saving session.', 'error');
+        showAlert(t('attendance_session_save_network_error', 'Network error saving session.'), 'error');
     }
 }
 
 async function deleteEamSession(id) {
-    if (!confirm('Delete this session?')) return;
+    if (!confirm(t('confirm_delete_session', 'Delete this session?'))) return;
     try {
         const response = await apiFetch(`/api/hr/attendance/sessions/${id}`, { method: 'DELETE' });
         if (response.ok) {
@@ -1350,7 +1376,7 @@ async function deleteEamSession(id) {
             fetchHRData();
         }
     } catch (error) {
-        showAlert('Error deleting session.', 'error');
+        showAlert(t('attendance_session_delete_error', 'Error deleting session.'), 'error');
     }
 }
 
@@ -1391,27 +1417,27 @@ async function addEmployeePermission(event) {
         const response = await apiFetch(`/api/hr/employees/${empId}/attendance/permissions`, { method: 'POST', body: JSON.stringify(payload) });
         const data = await response.json();
         if (response.ok) {
-            showAlert('Excused hours recorded.', 'success');
+            showAlert(t('attendance_excused_recorded', 'Excused hours recorded.'), 'success');
             document.getElementById('eam-perm-date').value = '';
             document.getElementById('eam-perm-start').value = '';
             document.getElementById('eam-perm-end').value = '';
             document.getElementById('eam-perm-reason').value = '';
             loadEmployeeAttendanceModalData();
         } else {
-            showAlert(data.error || 'Failed to record excused hours.', 'error');
+            showAlert(data.error || t('attendance_excused_failed', 'Failed to record excused hours.'), 'error');
         }
     } catch (error) {
-        showAlert('Network error recording excused hours.', 'error');
+        showAlert(t('attendance_excused_network_error', 'Network error recording excused hours.'), 'error');
     }
 }
 
 async function deleteEamPermission(id) {
-    if (!confirm('Delete this entry?')) return;
+    if (!confirm(t('confirm_delete_entry', 'Delete this entry?'))) return;
     try {
         const response = await apiFetch(`/api/hr/attendance/permissions/${id}`, { method: 'DELETE' });
         if (response.ok) loadEmployeeAttendanceModalData();
     } catch (error) {
-        showAlert('Error deleting entry.', 'error');
+        showAlert(t('attendance_entry_delete_error', 'Error deleting entry.'), 'error');
     }
 }
 
@@ -1419,7 +1445,7 @@ function renderEamVacationsTable() {
     const container = document.getElementById('eam-vacations-container');
     if (!container) return;
     if (!eamVacations.length) {
-        container.innerHTML = '<p style="color: var(--muted); font-size: 12px;">No vacations recorded.</p>';
+        container.innerHTML = `<p style="color: var(--muted); font-size: 12px;">${t('empty_no_vacations', 'No vacations recorded.')}</p>`;
         return;
     }
     const rows = eamVacations.map(v => `
@@ -1449,22 +1475,22 @@ async function addEmployeeVacation(event) {
         const response = await apiFetch(`/api/hr/employees/${empId}/attendance/vacations`, { method: 'POST', body: JSON.stringify(payload) });
         const data = await response.json();
         if (response.ok) {
-            showAlert('Vacation added.', 'success');
+            showAlert(t('vacation_added', 'Vacation added.'), 'success');
             document.getElementById('eam-vac-start').value = '';
             document.getElementById('eam-vac-end').value = '';
             document.getElementById('eam-vac-reason').value = '';
             loadEmployeeAttendanceModalData();
             fetchHRData();
         } else {
-            showAlert(data.error || 'Failed to add vacation.', 'error');
+            showAlert(data.error || t('vacation_add_failed', 'Failed to add vacation.'), 'error');
         }
     } catch (error) {
-        showAlert('Network error adding vacation.', 'error');
+        showAlert(t('vacation_add_network_error', 'Network error adding vacation.'), 'error');
     }
 }
 
 async function deleteEamVacation(id) {
-    if (!confirm('Delete this vacation?')) return;
+    if (!confirm(t('confirm_delete_vacation', 'Delete this vacation?'))) return;
     try {
         const response = await apiFetch(`/api/hr/attendance/vacations/${id}`, { method: 'DELETE' });
         if (response.ok) {
@@ -1472,7 +1498,7 @@ async function deleteEamVacation(id) {
             fetchHRData();
         }
     } catch (error) {
-        showAlert('Error deleting vacation.', 'error');
+        showAlert(t('vacation_delete_error', 'Error deleting vacation.'), 'error');
     }
 }
 
@@ -1518,21 +1544,21 @@ async function saveAttendanceConfig() {
         });
         const data = await response.json();
         if (response.ok) {
-            showAlert('Attendance policy saved.', 'success');
+            showAlert(t('attendance_policy_saved', 'Attendance policy saved.'), 'success');
             fetchAttendanceConfig();
             fetchAttendancePercentageReport();
         } else {
-            showAlert(data.error || 'Failed to save policy.', 'error');
+            showAlert(data.error || t('attendance_policy_save_failed', 'Failed to save policy.'), 'error');
         }
     } catch (error) {
-        showAlert('Network error saving policy.', 'error');
+        showAlert(t('attendance_policy_network_error', 'Network error saving policy.'), 'error');
     }
 }
 
 async function addHoliday() {
     const date = document.getElementById('att-new-holiday-date').value;
     const name = document.getElementById('att-new-holiday-name').value;
-    if (!date) { showAlert('Pick a date first.', 'error'); return; }
+    if (!date) { showAlert(t('pick_date_first', 'Pick a date first.'), 'error'); return; }
     try {
         const response = await apiFetch('/api/hr/attendance/holidays', {
             method: 'POST', body: JSON.stringify({ date, name }),
@@ -1544,15 +1570,15 @@ async function addHoliday() {
             fetchAttendanceConfig();
             fetchAttendancePercentageReport();
         } else {
-            showAlert(data.error || 'Failed to add holiday.', 'error');
+            showAlert(data.error || t('holiday_add_failed', 'Failed to add holiday.'), 'error');
         }
     } catch (error) {
-        showAlert('Network error adding holiday.', 'error');
+        showAlert(t('holiday_add_network_error', 'Network error adding holiday.'), 'error');
     }
 }
 
 async function deleteHoliday(id) {
-    if (!confirm('Remove this holiday?')) return;
+    if (!confirm(t('confirm_remove_holiday', 'Remove this holiday?'))) return;
     try {
         const response = await apiFetch(`/api/hr/attendance/holidays/${id}`, { method: 'DELETE' });
         if (response.ok) {
@@ -1560,7 +1586,7 @@ async function deleteHoliday(id) {
             fetchAttendancePercentageReport();
         }
     } catch (error) {
-        showAlert('Error removing holiday.', 'error');
+        showAlert(t('holiday_remove_error', 'Error removing holiday.'), 'error');
     }
 }
 
@@ -1581,7 +1607,7 @@ function renderAttendancePercentageReportTable(report) {
     const container = document.getElementById('att-percentage-report-container');
     if (!container) return;
     if (!report.length) {
-        container.innerHTML = '<div class="table-container"><table style="width:100%;"><tr><td style="text-align:center; padding: 20px; color: var(--muted);">No employees found.</td></tr></table></div>';
+        container.innerHTML = `<div class="table-container"><table style="width:100%;"><tr><td style="text-align:center; padding: 20px; color: var(--muted);">${t('empty_no_employees', 'No employees found.')}</td></tr></table></div>`;
         return;
     }
     const rows = report.slice().sort((a, b) => a.percentage - b.percentage).map(r => {
@@ -1615,7 +1641,7 @@ async function processHRExcelImport(event) {
     const file = event.target.files[0];
     if (!file) return;
 
-    showAlert("Reading HR Excel file... Please wait.", "info");
+    showAlert(t('excel_reading_hr', 'Reading HR Excel file... Please wait.'), 'info');
 
     // Helper: Converts Arabic numerals (٤٥٠٠) to English (4500) so JS can read them
     const parseArabicNumbers = (str) => {
@@ -1633,7 +1659,7 @@ async function processHRExcelImport(event) {
             const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
             
             if (json.length === 0) {
-                showAlert("The Excel sheet is empty.", "warn");
+                showAlert(t('excel_sheet_empty', 'The Excel sheet is empty.'), 'warn');
                 return;
             }
 
@@ -1681,16 +1707,16 @@ async function processHRExcelImport(event) {
             event.target.value = ''; 
 
             if (successCount > 0) {
-                showAlert(`Import complete: ${successCount} employees added.`, "success");
+                showAlert(t('hr_import_complete', 'Import complete: {count} employees added.', {count: successCount}), 'success');
             } else if (skippedCount > 0) {
-                showAlert(`Failed to import ${skippedCount} rows. Check console.`, "error");
+                showAlert(t('hr_import_failed_rows', 'Failed to import {count} rows. Check console.', {count: skippedCount}), 'error');
             }
 
             await fetchHRData(); 
 
         } catch (error) {
             console.error("Excel Error:", error);
-            showAlert("Failed to parse Excel file.", "error");
+            showAlert(t('excel_parse_failed', 'Failed to parse Excel file.'), 'error');
         }
     };
     
@@ -1790,7 +1816,7 @@ async function loadInitialData() {
 
     } catch (error) {
         console.error('Critical error in loadInitialData:', error);
-        showAlert('UI update failed. Check console.', 'error');
+        showAlert(t('ui_update_failed', 'UI update failed. Check console.'), 'error');
     }
 }
 
@@ -2075,7 +2101,7 @@ function updateDashboard() {
         const recentClients = [...clients].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5);
         
         if (recentClients.length === 0) {
-            latestClientsList.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--muted); padding: 20px;">No clients registered yet.</td></tr>';
+            latestClientsList.innerHTML = `<tr><td colspan="3" style="text-align: center; color: var(--muted); padding: 20px;">${t('empty_no_clients_registered', 'No clients registered yet.')}</td></tr>`;
         } else {
             latestClientsList.innerHTML = recentClients.map(c => `
                 <tr>
@@ -2083,7 +2109,7 @@ function updateDashboard() {
                     <td>${c.first_name} ${c.last_name}</td>
                     <td style="text-align: right;">
                         <button class="btn" style="background: var(--teal); color: #04121d; padding: 6px 12px; font-size: 11px;" onclick="openBookTestModal(${c.id})">
-                            📋 Book Test
+                            ${t('btn_book_test_short', '📋 Book Test')}
                         </button>
                     </td>
                 </tr>
@@ -2189,7 +2215,7 @@ async function quickEditPatient(clientId) {
         if (modal) modal.style.display = 'none';
 
     } catch (error) {
-        showAlert('Error loading patient data for editing.', 'danger');
+        showAlert(t('patient_edit_load_error', 'Error loading patient data for editing.'), 'danger');
     }
 }
 function showDashboardTable(type) {
@@ -2247,7 +2273,7 @@ function onDashboardFilterChange() {
 // were, still built from the already-loaded allVisits/clients — see docs/sumV2.md.
 async function fetchDashboardVisitsPage(type, searchTerm, filterFrom, filterTo, filterStatus, filterPhysician) {
     const container = document.getElementById('dashboard-table-container');
-    const title = type === 'pending' ? 'List of Pending Appointments' : 'List of Finished (Collected) Appointments';
+    const title = type === 'pending' ? t('title_pending_appointments', 'List of Pending Appointments') : t('title_finished_appointments_collected', 'List of Finished (Collected) Appointments');
     const status = filterStatus || (type === 'pending' ? 'pending' : 'collected');
 
     const params = new URLSearchParams({ page: dashboardTablePage, per_page: 100, status });
@@ -2265,7 +2291,7 @@ async function fetchDashboardVisitsPage(type, searchTerm, filterFrom, filterTo, 
     }
 
     container.innerHTML = buildAdminTableHTML(
-        title, ['#', 'Date Created', 'Trans ID', 'Patient', 'Phone', 'Physician', 'Tests', 'Status', 'Action'],
+        title, [t('th_hash','#'), t('th_date_created','Date Created'), t('th_trans_id','Trans ID'), t('th_patient','Patient'), t('th_phone','Phone'), t('th_physician','Physician'), t('th_tests','Tests'), t('th_status','Status'), t('th_action','Action')],
         data.items || [], type, true, 'dashboard-table-pagination',
         (data.page - 1) * (data.per_page || 100)
     );
@@ -2297,7 +2323,7 @@ function renderDashboardTable() {
     let html = "";
 
     if (type === 'total') {
-        title = 'List of All Appointments';
+        title = t('title_all_appointments', 'List of All Appointments');
 
         // Create hybrid list of new unbooked patients to inject into the "Total" table
         const clientsWithVisits = new Set(allVisits.map(v => v.patient_id));
@@ -2355,7 +2381,7 @@ function renderDashboardTable() {
         const pageData = filteredData.slice(startIndex, startIndex + perPage);
 
         html = buildAdminTableHTML(
-            title, ['#', 'Date Created', 'Trans ID', 'Patient', 'Phone', 'Physician', 'Tests', 'Status', 'Action'],
+            title, [t('th_hash','#'), t('th_date_created','Date Created'), t('th_trans_id','Trans ID'), t('th_patient','Patient'), t('th_phone','Phone'), t('th_physician','Physician'), t('th_tests','Tests'), t('th_status','Status'), t('th_action','Action')],
             pageData, type, true, 'dashboard-table-pagination', startIndex
         );
         container.innerHTML = html;
@@ -2365,7 +2391,7 @@ function renderDashboardTable() {
         return;
     }
     else if (type === 'tests') {
-        title = 'List of Ordered Tests';
+        title = t('title_ordered_tests', 'List of Ordered Tests');
         
         const testSummary = {};
         allVisits.forEach(v => {
@@ -2398,7 +2424,7 @@ function renderDashboardTable() {
             testDataArray = testDataArray.filter(t => t.name.toLowerCase().includes(searchTerm));
         }
 
-        html = buildAdminTableHTML(title, ['#', 'Test Name', 'Pending Samples', 'Collected Samples', 'Total Demanded'], testDataArray, type);
+        html = buildAdminTableHTML(title, [t('th_hash','#'), t('th_test_name','Test Name'), t('th_pending_samples','Pending Samples'), t('th_collected_samples','Collected Samples'), t('th_total_demanded','Total Demanded')], testDataArray, type);
     }
     
     container.innerHTML = html;
@@ -2409,7 +2435,7 @@ function printPDFReport(visitId, fileIndex = 0) {
     const visit = allVisits.find(v => v.visit_id === visitId);
 
     if (!visit || !visit.report_url) {
-        showAlert("Error: No results report generated yet!", "error");
+        showAlert(t('no_results_report_yet', 'Error: No results report generated yet!'), 'error');
         return;
     }
 
@@ -2431,7 +2457,7 @@ function printPDFReport(visitId, fileIndex = 0) {
     // By adding a unique timestamp, Firefox/Chrome cannot use the old cached PDF!
     const cacheBusterUrl = finalUrl + "?t=" + new Date().getTime();
 
-    showAlert(`Sending Document to printer...`, "info");
+    showAlert(t('sending_to_printer', 'Sending Document to printer...'), 'info');
 
     // 4. PRINTING ENGINE
     // If you are using Print.js:
@@ -2480,7 +2506,7 @@ function buildAdminTableHTML(title, headers, data, type, clickable = false, pagi
     let tbody = "";
     
     if (data.length === 0) {
-        tbody = `<tr><td colspan="${headers.length}" style="text-align:center; padding: 20px; color: var(--muted);">No entries match your filters.</td></tr>`;
+        tbody = `<tr><td colspan="${headers.length}" style="text-align:center; padding: 20px; color: var(--muted);">${t('no_entries_match_filters', 'No entries match your filters.')}</td></tr>`;
     } else {
         data.forEach((row, index) => {
             console.log("Row Data:", row);
@@ -2489,52 +2515,52 @@ function buildAdminTableHTML(title, headers, data, type, clickable = false, pagi
                     <tr>
                         <td>${startIndex + index + 1}</td>
                         <td><strong>${row.name}</strong></td>
-                        <td><span class="pill ghost">${row.pending} Pending</span></td>
-                        <td><span class="pill ok">${row.collected} Collected</span></td>
+                        <td><span class="pill ghost">${t('pill_pending_count', '{count} Pending', {count: row.pending})}</span></td>
+                        <td><span class="pill ok">${t('pill_collected_count', '{count} Collected', {count: row.collected})}</span></td>
                         <td><strong>${row.total}</strong></td>
                     </tr>
                 `;
             } else {
                 // Determine Badge Status
                 let pillClass = 'ghost';
-                let badgeText = 'Pending';
+                let badgeText = t('status_pending_badge', 'Pending');
                 let countBadge = ''; // small red "done/total" counter, only set for partially_delivered
 
                 if (row.status === 'registered') {
                     pillClass = 'info';
-                    badgeText = 'Registered';
+                    badgeText = t('status_registered', 'Registered');
                 } else if (row.status === 'pending') {
                     pillClass = 'danger'; // Red
-                    badgeText = 'Pending';
+                    badgeText = t('status_pending_badge', 'Pending');
                 } else if (row.status === 'collected') {
                     pillClass = 'ok'; // Green
-                    badgeText = 'Waiting for Results';
+                    badgeText = t('status_waiting_results', 'Waiting for Results');
                 } else if (row.status === 'partially_delivered') {
                     pillClass = 'info'; // Blue
                     badgeText = (row.completed_tests && row.completed_tests.length)
-                        ? `${row.completed_tests.join(', ')} Delivered`
-                        : 'Partially Delivered';
+                        ? t('status_delivered_suffix', '{tests} Delivered', {tests: row.completed_tests.join(', ')})
+                        : t('status_partially_delivered', 'Partially Delivered');
                     const totalCount = row.tests ? row.tests.length : 0;
                     const doneCount = row.completed_tests ? row.completed_tests.length : 0;
                     countBadge = `<span style="position: absolute; top: -8px; right: -10px; background: var(--danger); color: white; border-radius: 50%; padding: 1px 5px; font-size: 9px; font-weight: bold; min-width: 14px; text-align: center; line-height: 1.4; box-shadow: 0 1px 3px rgba(0,0,0,0.4);">${doneCount}/${totalCount}</span>`;
                 } else if (row.status === 'results_delivered_by_link') {
                     pillClass = 'info'; // Blue
-                    badgeText = 'Delivered';
+                    badgeText = t('status_delivered', 'Delivered');
                 }
 
                 let actionBtn = '';
                 if (row.status === 'registered') {
                     // Restores the blue Book Test button for newly added patients
-                    actionBtn = `<button class="btn" style="background: var(--teal); color: #04121d;" onclick="openBookTestModal(${row.patient_id})">Order Now</button>`;
+                    actionBtn = `<button class="btn" style="background: var(--teal); color: #04121d;" onclick="openBookTestModal(${row.patient_id})">${t('btn_order_now', 'Order Now')}</button>`;
                 } else if (row.status === 'collected') {
                     actionBtn = `
                         <div class="action-dropdown" style="position: relative; display: inline-block;">
-                            <button class="btn ghost">Action ▾</button>
+                            <button class="btn ghost">${t('action_menu_label', 'Action ▾')}</button>
                             <div class="action-dropdown-content" style="display: none; position: absolute; right: 0; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px; z-index: 100; min-width: 160px;">
-                                <button onclick="openBookTestModal(${row.patient_id})">📋 New Order</button>
-                                <button onclick="window.open('/results-entry/${row.id}', 'EnterResults', 'width=1000,height=800,resizable=yes,scrollbars=yes')">🧪 Enter Results</button>
-                                <button onclick="openUploadModal('${row.visit_id}', '${row.patient_id}', '${row.patient_name}')">📤 Upload PDF Report</button>
-                                <button onclick="quickEditPatient(${row.patient_id})">✏️ Edit Patient</button>
+                                <button onclick="openBookTestModal(${row.patient_id})">${t('btn_new_order', '📋 New Order')}</button>
+                                <button onclick="window.open('/results-entry/${row.id}', 'EnterResults', 'width=1000,height=800,resizable=yes,scrollbars=yes')">${t('btn_enter_results', '🧪 Enter Results')}</button>
+                                <button onclick="openUploadModal('${row.visit_id}', '${row.patient_id}', '${row.patient_name}')">${t('btn_upload_pdf_report', '📤 Upload PDF Report')}</button>
+                                <button onclick="quickEditPatient(${row.patient_id})">${t('btn_edit_patient', '✏️ Edit Patient')}</button>
                             </div>
                         </div>
                     `;
@@ -2542,41 +2568,41 @@ function buildAdminTableHTML(title, headers, data, type, clickable = false, pagi
                     // UPDATED: Added the Upload PDF button to the delivered status dropdown
                     actionBtn = `
                         <div class="action-dropdown" style="position: relative; display: inline-block;">
-                            <button class="btn ghost">Action ▾</button>
+                            <button class="btn ghost">${t('action_menu_label', 'Action ▾')}</button>
                             <div class="action-dropdown-content" style="display: none; position: absolute; right: 0; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px; z-index: 100; min-width: 160px;">
-                                <button onclick="printPDFReport('${row.visit_id}')">🖨️ Print Report</button>
-                                <button onclick="openUploadModal('${row.visit_id}', '${row.patient_id}', '${row.patient_name}')">📤 Upload Additional PDF</button>
-                                <button onclick="openBookTestModal(${row.patient_id})">📋 New Order</button>
-                                <button onclick="quickEditPatient(${row.patient_id})">✏️ Edit Patient</button>
+                                <button onclick="printPDFReport('${row.visit_id}')">${t('btn_print_report', '🖨️ Print Report')}</button>
+                                <button onclick="openUploadModal('${row.visit_id}', '${row.patient_id}', '${row.patient_name}')">${t('btn_upload_additional_pdf', '📤 Upload Additional PDF')}</button>
+                                <button onclick="openBookTestModal(${row.patient_id})">${t('btn_new_order', '📋 New Order')}</button>
+                                <button onclick="quickEditPatient(${row.patient_id})">${t('btn_edit_patient', '✏️ Edit Patient')}</button>
                             </div>
                         </div>
                     `;
                 } else if (row.status === 'partially_delivered') {
                     actionBtn = `
                         <div class="action-dropdown" style="position: relative; display: inline-block;">
-                            <button class="btn ghost">Action ▾</button>
+                            <button class="btn ghost">${t('action_menu_label', 'Action ▾')}</button>
                             <div class="action-dropdown-content" style="display: none; position: absolute; right: 0; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px; z-index: 100; min-width: 160px;">
-                                <button onclick="printPDFReport('${row.visit_id}')">🖨️ Print Report</button>
-                                <button onclick="window.open('/results-entry/${row.id}', 'EnterResults', 'width=1000,height=800,resizable=yes,scrollbars=yes')">🧪 Enter Results</button>
-                                <button onclick="openUploadModal('${row.visit_id}', '${row.patient_id}', '${row.patient_name}')">📤 Upload PDF Report</button>
-                                <button onclick="openBookTestModal(${row.patient_id})">📋 New Order</button>
-                                <button onclick="quickEditPatient(${row.patient_id})">✏️ Edit Patient</button>
+                                <button onclick="printPDFReport('${row.visit_id}')">${t('btn_print_report', '🖨️ Print Report')}</button>
+                                <button onclick="window.open('/results-entry/${row.id}', 'EnterResults', 'width=1000,height=800,resizable=yes,scrollbars=yes')">${t('btn_enter_results', '🧪 Enter Results')}</button>
+                                <button onclick="openUploadModal('${row.visit_id}', '${row.patient_id}', '${row.patient_name}')">${t('btn_upload_pdf_report', '📤 Upload PDF Report')}</button>
+                                <button onclick="openBookTestModal(${row.patient_id})">${t('btn_new_order', '📋 New Order')}</button>
+                                <button onclick="quickEditPatient(${row.patient_id})">${t('btn_edit_patient', '✏️ Edit Patient')}</button>
                             </div>
                         </div>
                     `;
                 } else if (row.status === 'pending') {
                     actionBtn = `
-        <button class="btn ghost" style="border-color: var(--warn); color: var(--warn);" 
+        <button class="btn ghost" style="border-color: var(--warn); color: var(--warn);"
                 onclick="markSampleCollected('${row.visit_id}')">
-            🧪 Collect Sample
+            ${t('btn_collect_sample', '🧪 Collect Sample')}
         </button>
     `;
 } else if (row.status === 'collected') {
     // Stage 2: The row is collected, show "Upload"
     actionBtn = `
-        <button class="btn" style="background: var(--teal); color: #04121d;" 
+        <button class="btn" style="background: var(--teal); color: #04121d;"
                 onclick="openUploadModal('${row.visit_id}', '${row.patient_id}', '${row.patient_name}')">
-            📤 Upload Report
+            ${t('btn_upload_report', '📤 Upload Report')}
         </button>
     `;
                 }
@@ -2589,7 +2615,7 @@ function buildAdminTableHTML(title, headers, data, type, clickable = false, pagi
                 // in this file, so the click still needs to bubble all the way up.
                 const rowIsClickable = clickable && row.id && row.status !== 'registered';
                 const rowAttrs = rowIsClickable
-                    ? `onclick="if (!event.target.closest('.no-row-click')) openVisitResultsModal(${row.id})" style="cursor: pointer;" title="View results"`
+                    ? `onclick="if (!event.target.closest('.no-row-click')) openVisitResultsModal(${row.id})" style="cursor: pointer;" title="${t('title_view_results', 'View results')}"`
                     : '';
 
                 tbody += `
@@ -2687,7 +2713,7 @@ function displayClients(clientsToDisplay) {
     if (!tableBody) return;
 
     if (clientsToDisplay.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--muted); padding: 30px;">No patients found matching your filters.</td></tr>';
+        tableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--muted); padding: 30px;">${t('empty_no_patients_filtered', 'No patients found matching your filters.')}</td></tr>`;
         return;
     }
 
@@ -2698,21 +2724,21 @@ function displayClients(clientsToDisplay) {
         
         // --- FIXED STATUS LOGIC ---
         let pillClass = 'ghost';
-        let statusText = 'Registered';
+        let statusText = t('status_registered', 'Registered');
 
         // 1. Check if they have tests assigned (this is what happens after a successful transaction)
         if (c.test_type && c.test_type.trim() !== '') {
             if (c.sample_status === 'pending') {
                 pillClass = 'danger'; // Yellow
-                statusText = 'Pending';
+                statusText = t('status_pending_badge', 'Pending');
             } else if (c.sample_status === 'collected') {
                 pillClass = 'ok';   // Green
-                statusText = 'Sample Collected';
+                statusText = t('status_sample_collected', 'Sample Collected');
             }
         } else {
             // 2. Default state if no tests are assigned
-            pillClass = 'info'; 
-            statusText = 'Registered';
+            pillClass = 'info';
+            statusText = t('status_registered', 'Registered');
         }
 
         return `
@@ -2734,7 +2760,7 @@ function displayClients(clientsToDisplay) {
 function viewClient(clientId) {
     const client = clients.find(c => c.id === clientId);
     if (!client) {
-        showAlert('Client not found', 'error');
+        showAlert(t('client_not_found', 'Client not found'), 'error');
         return;
     }
     
@@ -2795,19 +2821,19 @@ async function handleAddClient(e) {
         });
         
         if (response.ok) {
-            showAlert(editingClientId ? 'Client updated successfully!' : 'Client added successfully!', 'success');
+            showAlert(editingClientId ? t('client_updated', 'Client updated successfully!') : t('client_added', 'Client added successfully!'), 'success');
             if (!editingClientId) {
-                addNotification(`New patient added: ${data.first_name} ${data.last_name}`, 'info');
+                addNotification(t('new_patient_added', 'New patient added: {name}', {name: `${data.first_name} ${data.last_name}`}), 'info');
             }
             resetClientForm();
             await loadInitialData();
             showTab('clients');
         } else {
             const error = await response.json();
-            showAlert(error.error || 'Failed to save client', 'error');
+            showAlert(error.error || t('client_save_failed', 'Failed to save client'), 'error');
         }
     } catch (error) {
-        showAlert('Error saving client: ' + error.message, 'error');
+        showAlert(t('client_save_error', 'Error saving client: {msg}', {msg: error.message}), 'error');
     }
 }
 
@@ -2836,7 +2862,7 @@ function loadTestResults() {
 function loadClientHistory() {
     const listDiv = document.getElementById('client-history-list');
     if (clients.length === 0) {
-        listDiv.innerHTML = '<p style="color: var(--muted);">No history available.</p>';
+        listDiv.innerHTML = `<p style="color: var(--muted);">${t('empty_no_history', 'No history available.')}</p>`;
         return;
     }
     
@@ -2881,10 +2907,10 @@ async function downloadLabReport(clientId) {
             window.URL.revokeObjectURL(url);
             document.body.removeChild(a);
         } else {
-            showAlert('Failed to download report', 'error');
+            showAlert(t('report_download_failed', 'Failed to download report'), 'error');
         }
     } catch (error) {
-        showAlert('Error downloading report: ' + error.message, 'error');
+        showAlert(t('report_download_error', 'Error downloading report: {msg}', {msg: error.message}), 'error');
     }
 }
 
@@ -2937,7 +2963,7 @@ function renderTechTable() {
     // 5. Use your existing table builder to draw the UI inside the Tech Screen!
     container.innerHTML = buildAdminTableHTML(
         title,
-        ['#', 'Date Created', 'Trans ID', 'Patient', 'Phone', 'Tests', 'Status', 'Action'],
+        [t('th_hash','#'), t('th_date_created','Date Created'), t('th_trans_id','Trans ID'), t('th_patient','Patient'), t('th_phone','Phone'), t('th_tests','Tests'), t('th_status','Status'), t('th_action','Action')],
         pageData, type, false, 'tech-table-pagination', startIndex
     );
     renderPaginationControls('tech-table-pagination', {
@@ -2978,7 +3004,7 @@ async function markSampleCollected(visitId) {
         }
         // ========================================================
 
-        showAlert('Sample marked as collected!', 'success');
+        showAlert(t('sample_collected', 'Sample marked as collected!'), 'success');
         
         // 4. Redraw the data using our artificially updated arrays
         if (typeof loadInitialData === 'function') await loadInitialData(); 
@@ -2988,7 +3014,7 @@ async function markSampleCollected(visitId) {
         
     } catch (error) {
         console.error("Collection Error:", error);
-        showAlert('Database error while updating sample.', 'error');
+        showAlert(t('sample_db_error', 'Database error while updating sample.'), 'error');
     }
 }
 
@@ -3020,13 +3046,13 @@ async function handleUpdateLabConfig(e) {
         });
         
         if (response.ok) {
-            showAlert('Lab configuration updated successfully!', 'success');
+            showAlert(t('lab_config_updated', 'Lab configuration updated successfully!'), 'success');
             await loadInitialData();
         } else {
-            showAlert('Failed to update configuration', 'error');
+            showAlert(t('lab_config_update_failed', 'Failed to update configuration'), 'error');
         }
     } catch (error) {
-        showAlert('Error: ' + error.message, 'error');
+        showAlert(t('generic_error_prefix', 'Error: {msg}', {msg: error.message}), 'error');
     }
 }
 
@@ -3051,17 +3077,17 @@ async function handleBulkDelete() {
     
     if (ids.length === 0) return;
     
-    if (!confirm(`Delete ${ids.length} client(s)? This cannot be undone.`)) return;
+    if (!confirm(t('confirm_delete_clients', 'Delete {count} client(s)? This cannot be undone.', {count: ids.length}))) return;
     
     try {
         for (const id of ids) {
             await apiFetch(`/api/clients/${id}`, { method: 'DELETE' });
         }
-        showAlert('Clients deleted successfully!', 'success');
+        showAlert(t('clients_deleted', 'Clients deleted successfully!'), 'success');
         await loadInitialData();
         displayClients(clients);
     } catch (error) {
-        showAlert('Error deleting clients: ' + error.message, 'error');
+        showAlert(t('clients_delete_error', 'Error deleting clients: {msg}', {msg: error.message}), 'error');
     }
 }
 
@@ -3112,8 +3138,8 @@ function showAlert(message, type) {
 }
 
 function performDailyReset() {
-    if (confirm('Are you sure you want to perform a daily reset? This will reset sample statuses.')) {
-        showAlert('Daily reset performed', 'success');
+    if (confirm(t('confirm_daily_reset', 'Are you sure you want to perform a daily reset? This will reset sample statuses.'))) {
+        showAlert(t('daily_reset_done', 'Daily reset performed'), 'success');
         // Implementation would go here
     }
 }
@@ -3153,8 +3179,8 @@ async function fetchPendingSamplesPage() {
 
     const listDiv = document.getElementById('pending-samples-list');
     listDiv.innerHTML = buildAdminTableHTML(
-        'List of Pending Appointments',
-        ['#', 'Date Created', 'Code', 'Patient', 'Phone', 'Test', 'Status', 'Action'],
+        t('title_pending_appointments', 'List of Pending Appointments'),
+        [t('th_hash','#'), t('th_date_created','Date Created'), t('th_code','Code'), t('th_patient','Patient'), t('th_phone','Phone'), t('th_test','Test'), t('th_status','Status'), t('th_action','Action')],
         data.items || [],
         'pending', // This tells the builder to use the "Collect Sample" buttons
         false,
@@ -3175,7 +3201,7 @@ async function handleBulkFinish() {
     const checkboxes = document.querySelectorAll('.pending-checkbox:checked');
     const visitIds = Array.from(checkboxes).map(cb => cb.dataset.visitId);
 
-    if (!confirm(`Mark ${visitIds.length} sample(s) as finished?`)) return;
+    if (!confirm(t('confirm_mark_finished', 'Mark {count} sample(s) as finished?', {count: visitIds.length}))) return;
 
     try {
         for (const visitId of visitIds) {
@@ -3183,19 +3209,19 @@ async function handleBulkFinish() {
             await apiFetch(`/api/visits/${visitId}/collect`, { method: 'PUT' });
         }
         
-        showAlert("Samples marked as finished!", "success");
+        showAlert(t('samples_finished', 'Samples marked as finished!'), 'success');
         
         // Refresh the list to remove the finished items from the tab
         await loadInitialData();
         searchPendingSamples(); 
     } catch (error) {
-        showAlert("Error updating samples.", "error");
+        showAlert(t('samples_update_error', 'Error updating samples.'), 'error');
     }
 }
 // --- PDF GENERATOR WORKFLOW ---
 async function downloadClientHistoryPDF(clientId) {
     try {
-        showAlert('Generating PDF report. Please wait...', 'info');
+        showAlert(t('pdf_generating', 'Generating PDF report. Please wait...'), 'info');
         
         // This calls the specific client PDF route in your backend
         const response = await fetch(`/api/clients/${clientId}/report`, { 
@@ -3222,11 +3248,11 @@ async function downloadClientHistoryPDF(clientId) {
         a.click(); 
         window.URL.revokeObjectURL(url);
         
-        showAlert('Report downloaded successfully!', 'success');
+        showAlert(t('report_downloaded', 'Report downloaded successfully!'), 'success');
         
     } catch (error) { 
         console.error(error);
-        showAlert('Error generating PDF report.', 'error'); 
+        showAlert(t('pdf_generate_error', 'Error generating PDF report.'), 'error'); 
     }
 }
 
@@ -3353,7 +3379,7 @@ function searchClientHistory() {
 // --- PDF GENERATOR WORKFLOW ---
 async function downloadClientHistoryPDF(clientId) {
     try {
-        showAlert('Generating PDF report. Please wait...', 'info');
+        showAlert(t('pdf_generating', 'Generating PDF report. Please wait...'), 'info');
         
         const response = await fetch(`/api/clients/${clientId}/report`, { 
             method: 'GET',
@@ -3371,10 +3397,10 @@ async function downloadClientHistoryPDF(clientId) {
         a.click(); 
         window.URL.revokeObjectURL(url);
         
-        showAlert('Report downloaded successfully!', 'success');
+        showAlert(t('report_downloaded', 'Report downloaded successfully!'), 'success');
     } catch (error) { 
         console.error(error);
-        showAlert('Error generating PDF report.', 'error'); 
+        showAlert(t('pdf_generate_error', 'Error generating PDF report.'), 'error'); 
     }
 }
 
@@ -3435,20 +3461,20 @@ function searchReports() {
         }
         
         let pillClass = 'info';
-        let badgeText = 'Registered';
-        
+        let badgeText = t('status_registered', 'Registered');
+
         if (latestStatus === 'pending') {
             pillClass = 'danger'; // Red
-            badgeText = 'Pending';
+            badgeText = t('status_pending_badge', 'Pending');
         } else if (latestStatus === 'collected') {
             pillClass = 'warn'; // Yellow/Orange
-            badgeText = 'Processing';
+            badgeText = t('status_processing', 'Processing');
         } else if (latestStatus === 'partially_delivered') {
             pillClass = 'info'; // Blue
-            badgeText = 'Partially Delivered';
+            badgeText = t('status_partially_delivered', 'Partially Delivered');
         } else if (latestStatus === 'results_delivered_by_link') {
             pillClass = 'ok'; // Green
-            badgeText = 'Results Delivered';
+            badgeText = t('status_results_delivered', 'Results Delivered');
         }
 
         return `
@@ -3508,32 +3534,32 @@ function openPatientHistoryModal(clientId) {
     const container = document.getElementById('history-modal-table-container');
 
     if (patientVisits.length === 0) {
-        container.innerHTML = '<div style="text-align: center; padding: 30px; color: var(--muted); background: rgba(0,0,0,0.2); border-radius: 8px;">No laboratory visits recorded for this patient yet.</div>';
+        container.innerHTML = `<div style="text-align: center; padding: 30px; color: var(--muted); background: rgba(0,0,0,0.2); border-radius: 8px;">${t('empty_no_visits_recorded', 'No laboratory visits recorded for this patient yet.')}</div>`;
     } else {
         // 3. Generate the history table
         let rows = patientVisits.map(v => {
             let pillClass = 'danger';
-            let badgeText = 'Pending';
+            let badgeText = t('status_pending_badge', 'Pending');
             let countBadge = '';
 
             if (v.status === 'collected') {
                 pillClass = 'warn';
-                badgeText = 'Processing';
+                badgeText = t('status_processing', 'Processing');
             } else if (v.status === 'partially_delivered') {
                 pillClass = 'info';
                 badgeText = (v.completed_tests && v.completed_tests.length)
-                    ? `${v.completed_tests.join(', ')} Delivered`
-                    : 'Partially Delivered';
+                    ? t('status_delivered_suffix', '{tests} Delivered', {tests: v.completed_tests.join(', ')})
+                    : t('status_partially_delivered', 'Partially Delivered');
                 const totalCount = v.tests ? v.tests.length : 0;
                 const doneCount = v.completed_tests ? v.completed_tests.length : 0;
                 countBadge = `<span style="position: absolute; top: -8px; right: -10px; background: var(--danger); color: white; border-radius: 50%; padding: 1px 5px; font-size: 9px; font-weight: bold; min-width: 14px; text-align: center; line-height: 1.4; box-shadow: 0 1px 3px rgba(0,0,0,0.4);">${doneCount}/${totalCount}</span>`;
             } else if (v.status === 'results_delivered_by_link') {
                 pillClass = 'ok';
-                badgeText = 'Delivered';
+                badgeText = t('status_delivered', 'Delivered');
             }
 
             // --- THE NEW MULTI-FILE PRINT LOGIC ---
-            let actionBtn = `<span style="color: var(--muted); font-size: 11px;">Awaiting Results</span>`;
+            let actionBtn = `<span style="color: var(--muted); font-size: 11px;">${t('status_awaiting_results', 'Awaiting Results')}</span>`;
 
             if ((v.status === 'results_delivered_by_link' || v.status === 'partially_delivered') && v.report_url) {
                 // Split the comma-separated URLs
@@ -3660,7 +3686,7 @@ function renderVisitResultsModal(data) {
 
     const body = document.getElementById('vr-modal-body');
     if (!data.tests || !data.tests.length) {
-        body.innerHTML = '<div style="text-align: center; padding: 30px; color: var(--muted); background: rgba(0,0,0,0.2); border-radius: 8px;">No tests booked for this visit.</div>';
+        body.innerHTML = `<div style="text-align: center; padding: 30px; color: var(--muted); background: rgba(0,0,0,0.2); border-radius: 8px;">${t('empty_no_tests_booked_visit', 'No tests booked for this visit.')}</div>`;
         return;
     }
 
@@ -3676,7 +3702,7 @@ function renderVisitResultsModal(data) {
                 <td style="color: var(--muted);">${p.reference_range_text || '-'}</td>
                 <td>${resultStatusPill(p.status)}</td>
             </tr>
-        `).join('') : `<tr><td colspan="5" style="text-align: center; color: var(--muted);">No parameters defined for this test.</td></tr>`;
+        `).join('') : `<tr><td colspan="5" style="text-align: center; color: var(--muted);">${t('empty_no_parameters_defined', 'No parameters defined for this test.')}</td></tr>`;
 
         const isDelivered = test.status === 'delivered';
         return `
@@ -3685,7 +3711,7 @@ function renderVisitResultsModal(data) {
                      style="padding: 14px 18px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: 600; color: var(--text);">
                     <span>🧪 ${test.test_name}</span>
                     <span style="display: flex; align-items: center; gap: 10px;">
-                        <span class="pill ${isDelivered ? 'ok' : 'danger'}">${isDelivered ? 'Delivered' : 'Pending'}</span>
+                        <span class="pill ${isDelivered ? 'ok' : 'danger'}">${isDelivered ? t('status_delivered', 'Delivered') : t('status_pending_badge', 'Pending')}</span>
                         <span style="color: var(--muted);">▾</span>
                     </span>
                 </div>
@@ -3702,12 +3728,12 @@ function renderVisitResultsModal(data) {
 
 function resultStatusPill(status) {
     const map = {
-        high: ['danger', 'High'],
-        low: ['warn', 'Low'],
-        normal: ['ok', 'Normal'],
-        abnormal: ['danger', 'Abnormal'],
-        entered: ['info', 'Entered'],
-        pending: ['ghost', 'Pending'],
+        high: ['danger', t('status_high', 'High')],
+        low: ['warn', t('status_low', 'Low')],
+        normal: ['ok', t('status_normal', 'Normal')],
+        abnormal: ['danger', t('status_abnormal', 'Abnormal')],
+        entered: ['info', t('status_entered', 'Entered')],
+        pending: ['ghost', t('status_pending_pill', 'Pending')],
     };
     const [pillClass, text] = map[status] || ['ghost', status || 'Pending'];
     return `<span class="pill ${pillClass}">${text}</span>`;
@@ -3938,7 +3964,7 @@ function openUploadModal(visitId, patientId, patientName) {
     if (modal) {
         modal.style.display = 'block';
     } else {
-        showAlert("Upload modal not found!", "error");
+        showAlert(t('upload_modal_missing', 'Upload modal not found!'), 'error');
     }
 }
 
@@ -3973,14 +3999,14 @@ async function handleFileUpload(event) {
 
     if (!visitId || !patientId || !patientName) {
         console.error("Missing Data:", { visitId, patientId, patientName });
-        showAlert("Error: Patient info missing.", "error");
+        showAlert(t('patient_info_missing', 'Error: Patient info missing.'), 'error');
         return;
     }
     
     const fileInput = document.getElementById('report-file-input');
     const files = fileInput.files;
     if (files.length === 0) {
-        showAlert("Please select files first.", "error");
+        showAlert(t('select_files_first', 'Please select files first.'), 'error');
         return;
     }
     
@@ -4008,7 +4034,7 @@ async function handleFileUpload(event) {
         const data = await response.json();
         
         // 4. Update UI
-        showAlert("Report uploaded successfully!", "success");
+        showAlert(t('report_uploaded', 'Report uploaded successfully!'), 'success');
         document.getElementById('upload-modal').style.display = 'none';
         await loadInitialData();
         showDashboardTable(currentDashboardTableType);
@@ -4025,14 +4051,14 @@ async function handleFileUpload(event) {
             const method = data.messaging?.method || 'whatsapp';
 
             if (!isEnabled) {
-                showAlert("Report uploaded. Auto-messaging is disabled.", "info");
+                showAlert(t('report_uploaded_messaging_disabled', 'Report uploaded. Auto-messaging is disabled.'), 'info');
                 return;
             }
             const liveServer = `http://${window.location.hostname}:${window.APP_PORTS.backend}`;
             const nodeServer = `http://${window.location.hostname}:${window.APP_PORTS.node}`; // Your Node.js Bot Port
             const endpoint = (method === 'sms') ? '/api/sms/send' : '/api/whatsapp/send';
 
-            const patientName = window.currentUploadPatientName || "Patient";
+            const patientName = window.currentUploadPatientName || "عميلنا العزيز";
             let pdfLinksText = data.report_urls.map((url, index) => {
                 // FIX: encodeURI converts spaces into '%20' so WhatsApp doesn't break the link
                 let cleanUrl = encodeURI(url.trim());
@@ -4042,10 +4068,10 @@ async function handleFileUpload(event) {
                     cleanUrl = '/' + cleanUrl;
                 }
 
-                return `📄 Report ${index + 1}: ${liveServer}${cleanUrl}`;
+                return `📄 التقرير ${index + 1}: ${liveServer}${cleanUrl}`;
             }).join('\n');
 
-            let message = `Hello ${patientName},\n\nYour results are ready:\n\n${pdfLinksText}\n\nHistory: ${liveServer}/patient-history/${data.patient_id}`;
+            let message = `مرحباً ${patientName}،\n\nنتائج التحاليل الخاصة بك جاهزة الآن:\n\n${pdfLinksText}\n\nلعرض السجل الطبي الكامل: ${liveServer}/patient-history/${data.patient_id}`;
             const messagingPayload = {
                 centerId: 'lab',
                 phone: data.phone,
@@ -4066,17 +4092,17 @@ async function handleFileUpload(event) {
                     throw new Error(`Server returned ${waResponse.status}`);
                 }
         
-                showAlert(`Message sent successfully via ${method.toUpperCase()}!`, "success");
+                showAlert(t('message_sent_via', 'Message sent successfully via {method}!', {method: method.toUpperCase()}), 'success');
                 
             } catch (err) {
                 console.error("Messaging Error:", err);
-                showAlert(`Failed to send ${method.toUpperCase()} message. Ensure Node server is running.`, "error");
+                showAlert(t('message_send_failed', 'Failed to send {method} message. Ensure Node server is running.', {method: method.toUpperCase()}), 'error');
             }
         }
         
     } catch (error) {
         console.error("Upload/WhatsApp Error:", error);
-        showAlert(error.message || "Network error occurred.", "error");
+        showAlert(error.message || t('network_error_occurred', 'Network error occurred.'), 'error');
     }
 }
 
@@ -4112,7 +4138,7 @@ async function checkWhatsAppStatus() {
 
         if (data.status === 'connected') {
             if (window.lastWaStatus !== 'connected') {
-                addNotification("WhatsApp: Device is paired and ready!", "success");
+                addNotification(t('whatsapp_paired', 'WhatsApp: Device is paired and ready!'), 'success');
                 window.lastWaStatus = 'connected';
             }
             // Success State
@@ -4147,7 +4173,7 @@ async function checkWhatsAppStatus() {
         } else {
             // Offline / Error State
             if (window.lastWaStatus !== 'disconnected') {
-                addNotification(`WhatsApp: ${data.message || "Connection lost"}`, "warn");
+                addNotification(t('whatsapp_prefix', 'WhatsApp: {msg}', {msg: data.message || t('connection_lost', 'Connection lost')}), 'warn');
                 window.lastWaStatus = 'disconnected';
             }
             statusMsg.textContent = `Status: ${data.message || data.status}`;
@@ -4159,7 +4185,7 @@ async function checkWhatsAppStatus() {
         statusMsg.textContent = "❌ Cannot reach Node.js server. Is it running?";
         statusMsg.style.color = "var(--danger)";
         qrContainer.style.display = 'none';
-        addNotification(`WhatsApp: ${data.message || "❌ Cannot reach Node.js server. Is it running?"}`, "warn");
+        addNotification(t('whatsapp_prefix', 'WhatsApp: {msg}', {msg: data.message || t('cannot_reach_node', '❌ Cannot reach Node.js server. Is it running?')}), 'warn');
         // Stop polling if the server is completely dead
         if (waPollInterval) clearInterval(waPollInterval);
         waPollInterval = null;
@@ -4199,7 +4225,7 @@ function loadTestList() {
     if (!container) return; 
     
     if (availableTests.length === 0) {
-        container.innerHTML = '<div class="table-container"><table style="width:100%;"><tr><td style="text-align:center; padding: 30px; color: var(--muted);">No tests available. Click "Add New Test" to begin.</td></tr></table></div>';
+        container.innerHTML = `<div class="table-container"><table style="width:100%;"><tr><td style="text-align:center; padding: 30px; color: var(--muted);">${t('empty_no_tests_available', 'No tests available. Click "Add New Test" to begin.')}</td></tr></table></div>`;
         return;
     }
 
@@ -4263,7 +4289,7 @@ async function handleBulkDeleteTests() {
     
     if (ids.length === 0) return;
     
-    if (!confirm(`Are you sure you want to delete ${ids.length} test(s)? This cannot be undone.`)) return;
+    if (!confirm(t('confirm_delete_tests', 'Are you sure you want to delete {count} test(s)? This cannot be undone.', {count: ids.length}))) return;
     
     try {
         let successCount = 0;
@@ -4277,13 +4303,13 @@ async function handleBulkDeleteTests() {
             if (response.ok) successCount++;
         }
         
-        showAlert(`Successfully deleted ${successCount} tests!`, 'success');
+        showAlert(t('tests_deleted', 'Successfully deleted {count} tests!', {count: successCount}), 'success');
         
         // Re-fetch the live data from DB to update the table instantly
         await fetchLabTests(); 
 
     } catch (error) {
-        showAlert('Error deleting tests: ' + error.message, 'error');
+        showAlert(t('tests_delete_error', 'Error deleting tests: {msg}', {msg: error.message}), 'error');
     }
 }
 
@@ -4356,7 +4382,7 @@ async function openParametersModal(testId, testName) {
         currentParameterRows = response.ok ? await response.json() : [];
     } catch (error) {
         currentParameterRows = [];
-        showAlert('Could not load parameters: ' + error.message, 'error');
+        showAlert(t('parameters_load_error', 'Could not load parameters: {msg}', {msg: error.message}), 'error');
     }
 
     currentParameterRows.forEach((row) => {
@@ -4433,7 +4459,7 @@ function renderParameterRows() {
             </td>
         </tr>
         `;
-    }).join('') || `<tr><td colspan="12" style="text-align: center; color: var(--muted); padding: 15px;">No parameters yet — click "+ Add Parameter" below.</td></tr>`;
+    }).join('') || `<tr><td colspan="12" style="text-align: center; color: var(--muted); padding: 15px;">${t('empty_no_parameters_yet', 'No parameters yet — click "+ Add Parameter" below.')}</td></tr>`;
 }
 
 function addParameterRow() {
@@ -4470,7 +4496,7 @@ function trackFormulaCaret(rowIndex, field) {
 // was clicked (the parameter being referenced), not the formula being edited.
 function insertParamReference(namedIdx) {
     if (!activeFormulaTarget) {
-        showAlert('Click into a Formula field first, then click a parameter\'s 🔗 to insert it.', 'error');
+        showAlert(t('formula_click_field_first', "Click into a Formula field first, then click a parameter's 🔗 to insert it."), 'error');
         return;
     }
     const { rowIndex, field } = activeFormulaTarget;
@@ -4479,12 +4505,12 @@ function insertParamReference(namedIdx) {
     // Count = Neutrophils% * WBC / 100 references Neutrophils' own value) — see
     // _validate_absolute_count_formula in reports.py.
     if (namedIdx === rowIndex && field === 'relation_formula') {
-        showAlert('A parameter cannot reference itself.', 'error');
+        showAlert(t('formula_self_reference', 'A parameter cannot reference itself.'), 'error');
         return;
     }
     const namedRow = currentParameterRows[namedIdx];
     if (!namedRow || !namedRow.name || !namedRow.name.trim()) {
-        showAlert('Name that parameter before referencing it.', 'error');
+        showAlert(t('name_parameter_first', 'Name that parameter before referencing it.'), 'error');
         return;
     }
 
@@ -4561,7 +4587,7 @@ async function saveParameterRows() {
             });
             if (!relationResponse.ok) {
                 const body = await relationResponse.json().catch(() => ({}));
-                showAlert(`Formula for "${row.name}" was not saved: ${body.error || 'unknown error'}`, 'error');
+                showAlert(t('formula_not_saved', 'Formula for "{name}" was not saved: {error}', {name: row.name, error: body.error || t('hr_unknown_error', 'unknown error')}), 'error');
             }
 
             const absoluteResponse = await apiFetch(`/api/parameters/${row.id}`, {
@@ -4570,14 +4596,14 @@ async function saveParameterRows() {
             });
             if (!absoluteResponse.ok) {
                 const body = await absoluteResponse.json().catch(() => ({}));
-                showAlert(`Absolute Count formula for "${row.name}" was not saved: ${body.error || 'unknown error'}`, 'error');
+                showAlert(t('absolute_formula_not_saved', 'Absolute Count formula for "{name}" was not saved: {error}', {name: row.name, error: body.error || t('hr_unknown_error', 'unknown error')}), 'error');
             }
         }
 
-        showAlert('Parameters saved!', 'success');
+        showAlert(t('parameters_saved', 'Parameters saved!'), 'success');
         closeParametersModal();
     } catch (error) {
-        showAlert('Error saving parameters: ' + error.message, 'error');
+        showAlert(t('parameters_save_error', 'Error saving parameters: {msg}', {msg: error.message}), 'error');
     }
 }
 
@@ -4608,11 +4634,11 @@ async function saveTestRecord(event) {
         
         closeTestModal();
         await fetchLabTests(); // Re-fetch the live data from DB to update the table
-        showAlert('Test saved to database!', 'success');
+        showAlert(t('test_saved_db', 'Test saved to database!'), 'success');
         
     } catch (error) {
         console.error("Save Error:", error);
-        showAlert('Failed to save to database.', 'error');
+        showAlert(t('test_save_db_failed', 'Failed to save to database.'), 'error');
     }
 }
 
@@ -4659,7 +4685,7 @@ function closePanelsModal() {
 function renderPanelsList() {
     const container = document.getElementById('panels-list');
     if (!availablePanels.length) {
-        container.innerHTML = '<p style="color: var(--muted); font-size: 13px;">No panels yet — create one on the right.</p>';
+        container.innerHTML = `<p style="color: var(--muted); font-size: 13px;">${t('empty_no_panels', 'No panels yet — create one on the right.')}</p>`;
         return;
     }
     container.innerHTML = availablePanels.map(p => `
@@ -4699,9 +4725,9 @@ function renderPanelTestCheckboxes(selectedIds) {
 
 async function savePanel() {
     const name = document.getElementById('panel-name-input').value.trim();
-    if (!name) return showAlert('Panel name is required.', 'warn');
+    if (!name) return showAlert(t('panel_name_required', 'Panel name is required.'), 'warn');
     const lab_test_ids = Array.from(document.querySelectorAll('.panel-test-checkbox:checked')).map(cb => parseInt(cb.value, 10));
-    if (lab_test_ids.length === 0) return showAlert('Select at least one test for the panel.', 'warn');
+    if (lab_test_ids.length === 0) return showAlert(t('panel_select_one_test', 'Select at least one test for the panel.'), 'warn');
 
     try {
         const url = editingPanelId ? `/api/panels/${editingPanelId}` : '/api/panels';
@@ -4711,21 +4737,21 @@ async function savePanel() {
         await fetchPanels();
         renderPanelsList();
         startNewPanel();
-        showAlert('Panel saved!', 'success');
+        showAlert(t('panel_saved', 'Panel saved!'), 'success');
     } catch (error) {
-        showAlert('Error saving panel: ' + error.message, 'error');
+        showAlert(t('panel_save_error', 'Error saving panel: {msg}', {msg: error.message}), 'error');
     }
 }
 
 async function deletePanel(panelId) {
-    if (!confirm('Delete this panel? This only removes the booking shortcut — no existing visits or tests are affected.')) return;
+    if (!confirm(t('confirm_delete_panel', 'Delete this panel? This only removes the booking shortcut — no existing visits or tests are affected.'))) return;
     try {
         await apiFetch(`/api/panels/${panelId}`, { method: 'DELETE' });
         await fetchPanels();
         renderPanelsList();
         if (editingPanelId === panelId) startNewPanel();
     } catch (error) {
-        showAlert('Error deleting panel: ' + error.message, 'error');
+        showAlert(t('panel_delete_error', 'Error deleting panel: {msg}', {msg: error.message}), 'error');
     }
 }
 
@@ -4738,7 +4764,7 @@ function openBookTestModal(clientId) {
     const container = document.getElementById('dynamic-test-checkboxes');
 
     if (availableTests.length === 0) {
-        container.innerHTML = '<p style="color: var(--danger);">No tests available in directory. Please add tests in the "Test List" tab first.</p>';
+        container.innerHTML = `<p style="color: var(--danger);">${t('empty_no_tests_in_directory', 'No tests available in directory. Please add tests in the "Test List" tab first.')}</p>`;
     } else {
         // Dynamically create a checkbox for every test in your database
         container.innerHTML = availableTests.map(t => `
@@ -4799,12 +4825,12 @@ function submitTestBooking(event) {
 
     // Find the patient details from the master list
     const patient = clients.find(c => c.id === currentBookingClientId);
-    if (!patient) return showAlert("Patient data lost. Please try again.", "error");
+    if (!patient) return showAlert(t('patient_data_lost', 'Patient data lost. Please try again.'), 'error');
 
     // Gather selected tests and prices
     const selectedBoxes = document.querySelectorAll('.test-checkbox:checked');
     if (selectedBoxes.length === 0) {
-        showAlert('Please select at least one test.', 'warn');
+        showAlert(t('select_at_least_one_test', 'Please select at least one test.'), 'warn');
         return;
     }
 
@@ -4926,7 +4952,7 @@ async function processTransaction() {
         const receiptModal = document.getElementById('receipt-modal');
         if (receiptModal) receiptModal.style.display = 'none';
 
-        showAlert("Payment Successful!", "success");
+        showAlert(t('payment_successful', 'Payment Successful!'), 'success');
         generateReceipt();
         
         const postPaymentModal = document.getElementById('post-payment-modal');
@@ -4987,7 +5013,7 @@ async function processTransaction() {
 
     } catch (error) {
         console.error("Transaction Error:", error);
-        showAlert("Database error while processing payment.", "error");
+        showAlert(t('payment_db_error', 'Database error while processing payment.'), 'error');
     }
 }
 
@@ -5188,7 +5214,7 @@ function previewImage(inputElement, previewImageId, filenameInputId = null) {
 //     // Apply changes immediately
 //     applyGlobalSettings();
     
-//     showAlert('Interface settings updated successfully!', 'success');
+//     showAlert(t('interface_settings_updated', 'Interface settings updated successfully!'), 'success');
 // }
 
 async function saveSettings() {
@@ -5224,15 +5250,15 @@ async function saveSettings() {
         });
         
         if (response.ok) {
-            showAlert('Settings saved to server!', 'success');
+            showAlert(t('settings_saved_server', 'Settings saved to server!'), 'success');
             // Refresh local UI state after save
             applyGlobalSettings(); 
         } else {
-            showAlert('Failed to save settings.', 'error');
+            showAlert(t('settings_save_failed', 'Failed to save settings.'), 'error');
         }
     } catch (error) {
         console.error("Save error:", error);
-        showAlert('Error connecting to server.', 'error');
+        showAlert(t('server_connect_error', 'Error connecting to server.'), 'error');
     }
 }
 
@@ -5492,7 +5518,7 @@ async function fetchTransactionsHistoryPage() {
     const filtered = data.items || [];
     lastFetchedTransactions = filtered; // for openCompletePaymentModal() to look up by id
     if (filtered.length === 0) {
-        container.innerHTML = `<div class="glass-panel" style="padding: 30px; text-align: center; color: var(--muted);">${unpaidOnly ? 'No unpaid transactions found.' : 'No transactions found for this date.'}</div>`;
+        container.innerHTML = `<div class="glass-panel" style="padding: 30px; text-align: center; color: var(--muted);">${unpaidOnly ? t('empty_no_unpaid_transactions', 'No unpaid transactions found.') : t('empty_no_transactions_date', 'No transactions found for this date.')}</div>`;
         return;
     }
 
@@ -5565,7 +5591,7 @@ function closeCompletePaymentModal() {
 async function submitCompletePayment() {
     const amount = parseFloat(document.getElementById('cp-amount-input').value);
     if (!amount || amount <= 0) {
-        showAlert('Enter a valid amount.', 'warn');
+        showAlert(t('enter_valid_amount', 'Enter a valid amount.'), 'warn');
         return;
     }
 
@@ -5577,10 +5603,10 @@ async function submitCompletePayment() {
         if (!response.ok) throw new Error('Server rejected payment update');
 
         closeCompletePaymentModal();
-        showAlert('Payment recorded!', 'success');
+        showAlert(t('payment_recorded', 'Payment recorded!'), 'success');
         fetchTransactionsHistoryPage(); // re-fetch so the flag/columns update immediately
     } catch (error) {
-        showAlert('Error recording payment: ' + error.message, 'error');
+        showAlert(t('payment_record_error', 'Error recording payment: {msg}', {msg: error.message}), 'error');
     }
 }
 
@@ -5659,7 +5685,7 @@ function calculateFinancials() {
     if (dailyRev > yesterdayRev && yesterdayRev > 0) {
         const lastNotifDate = localStorage.getItem('last_rev_notif_date');
         if (lastNotifDate !== todayStr) {
-            addNotification(`Great job! Today's revenue (${dailyRev.toFixed(2)} EGP) surpassed yesterday's (${yesterdayRev.toFixed(2)} EGP).`, 'success');
+            addNotification(t('revenue_milestone', "Great job! Today's revenue ({today} EGP) surpassed yesterday's ({yesterday} EGP).", {today: dailyRev.toFixed(2), yesterday: yesterdayRev.toFixed(2)}), 'success');
             localStorage.setItem('last_rev_notif_date', todayStr);
         }
     }
@@ -5848,7 +5874,7 @@ function renderWarehouseTable() {
     if (warehouseExpiredFilterActive) filtered = filtered.filter(i => i.has_expired_batch);
 
     if (filtered.length === 0) {
-        container.innerHTML = '<div class="table-container"><table style="width:100%;"><tr><td style="text-align:center; padding: 30px; color: var(--muted);">No items found in warehouse.</td></tr></table></div>';
+        container.innerHTML = `<div class="table-container"><table style="width:100%;"><tr><td style="text-align:center; padding: 30px; color: var(--muted);">${t('empty_no_warehouse_items', 'No items found in warehouse.')}</td></tr></table></div>`;
         return;
     }
 
@@ -5955,14 +5981,14 @@ async function saveWarehouseItem(event) {
             body: JSON.stringify(payload)
         });
         if (response.ok) {
-            showAlert('Warehouse item saved successfully!', 'success');
+            showAlert(t('warehouse_item_saved', 'Warehouse item saved successfully!'), 'success');
             closeWarehouseModal();
             fetchWarehouseData();
         } else {
-            showAlert('Failed to save item. Check console.', 'error');
+            showAlert(t('warehouse_item_save_failed_console', 'Failed to save item. Check console.'), 'error');
         }
     } catch (error) {
-        showAlert('Failed to save item', 'error');
+        showAlert(t('warehouse_item_save_failed', 'Failed to save item'), 'error');
     }
 }
 
@@ -5975,10 +6001,10 @@ function batchStatusPillClass(batch) {
 }
 
 function batchStatusLabel(batch) {
-    if (batch.is_expired) return '🚩 Expired';
-    if (batch.status === 'disposed') return 'Disposed';
-    if (batch.status === 'exhausted') return 'Exhausted';
-    return 'Active';
+    if (batch.is_expired) return t('status_expired_flag', '🚩 Expired');
+    if (batch.status === 'disposed') return t('status_disposed', 'Disposed');
+    if (batch.status === 'exhausted') return t('status_exhausted', 'Exhausted');
+    return t('status_active', 'Active');
 }
 
 async function openItemBatchesModal(itemId) {
@@ -5993,7 +6019,7 @@ async function openItemBatchesModal(itemId) {
         if (!response.ok) throw new Error('Failed to load batches');
         const batches = await response.json();
         if (batches.length === 0) {
-            container.innerHTML = '<p style="text-align:center; padding:20px; color:var(--muted);">No batches received yet — receive a delivered bill to create one.</p>';
+            container.innerHTML = `<p style="text-align:center; padding:20px; color:var(--muted);">${t('empty_no_batches', 'No batches received yet — receive a delivered bill to create one.')}</p>`;
             return;
         }
         const rows = batches.map(b => `
@@ -6068,11 +6094,11 @@ async function submitReceiveBatch() {
     const expiryDate = document.getElementById('receive-expiry-date').value;
     const quantity = parseInt(document.getElementById('receive-quantity').value) || 0;
     if (!expiryDate) {
-        showAlert('Expiry date is required.', 'error');
+        showAlert(t('expiry_date_required', 'Expiry date is required.'), 'error');
         return;
     }
     if (quantity <= 0) {
-        showAlert('Quantity received must be greater than zero.', 'error');
+        showAlert(t('quantity_must_be_positive', 'Quantity received must be greater than zero.'), 'error');
         return;
     }
 
@@ -6088,10 +6114,10 @@ async function submitReceiveBatch() {
             document.getElementById('receive-batch-result').style.display = 'block';
             document.getElementById('receive-batch-barcode-img').src = generateBarcodeImage(body.barcode);
         } else {
-            showAlert(body.error || 'Failed to receive batch', 'error');
+            showAlert(body.error || t('batch_receive_failed', 'Failed to receive batch'), 'error');
         }
     } catch (error) {
-        showAlert('Error receiving batch', 'error');
+        showAlert(t('batch_receive_error', 'Error receiving batch'), 'error');
     }
 }
 
@@ -6139,7 +6165,7 @@ async function confirmDisposeBatch(batchId, itemName, quantityRemaining) {
     const reason = prompt(`Dispose ${quantityRemaining} unit(s) of "${itemName}" — reason for disposal:`);
     if (reason === null) return; // cancelled
     if (!reason.trim()) {
-        showAlert('A disposal reason is required.', 'error');
+        showAlert(t('disposal_reason_required', 'A disposal reason is required.'), 'error');
         return;
     }
 
@@ -6150,14 +6176,14 @@ async function confirmDisposeBatch(batchId, itemName, quantityRemaining) {
         });
         const body = await response.json();
         if (response.ok && body.success) {
-            showAlert(`Disposed ${body.disposed_quantity} unit(s).`, 'success');
+            showAlert(t('batch_disposed', 'Disposed {count} unit(s).', {count: body.disposed_quantity}), 'success');
             openExpiredBatchesModal();
             fetchWarehouseData();
         } else {
-            showAlert(body.error || 'Failed to dispose batch', 'error');
+            showAlert(body.error || t('batch_dispose_failed', 'Failed to dispose batch'), 'error');
         }
     } catch (error) {
-        showAlert('Error disposing batch', 'error');
+        showAlert(t('batch_dispose_error', 'Error disposing batch'), 'error');
     }
 }
 
@@ -6176,16 +6202,16 @@ function toggleAllWarehouseBoxes(masterBox) {
 async function handleBulkDeleteWarehouse() {
     const checkboxes = document.querySelectorAll('.warehouse-checkbox:checked');
     const ids = Array.from(checkboxes).map(cb => cb.dataset.id);
-    if (ids.length === 0 || !confirm(`Delete ${ids.length} item(s) from warehouse?`)) return;
+    if (ids.length === 0 || !confirm(t('confirm_delete_warehouse_items', 'Delete {count} item(s) from warehouse?', {count: ids.length}))) return;
     
     try {
         for (const id of ids) {
             await apiFetch(`/api/warehouse/${id}`, { method: 'DELETE' });
         }
-        showAlert('Items deleted successfully!', 'success');
+        showAlert(t('items_deleted', 'Items deleted successfully!'), 'success');
         fetchWarehouseData();
     } catch (error) {
-        showAlert('Error deleting items', 'error');
+        showAlert(t('items_delete_error', 'Error deleting items'), 'error');
     }
 }
 
@@ -6194,7 +6220,7 @@ async function processWarehouseExcelImport(event) {
     const file = event.target.files[0];
     if (!file) return;
 
-    showAlert("Reading Warehouse Excel file...", "info");
+    showAlert(t('excel_reading_warehouse', 'Reading Warehouse Excel file...'), 'info');
     const reader = new FileReader();
     
     reader.onload = async function(e) {
@@ -6260,12 +6286,12 @@ async function processWarehouseExcelImport(event) {
             }
 
             event.target.value = ''; 
-            showAlert(`Import complete: ${successCount} added, ${skippedCount} skipped.`, "success");
+            showAlert(t('warehouse_import_complete', 'Import complete: {added} added, {skipped} skipped.', {added: successCount, skipped: skippedCount}), 'success');
             fetchWarehouseData(); 
 
         } catch (error) {
             console.error("Excel Error:", error);
-            showAlert("Failed to parse Excel file.", "error");
+            showAlert(t('excel_parse_failed', 'Failed to parse Excel file.'), 'error');
         }
     };
     reader.readAsArrayBuffer(file);
@@ -6352,11 +6378,11 @@ async function saveWarehouseBill(event) {
             method: 'POST', body: JSON.stringify(payload)
         });
         if (response.ok) {
-            showAlert('Bill saved successfully!', 'success');
+            showAlert(t('bill_saved', 'Bill saved successfully!'), 'success');
             document.getElementById('new-bill-modal').style.display = 'none';
         }
     } catch (error) {
-        showAlert('Error saving bill', 'error');
+        showAlert(t('bill_save_error', 'Error saving bill'), 'error');
     }
 }
 
@@ -6432,7 +6458,7 @@ async function submitBulkBill() {
     });
 
     if (items.length === 0) {
-        showAlert('Select at least one item with a quantity to order.', 'error');
+        showAlert(t('select_item_with_quantity', 'Select at least one item with a quantity to order.'), 'error');
         return;
     }
 
@@ -6447,14 +6473,14 @@ async function submitBulkBill() {
         });
         const body = await response.json();
         if (response.ok && body.success) {
-            showAlert(`Bill created with ${body.items_count} item(s)!`, 'success');
+            showAlert(t('bill_created', 'Bill created with {count} item(s)!', {count: body.items_count}), 'success');
             closeBulkBillModal();
             fetchWarehouseData();
         } else {
-            showAlert(body.error || 'Failed to create bill', 'error');
+            showAlert(body.error || t('bill_create_failed', 'Failed to create bill'), 'error');
         }
     } catch (error) {
-        showAlert('Error creating bill', 'error');
+        showAlert(t('bill_create_error', 'Error creating bill'), 'error');
     }
 }
 
@@ -6469,7 +6495,7 @@ async function openBillsHistoryModal() {
             renderWarehouseBills();
         }
     } catch (error) {
-        showAlert("Failed to load bills", "error");
+        showAlert(t('bills_load_failed', 'Failed to load bills'), 'error');
     }
 }
 
@@ -6486,9 +6512,9 @@ function billStatusOptionsHTML(currentStatus, onChangeAttr) {
     const isAdmin = isAdminUser();
     return `
         <select onchange="${onChangeAttr}" style="padding: 4px; font-size: 11px; background: transparent; border: 1px solid var(--${billStatusPillClass(currentStatus)}); color: var(--${billStatusPillClass(currentStatus)}); border-radius: 4px;">
-            <option value="demanded" ${currentStatus === 'demanded' ? 'selected' : ''}>🔴 Requested</option>
-            <option value="ordered" ${currentStatus === 'ordered' ? 'selected' : ''} ${isAdmin ? '' : 'disabled'}>🟡 Confirmed${isAdmin ? '' : ' (admin only)'}</option>
-            <option value="delivered" ${currentStatus === 'delivered' ? 'selected' : ''}>🟢 Delivered</option>
+            <option value="demanded" ${currentStatus === 'demanded' ? 'selected' : ''}>${t('status_bill_requested', '🔴 Requested')}</option>
+            <option value="ordered" ${currentStatus === 'ordered' ? 'selected' : ''} ${isAdmin ? '' : 'disabled'}>${t('status_bill_confirmed', '🟡 Confirmed')}${isAdmin ? '' : t('admin_only_suffix', ' (admin only)')}</option>
+            <option value="delivered" ${currentStatus === 'delivered' ? 'selected' : ''}>${t('status_bill_delivered', '🟢 Delivered')}</option>
         </select>
     `;
 }
@@ -6498,7 +6524,7 @@ function billStatusOptionsHTML(currentStatus, onChangeAttr) {
 function renderWarehouseBills() {
     const container = document.getElementById('bills-history-container');
     if (warehouseBills.length === 0) {
-        container.innerHTML = '<p style="text-align:center; padding:20px; color:var(--muted);">No bills history available.</p>';
+        container.innerHTML = `<p style="text-align:center; padding:20px; color:var(--muted);">${t('empty_no_bills_history', 'No bills history available.')}</p>`;
         return;
     }
 
@@ -6581,14 +6607,14 @@ async function updateBillStatus(billId, newStatus) {
         });
 
         if (response.ok) {
-            showAlert('Bill status updated!', 'success');
+            showAlert(t('bill_status_updated', 'Bill status updated!'), 'success');
             openBillsHistoryModal(); // refresh the list so the pill/status shown stays correct
         } else {
             const body = await response.json().catch(() => ({}));
-            showAlert(body.error || 'Error updating status', 'error');
+            showAlert(body.error || t('bill_status_error_generic', 'Error updating status'), 'error');
         }
     } catch (error) {
-        showAlert('Error updating status', 'error');
+        showAlert(t('bill_status_error_generic', 'Error updating status'), 'error');
     }
 }
 
@@ -6650,17 +6676,17 @@ async function updateBulkBillGroupStatus(bulkBillId, newStatus) {
         });
 
         if (response.ok) {
-            showAlert('Bill status updated!', 'success');
+            showAlert(t('bill_status_updated', 'Bill status updated!'), 'success');
             await openBillsHistoryModal(); // refresh the list
             if (document.getElementById('bulk-bill-detail-modal').style.display === 'block') {
                 openBulkBillDetail(bulkBillId); // refresh the open detail view too
             }
         } else {
             const body = await response.json().catch(() => ({}));
-            showAlert(body.error || 'Error updating bill status', 'error');
+            showAlert(body.error || t('bill_status_error', 'Error updating bill status'), 'error');
         }
     } catch (error) {
-        showAlert('Error updating bill status', 'error');
+        showAlert(t('bill_status_error', 'Error updating bill status'), 'error');
     }
 }
 
@@ -6755,7 +6781,7 @@ async function submitWorkOrder() {
     });
 
     if (items.length === 0) {
-        showAlert('Enter a quantity for at least one item.', 'error');
+        showAlert(t('enter_quantity_for_item', 'Enter a quantity for at least one item.'), 'error');
         return;
     }
 
@@ -6770,15 +6796,15 @@ async function submitWorkOrder() {
         });
         const body = await response.json();
         if (response.ok && body.success) {
-            showAlert(`Work order requested with ${body.items_count} item(s) — awaiting admin approval.`, 'success');
+            showAlert(t('work_order_requested', 'Work order requested with {count} item(s) — awaiting admin approval.', {count: body.items_count}), 'success');
             closeWorkOrderModal();
             document.querySelectorAll('.warehouse-checkbox:checked').forEach(cb => cb.checked = false);
             updateBulkWarehouseBtn();
         } else {
-            showAlert(body.error || 'Failed to create work order', 'error');
+            showAlert(body.error || t('work_order_create_failed', 'Failed to create work order'), 'error');
         }
     } catch (error) {
-        showAlert('Error creating work order', 'error');
+        showAlert(t('work_order_create_error', 'Error creating work order'), 'error');
     }
 }
 
@@ -6792,7 +6818,7 @@ async function openWorkOrdersHistoryModal() {
             renderWarehouseWorkOrders();
         }
     } catch (error) {
-        showAlert('Failed to load work orders', 'error');
+        showAlert(t('work_orders_load_failed', 'Failed to load work orders'), 'error');
     }
 }
 
@@ -6806,11 +6832,19 @@ function workOrderGroupStatus(items) {
 }
 
 const WORK_ORDER_STATUS_PILL = { requested: 'danger', approved: 'warn', completed: 'ok', rejected: 'muted' };
-const WORK_ORDER_STATUS_LABEL = { requested: '🔴 Requested', approved: '🟡 Approved', completed: '🟢 Completed', rejected: '⚪ Rejected' };
+function workOrderStatusLabelFor(status) {
+    const labels = {
+        requested: t('status_wo_requested', '🔴 Requested'),
+        approved: t('status_wo_approved', '🟡 Approved'),
+        completed: t('status_wo_completed', '🟢 Completed'),
+        rejected: t('status_wo_rejected', '⚪ Rejected'),
+    };
+    return labels[status] || status;
+}
 
 function workOrderStatusPill(status) {
     const cls = WORK_ORDER_STATUS_PILL[status] || 'muted';
-    return `<span class="pill" style="color: var(--${cls}); border: 1px solid var(--${cls}); background: transparent;">${WORK_ORDER_STATUS_LABEL[status] || status}</span>`;
+    return `<span class="pill" style="color: var(--${cls}); border: 1px solid var(--${cls}); background: transparent;">${workOrderStatusLabelFor(status)}</span>`;
 }
 
 // Each submission shares a work_order_id and collapses into one row here (click it to see
@@ -6818,7 +6852,7 @@ function workOrderStatusPill(status) {
 function renderWarehouseWorkOrders() {
     const container = document.getElementById('work-orders-history-container');
     if (warehouseWorkOrders.length === 0) {
-        container.innerHTML = '<p style="text-align:center; padding:20px; color:var(--muted);">No work orders yet.</p>';
+        container.innerHTML = `<p style="text-align:center; padding:20px; color:var(--muted);">${t('empty_no_work_orders', 'No work orders yet.')}</p>`;
         return;
     }
 
@@ -6863,34 +6897,34 @@ function renderWarehouseWorkOrders() {
 }
 
 async function approveWorkOrder(workOrderId) {
-    if (!confirm(`Approve work order ${workOrderId}? The technician will then be able to fulfill it by scanning batch barcodes.`)) return;
+    if (!confirm(t('confirm_approve_work_order', 'Approve work order {id}? The technician will then be able to fulfill it by scanning batch barcodes.', {id: workOrderId}))) return;
     try {
         const response = await apiFetch(`/api/warehouse/work-orders/${workOrderId}/approve`, { method: 'PUT' });
         const body = await response.json();
         if (response.ok && body.success) {
-            showAlert('Work order approved.', 'success');
+            showAlert(t('work_order_approved', 'Work order approved.'), 'success');
             openWorkOrdersHistoryModal();
         } else {
-            showAlert(body.error || 'Failed to approve work order', 'error');
+            showAlert(body.error || t('work_order_approve_failed', 'Failed to approve work order'), 'error');
         }
     } catch (error) {
-        showAlert('Error approving work order', 'error');
+        showAlert(t('work_order_approve_error', 'Error approving work order'), 'error');
     }
 }
 
 async function rejectWorkOrder(workOrderId) {
-    if (!confirm(`Reject work order ${workOrderId}? This cannot be undone.`)) return;
+    if (!confirm(t('confirm_reject_work_order', 'Reject work order {id}? This cannot be undone.', {id: workOrderId}))) return;
     try {
         const response = await apiFetch(`/api/warehouse/work-orders/${workOrderId}/reject`, { method: 'PUT' });
         const body = await response.json();
         if (response.ok && body.success) {
-            showAlert('Work order rejected.', 'success');
+            showAlert(t('work_order_rejected', 'Work order rejected.'), 'success');
             openWorkOrdersHistoryModal();
         } else {
-            showAlert(body.error || 'Failed to reject work order', 'error');
+            showAlert(body.error || t('work_order_reject_failed', 'Failed to reject work order'), 'error');
         }
     } catch (error) {
-        showAlert('Error rejecting work order', 'error');
+        showAlert(t('work_order_reject_error', 'Error rejecting work order'), 'error');
     }
 }
 
@@ -7085,7 +7119,7 @@ async function createNewUser() {
     const pass = document.getElementById('new-password').value;
     const role = document.getElementById('new-role').value;
 
-    if (!user || !pass) return showAlert("Please fill in all fields", "warn");
+    if (!user || !pass) return showAlert(t('fill_all_fields', 'Please fill in all fields'), 'warn');
 
     try {
         // UPDATED ENDPOINT: Added /auth
@@ -7098,22 +7132,22 @@ async function createNewUser() {
         const result = await response.json();
         
         if (!response.ok) {
-            return showAlert(result.error || "Failed to create user", "error");
+            return showAlert(result.error || t('user_create_failed', 'Failed to create user'), 'error');
         }
         
         document.getElementById('new-username').value = '';
         document.getElementById('new-password').value = '';
         fetchUsers();
-        showAlert("User created successfully!", "success");
-        addNotification(`Admin created a new system user: ${user} (${role})`, 'info');
+        showAlert(t('user_created', 'User created successfully!'), 'success');
+        addNotification(t('admin_created_user', 'Admin created a new system user: {user} ({role})', {user: user, role: role}), 'info');
     } catch (error) {
-        showAlert("Failed to connect to server.", "error");
+        showAlert(t('server_connect_failed', 'Failed to connect to server.'), 'error');
     }
 }
 
 // 3. Delete User
 async function deleteUser(id) {
-    if (!confirm("Are you sure you want to delete this user?")) return;
+    if (!confirm(t('confirm_delete_user', 'Are you sure you want to delete this user?'))) return;
     try {
         // UPDATED ENDPOINT: Added /auth
         const response = await fetch(`/api/auth/users/${id}`, { method: 'DELETE' });
@@ -7121,9 +7155,9 @@ async function deleteUser(id) {
         if (!response.ok) throw new Error("Failed to delete");
         
         fetchUsers();
-        showAlert("User deleted.", "success");
+        showAlert(t('user_deleted', 'User deleted.'), 'success');
     } catch (error) {
-        showAlert("Error deleting user.", "error");
+        showAlert(t('user_delete_error', 'Error deleting user.'), 'error');
     }
 }
 
@@ -7172,36 +7206,12 @@ function switchRole(role, isInitialLoad = false) {
     
     }
     if (!isInitialLoad) {
-        showAlert(`Role switched to ${role}. Interface updated.`, "success");
+        showAlert(t('role_switched', 'Role switched to {role}. Interface updated.', {role: role}), 'success');
     }
     
 }
 
 
-function toggleLanguage() {
-    currentLang = currentLang === 'EN' ? 'AR' : 'EN';
-
-    // Change Document Direction for Arabic Right-to-Left formatting
-    document.documentElement.dir = currentLang === 'AR' ? 'rtl' : 'ltr';
-
-    // Find all elements with the data-i18n attribute
-    document.querySelectorAll('[data-i18n]').forEach(element => {
-        const keys = element.getAttribute('data-i18n').split('.');
-
-        // Navigate through the JSON to find the correct string
-        let textValue = translations[currentLang];
-        keys.forEach(k => { textValue = textValue[k]; });
-
-        // Update the text on the screen
-        if (textValue) {
-            if (element.tagName === 'INPUT' && element.hasAttribute('placeholder')) {
-                element.placeholder = textValue;
-            } else {
-                element.textContent = textValue;
-            }
-        }
-    });
-}
 // Load users when app starts
 // 5. Check Real Login & Enforce Security Automatically
 async function initializeUserSecurity() {
@@ -7265,7 +7275,7 @@ function exportTableToCSV(btnElement, filename) {
     const table = btnElement.parentElement?.nextElementSibling?.querySelector('table');
 
     if (!table) {
-        showAlert("Error: No table found to export.", "error");
+        showAlert(t('no_table_to_export', 'Error: No table found to export.'), 'error');
         return;
     }
 
@@ -7316,7 +7326,7 @@ async function processPatientExcelImport(event) {
     const file = event.target.files[0];
     if (!file) return;
 
-    showAlert("Reading Patient Excel file... Please wait.", "info");
+    showAlert(t('excel_reading_patients', 'Reading Patient Excel file... Please wait.'), 'info');
 
     const reader = new FileReader();
     reader.onload = async function(e) {
@@ -7327,7 +7337,7 @@ async function processPatientExcelImport(event) {
             const json = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName]);
             
             if (json.length === 0) {
-                showAlert("The Excel sheet is empty.", "warn");
+                showAlert(t('excel_sheet_empty', 'The Excel sheet is empty.'), 'warn');
                 return;
             }
 
@@ -7421,12 +7431,12 @@ async function processPatientExcelImport(event) {
             }
 
             if (toImport.length === 0) {
-                showAlert("No new patients to import.", "info");
+                showAlert(t('no_new_patients', 'No new patients to import.'), 'info');
                 event.target.value = ''; // Reset input
                 return;
             }
 
-            showAlert(`Importing ${toImport.length} patients...`, "info");
+            showAlert(t('importing_patients', 'Importing {count} patients...', {count: toImport.length}), 'info');
             let successCount = 0;
 
             // 4. Send to Database (With Error Logging!)
@@ -7451,7 +7461,7 @@ async function processPatientExcelImport(event) {
 
             // 5. Clean up and Refresh UI
             event.target.value = ''; 
-            showAlert(`Successfully imported ${successCount} patients!`, "success");
+            showAlert(t('patients_imported', 'Successfully imported {count} patients!', {count: successCount}), 'success');
             
             // Instantly redraw the tables and KPIs
             await loadInitialData(); 
@@ -7459,7 +7469,7 @@ async function processPatientExcelImport(event) {
 
         } catch (error) {
             console.error("Excel Parsing Error:", error);
-            showAlert("Failed to parse the Excel file. Make sure it's a valid .xlsx or .csv", "error");
+            showAlert(t('excel_parse_failed_format', "Failed to parse the Excel file. Make sure it's a valid .xlsx or .csv"), 'error');
         }
     };
     
@@ -7491,7 +7501,7 @@ async function processExcelImport(event) {
     const file = event.target.files[0];
     if (!file) return;
 
-    showAlert("Reading Excel file... Please wait.", "info");
+    showAlert(t('excel_reading_generic', 'Reading Excel file... Please wait.'), 'info');
 
     const reader = new FileReader();
     reader.onload = async function(e) {
@@ -7504,7 +7514,7 @@ async function processExcelImport(event) {
             const json = XLSX.utils.sheet_to_json(worksheet);
             
             if (json.length === 0) {
-                showAlert("The Excel sheet is empty.", "warn");
+                showAlert(t('excel_sheet_empty', 'The Excel sheet is empty.'), 'warn');
                 return;
             }
 
@@ -7572,12 +7582,12 @@ async function processExcelImport(event) {
 
             // 4. Safety check: Did they skip everything?
             if (toImport.length === 0) {
-                showAlert("No new tests to import.", "info");
+                showAlert(t('no_new_tests', 'No new tests to import.'), 'info');
                 event.target.value = ''; // Reset input
                 return;
             }
 
-            showAlert(`Importing ${toImport.length} tests...`, "info");
+            showAlert(t('importing_tests', 'Importing {count} tests...', {count: toImport.length}), 'info');
             let successCount = 0;
 
             // 5. Send the final approved list to the database
@@ -7596,12 +7606,12 @@ async function processExcelImport(event) {
 
             // 6. Clean up and Refresh
             event.target.value = ''; 
-            showAlert(`Successfully imported ${successCount} tests!`, "success");
+            showAlert(t('tests_imported', 'Successfully imported {count} tests!', {count: successCount}), 'success');
             await fetchLabTests(); 
             
         } catch (error) {
             console.error("Excel Parsing Error:", error);
-            showAlert("Failed to parse the Excel file. Make sure it's a valid .xlsx or .csv", "error");
+            showAlert(t('excel_parse_failed_format', "Failed to parse the Excel file. Make sure it's a valid .xlsx or .csv"), 'error');
         }
     };
     
@@ -7647,7 +7657,7 @@ async function savePermissions() {
     });
     
     if (response.ok) {
-        showAlert("Permissions updated!", "success");
+        showAlert(t('permissions_updated', 'Permissions updated!'), 'success');
         document.getElementById('access-modal').style.display = 'none';
     }
 }
@@ -7760,7 +7770,7 @@ setInterval(() => {
         const timeSinceLastActivity = Date.now() - lastActivityTime;
         if (timeSinceLastActivity >= systemPolicies.idleLogoutMs) {
             isLoggingOut = true;
-            alert("Session expired due to inactivity.");
+            alert(t('session_expired_idle', 'Session expired due to inactivity.'));
             logout();
         }
     }
@@ -7779,7 +7789,7 @@ setInterval(() => {
         if (currentTimeStr === systemPolicies.forceLogoutTime) {
             console.log("Idle threshold reached, logging out...");
             isLoggingOut = true;
-            alert(`Maintenance time reached (${systemPolicies.forceLogoutTime}). Logging out.`);
+            alert(t('maintenance_logout', 'Maintenance time reached ({time}). Logging out.', {time: systemPolicies.forceLogoutTime}));
             logout();
         }
     }
@@ -7913,7 +7923,7 @@ async function fetchActivityLogPage() {
                         <th>#</th><th>Timestamp</th><th>User</th><th>Event</th><th>Resource</th><th>Description</th><th>IP</th>
                     </tr>
                 </thead>
-                <tbody>${rows || '<tr><td colspan="8" style="text-align:center; padding: 20px; color: var(--muted);">No activity recorded yet.</td></tr>'}</tbody>
+                <tbody>${rows || `<tr><td colspan="8" style="text-align:center; padding: 20px; color: var(--muted);">${t('empty_no_activity', 'No activity recorded yet.')}</td></tr>`}</tbody>
             </table>
         </div>
         <div id="activity-log-pagination"></div>
@@ -7943,7 +7953,7 @@ function exportActivityLogSelected() {
     const items = checked.length > 0 ? checked : currentActivityLogItems;
 
     if (items.length === 0) {
-        showAlert('No activity rows to export.', 'error');
+        showAlert(t('no_activity_to_export', 'No activity rows to export.'), 'error');
         return;
     }
 

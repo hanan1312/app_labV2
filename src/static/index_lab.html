@@ -7,7 +7,7 @@
     <title>Helix Lab — Medical Analysis</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=DM+Sans:wght@400;500;600&family=Cairo:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/clockpicker/0.0.7/bootstrap-clockpicker.min.css">
@@ -683,7 +683,7 @@
                     <div class="dashboard-top-cards">
                         <button class="stat-card-btn bg-blue" onclick="showDashboardTable('total')">
                             <div class="details">
-                                <h3>All Patients</h3>
+                                <h3 data-i18n="dashboard.all_patients">All Patients</h3>
                                 <div class="val" id="count-total">0</div>
                             </div>
                             <div class="icon">👥</div>
@@ -691,7 +691,7 @@
 
                         <button class="stat-card-btn bg-cyan" onclick="showDashboardTable('pending')">
                             <div class="details">
-                                <h3>Samples Waiting For Collection</h3>
+                                <h3 data-i18n="dashboard.samples_waiting">Samples Waiting For Collection</h3>
                                 <div class="val" id="count-pending">0</div>
                             </div>
                             <div class="icon">👥</div>
@@ -699,7 +699,7 @@
 
                         <button class="stat-card-btn bg-orange" onclick="showDashboardTable('finished')">
                             <div class="details">
-                                <h3>Collected</h3>
+                                <h3 data-i18n="dashboard.collected_stat">Collected</h3>
                                 <div class="val" id="count-finished">0</div>
                             </div>
                             <div class="icon">📈</div>
@@ -707,28 +707,28 @@
 
                         <button class="stat-card-btn bg-teal" onclick="showDashboardTable('tests')">
                             <div class="details">
-                                <h3>Ordered Tests</h3>
+                                <h3 data-i18n="dashboard.ordered_tests">Ordered Tests</h3>
                                 <div class="val" id="count-tests">0</div>
                             </div>
                             <div class="icon">💸</div>
                         </button>
                     </div>
-                
+
                     <!-- 2. Default View (Shows until a button is clicked) -->
                     <div id="default-dashboard-stats" class="bento" style="margin-top: 24px;">
-                        
+
                         <!-- Latest Clients Table Card -->
                         <div class="card col-6">
                             <div class="card-h">
-                                <h3 style="color: var(--text);">Latest Registered Clients</h3>
+                                <h3 style="color: var(--text);" data-i18n="dashboard.latest_clients">Latest Registered Clients</h3>
                             </div>
                             <div class="table-container" style="background: transparent; border: none; box-shadow: none;">
                                 <table style="width: 100%; font-size: 13px;">
                                     <thead>
                                         <tr>
-                                            <th>ID</th>
-                                            <th>Name</th>
-                                            <th style="text-align: right;">Action</th>
+                                            <th data-i18n="table_headers.id">ID</th>
+                                            <th data-i18n="table_headers.name">Name</th>
+                                            <th style="text-align: right;" data-i18n="table_headers.action">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody id="latest-clients-list">
@@ -741,8 +741,8 @@
                         <!-- Most Demanded Tests Chart Card (Clickable) -->
                         <div class="card col-6" style="cursor: pointer; transition: transform 0.2s;" onclick="showTab('financial-overview')" onmouseover="this.style.borderColor='var(--teal)'" onmouseout="this.style.borderColor='var(--border)'">
                             <div class="card-h">
-                                <h3 style="color: var(--text);">Most Demanded Tests</h3>
-                                <span style="font-size: 11px; color: var(--teal);">Click for Financials ➔</span>
+                                <h3 style="color: var(--text);" data-i18n="dashboard.most_demanded_tests">Most Demanded Tests</h3>
+                                <span style="font-size: 11px; color: var(--teal);" data-i18n="dashboard.click_for_financials">Click for Financials ➔</span>
                             </div>
                             <div style="position: relative; height: 220px; width: 100%;">
                                 <canvas id="dashboardTestDemandChart"></canvas>
@@ -755,43 +755,43 @@
                     <div id="dashboard-controls" style="display: none; gap: 15px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 20px; margin-top: 24px;">
     
                         <button class="btn ghost" onclick="resetDashboardView()" style="height: 38px; border-color: var(--teal); color: var(--teal);">
-                            ⬅ Back
+                            ⬅ <span data-i18n="actions.back">Back</span>
                         </button>
-                    
+
                         <div class="search-box" style="margin: 0; flex: 1; min-width: 200px;">
                             <span class="search-icon">⌕</span>
-                            <input type="text" id="dash-search" placeholder="Search Code, Name, Phone..." onkeyup="onDashboardFilterChange()">
+                            <input type="text" id="dash-search" placeholder="Search Code, Name, Phone..." data-i18n="filters.search_patients" onkeyup="onDashboardFilterChange()">
                         </div>
 
                         <div style="display: flex; gap: 10px;">
                             <div style="width: 130px;">
-                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;">From Date</label>
+                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.from_date">From Date</label>
                                 <input type="date" id="dash-filter-date-from" onchange="onDashboardFilterChange()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
                             </div>
                             <div style="width: 130px;">
-                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;">To Date</label>
+                                <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.to_date">To Date</label>
                                 <input type="date" id="dash-filter-date-to" onchange="onDashboardFilterChange()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
                             </div>
                         </div>
 
                         <div id="status-filter-container" style="width: 140px;">
-                            <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; display: block;">Status</label>
+                            <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.status">Status</label>
                             <select id="dash-filter-status" onchange="onDashboardFilterChange()" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
-                                <option value="">All Statuses</option>
-                                <option value="registered">Registered</option>
-                                <option value="pending">Pending</option>
-                                <option value="collected">Collected</option>
+                                <option value="" data-i18n="filters.all_statuses">All Statuses</option>
+                                <option value="registered" data-i18n="status.registered">Registered</option>
+                                <option value="pending" data-i18n="status.pending">Pending</option>
+                                <option value="collected" data-i18n="status.collected_short">Collected</option>
                             </select>
                         </div>
 
                         <div style="width: 160px;">
-                            <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; display: block;">Physician</label>
-                            <input type="text" id="dash-filter-physician" list="physician-datalist" onkeyup="onDashboardFilterChange()" placeholder="Any" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
+                            <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="table_headers.physician">Physician</label>
+                            <input type="text" id="dash-filter-physician" list="physician-datalist" onkeyup="onDashboardFilterChange()" placeholder="Any" data-i18n="forms.any" style="width: 100%; padding: 8px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;">
                         </div>
 
                         <label style="display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.2); color: var(--text); font-size: 13px; cursor: pointer; white-space: nowrap;">
                             <input type="checkbox" id="dash-filter-unfinished" onchange="onDashboardFilterChange()">
-                            🔴 Unfinished Reports Only
+                            🔴 <span data-i18n="dashboard.unfinished_reports_only">Unfinished Reports Only</span>
                         </label>
                     </div>
 

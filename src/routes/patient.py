@@ -17,11 +17,14 @@ from reportlab.lib.enums import TA_CENTER
 from src.models.patient import Patient
 from src.models.user import db
 from src.utils.validators import validate_patient_data, ValidationError
-from src.models.reservation import Reservation    
+from src.models.reservation import Reservation
+from src.utils.arabic_text import register_arabic_font, paragraph_text
 
 
 # Initialize the Blueprint for patient routes
 patient_bp = Blueprint('patient', __name__)
+
+register_arabic_font()
 
 # === CRUD OPERATIONS ===
 
@@ -186,13 +189,14 @@ def generate_patient_report(patient_id):
         story.append(Spacer(1, 0.15 * inch))
         
         # Patient Basic Information
+        cell_style = ParagraphStyle('PatientReportCell', parent=normal_style, fontSize=10)
         story.append(Paragraph("Patient Information", header_style))
         patient_info_data = [
-            ['Name: ', f"{patient.first_name} {patient.last_name}"],
+            ['Name: ', Paragraph(paragraph_text(f'{patient.first_name} {patient.last_name}'), cell_style)],
             ['Date of Birth: ', patient.date_of_birth.strftime('%B %d, %Y') if patient.date_of_birth else 'N/A'],
             ['Gender: ', patient.gender or 'N/A'],
             ['Blood Type: ', patient.blood_type or 'N/A'],
-            ['Parent/Guardian: ', patient.parent_name or 'N/A'],
+            ['Parent/Guardian: ', Paragraph(paragraph_text(patient.parent_name) or 'N/A', cell_style)],
             ['Phone: ', patient.phone or 'N/A'],
         ]
         patient_info_table = Table(patient_info_data, colWidths=[2*inch, 4*inch])
@@ -212,9 +216,9 @@ def generate_patient_report(patient_id):
         if patient.medical_history or patient.allergies:
             story.append(Paragraph("Medical History", header_style))
             if patient.medical_history:
-                story.append(Paragraph(f"History:  {patient.medical_history}", normal_style))
+                story.append(Paragraph(f"History:  {paragraph_text(patient.medical_history)}", normal_style))
             if patient.allergies:
-                story.append(Paragraph(f"Allergies: {patient.allergies}", normal_style))
+                story.append(Paragraph(f"Allergies: {paragraph_text(patient.allergies)}", normal_style))
             story.append(Spacer(1, 0.15 * inch))
         
 
@@ -273,7 +277,7 @@ def generate_patient_report(patient_id):
         # Doctor Comments
         if patient.doctor_comments:
             story.append(Paragraph("Doctor's Comments", header_style))
-            story.append(Paragraph(patient.doctor_comments, normal_style))
+            story.append(Paragraph(paragraph_text(patient.doctor_comments), normal_style))
             story.append(Spacer(1, 0.15 * inch))
         
         # Vital Signs

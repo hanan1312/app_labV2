@@ -45,6 +45,16 @@ html, body {
     min-height: 100vh;
 }
 
+/* Arabic UI (toggled via the language dropdown, see changeLanguage()/applyTranslations()
+   in script_lab.js) — 'DM Sans'/'Space Grotesk' have no Arabic glyphs, so switch the whole
+   page to a font that actually covers Arabic instead of silently falling back to whatever
+   generic sans-serif the OS happens to ship. */
+body.arabic-layout,
+body.arabic-layout .brand-name,
+body.arabic-layout .logo {
+    font-family: 'Cairo', 'DM Sans', system-ui, sans-serif;
+}
+
 body.app-body {
     background: 
       radial-gradient(900px 600px at 80% -10%, rgba(92,189,185,.15), transparent 60%),

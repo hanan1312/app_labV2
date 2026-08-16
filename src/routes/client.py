@@ -12,8 +12,11 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib import colors
 from io import BytesIO
 from flask import send_file
+from src.utils.arabic_text import register_arabic_font, paragraph_text
 
 client_bp = Blueprint('client_bp', __name__)
+
+register_arabic_font()
 
 # --- CLIENT CRUD ---
 
@@ -295,13 +298,13 @@ def generate_lab_report(client_id):
         
         # Client Information
         client_info = f"""
-        <b>Client Name:</b> {client.first_name} {client.last_name}<br/>
+        <b>Client Name:</b> {paragraph_text(f'{client.first_name} {client.last_name}')}<br/>
         <b>Date of Birth:</b> {client.date_of_birth.isoformat() if client.date_of_birth else 'N/A'}<br/>
         <b>Gender:</b> {client.gender}<br/>
-        <b>Contact Person:</b> {client.contact_person}<br/>
+        <b>Contact Person:</b> {paragraph_text(client.contact_person)}<br/>
         <b>Phone:</b> {client.phone}<br/>
         <b>Blood Type:</b> {client.blood_type or 'N/A'}<br/>
-        <b>Clinical Indications:</b> {client.clinical_indications or 'N/A'}<br/>
+        <b>Clinical Indications:</b> {paragraph_text(client.clinical_indications) or 'N/A'}<br/>
         """
         elements.append(Paragraph(client_info, styles['Normal']))
         elements.append(Spacer(1, 0.2*inch))
@@ -311,15 +314,16 @@ def generate_lab_report(client_id):
             elements.append(Paragraph("<b>Test Results:</b>", styles['Heading2']))
             elements.append(Spacer(1, 0.1*inch))
             
+            cell_style = ParagraphStyle('LabReportCell', parent=styles['Normal'], fontSize=10, alignment=1)
             data = [['Test Name', 'Parameter', 'Result', 'Unit', 'Reference Range', 'Status']]
             for result in test_results:
                 data.append([
-                    result.test_name or '',
-                    result.parameter_name or '',
-                    result.result_value or '',
-                    result.unit or '',
-                    result.reference_range or '',
-                    result.status or ''
+                    Paragraph(paragraph_text(result.test_name), cell_style),
+                    Paragraph(paragraph_text(result.parameter_name), cell_style),
+                    Paragraph(paragraph_text(result.result_value), cell_style),
+                    Paragraph(paragraph_text(result.unit), cell_style),
+                    Paragraph(paragraph_text(result.reference_range), cell_style),
+                    Paragraph(paragraph_text(result.status), cell_style),
                 ])
             
             table = Table(data, colWidths=[1.5*inch, 1*inch, 0.8*inch, 0.6*inch, 1*inch, 0.8*inch])

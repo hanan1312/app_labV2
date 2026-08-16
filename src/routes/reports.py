@@ -4,7 +4,6 @@ import os
 import re
 from datetime import datetime
 from io import BytesIO
-from xml.sax.saxutils import escape as xml_escape
 
 from flask import Blueprint, request, jsonify, current_app, Response
 
@@ -27,10 +26,13 @@ from src.models.test_parameter import TestParameterTemplate
 from src.models.lab_config import LabConfig
 from src.models.junctions import VisitTest, VisitReportPage, add_visit_reports, get_visit_test_names, get_completed_test_names
 from src.utils.timezone import now_cairo
+from src.utils.arabic_text import register_arabic_font, paragraph_text, draw_string_auto
 
 reports_bp = Blueprint('reports_bp', __name__)
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'static')
+
+register_arabic_font()
 
 # --- PARAMETER TEMPLATE CRUD (per LabTest — Settings > Test List > "Parameters") ---
 
@@ -1052,19 +1054,19 @@ def _render_pdf_from_context(ctx, base_url):
                                   f'Reg. No. {config.doctor_reg_no}' if config.doctor_reg_no else None])
     tech_lines = filter(None, [config.tech_name, config.tech_qualification, config.tech_institute])
     avail_w = (PAGE_W - 2 * MARGIN) / 2 - 5
-    doc_p = Paragraph('<br/>'.join(doctor_lines), small)
-    tech_p = Paragraph('<br/>'.join(tech_lines), small)
+    doc_p = Paragraph('<br/>'.join(paragraph_text(line) for line in doctor_lines), small)
+    tech_p = Paragraph('<br/>'.join(paragraph_text(line) for line in tech_lines), small)
     _, doc_h = doc_p.wrap(avail_w, 200)
     _, tech_h = tech_p.wrap(avail_w, 200)
     ROW2_H = max(doc_h, tech_h) + 6
 
-    contact = ' | '.join(filter(None, [config.lab_address, config.lab_phone, config.lab_email]))
+    contact = ' | '.join(paragraph_text(v) for v in [config.lab_address, config.lab_phone, config.lab_email] if v)
     contact_p = Paragraph(contact, small) if contact else None
     contact_h = 0
     if contact_p:
         _, contact_h = contact_p.wrap(PAGE_W - 2 * MARGIN, 40)
         contact_h += 2
-    social = ' | '.join(filter(None, [config.social_facebook, config.social_instagram, config.social_twitter]))
+    social = ' | '.join(paragraph_text(v) for v in [config.social_facebook, config.social_instagram, config.social_twitter] if v)
     social_p = Paragraph(social, small) if social else None
     social_h = 0
     if social_p:
@@ -1076,10 +1078,10 @@ def _render_pdf_from_context(ctx, base_url):
     qr_size = 1.0 * inch
     text_w = box_w - qr_size - 30
     info_lines = [
-        f'<b>Patient:</b> {patient_name}',
+        f'<b>Patient:</b> {paragraph_text(patient_name)}',
         f'<b>Report ID:</b> {visit.visit_id}',
         f"<b>Age/Sex:</b> {ctx['age'] if ctx['age'] is not None else '-'} / {patient.gender if patient else '-'}",
-        f'<b>Physician:</b> {visit.referred_by or "Self"}',
+        f'<b>Physician:</b> {paragraph_text(visit.referred_by) if visit.referred_by else "Self"}',
         f'<b>Collection Date:</b> {visit.date}',
         f"<b>Report Date:</b> {ctx['report_date'].strftime('%Y-%m-%d %H:%M')}",
     ]
@@ -1127,13 +1129,11 @@ def _render_pdf_from_context(ctx, base_url):
             reader, _iw, _ih = logo
             canvas_obj.drawImage(reader, MARGIN, y - LOGO_H, width=logo_w, height=LOGO_H, mask='auto')
 
-        canvas_obj.setFont('Helvetica-Bold', 15)
         canvas_obj.setFillColor(colors.HexColor('#2d3748'))
-        canvas_obj.drawString(text_x, y - 14, config.lab_name or 'Laboratory')
+        draw_string_auto(canvas_obj, text_x, y - 14, config.lab_name or 'Laboratory', 'Helvetica-Bold', 15)
         if config.lab_subtitle:
-            canvas_obj.setFont('Helvetica', 9)
             canvas_obj.setFillColor(colors.HexColor('#667eea'))
-            canvas_obj.drawString(text_x, y - 28, config.lab_subtitle)
+            draw_string_auto(canvas_obj, text_x, y - 28, config.lab_subtitle, 'Helvetica', 9)
 
         barcode = createBarcodeDrawing('Code128', value=visit.visit_id, humanReadable=True, barHeight=12)
         renderPDF.draw(barcode, canvas_obj, PAGE_W - MARGIN - barcode.width, y - barcode.height)
@@ -1172,11 +1172,10 @@ def _render_pdf_from_context(ctx, base_url):
             sig_scale = min(SIG_BOX_W / iw, SIG_BOX_H / ih)
             sig_draw_w, sig_draw_h = iw * sig_scale, ih * sig_scale
             canvas_obj.drawImage(reader, MARGIN, SIG_Y, width=sig_draw_w, height=sig_draw_h, mask='auto')
-            canvas_obj.setFont('Helvetica', 7)
             canvas_obj.setFillColor(colors.black)
-            canvas_obj.drawString(MARGIN, SIG_Y - 9,
-                                   config.signature_title or config.tech_name or config.lab_director
-                                   or 'Authorized Signatory')
+            draw_string_auto(canvas_obj, MARGIN, SIG_Y - 9,
+                              config.signature_title or config.tech_name or config.lab_director
+                              or 'Authorized Signatory', 'Helvetica', 7)
 
         canvas_obj.restoreState()
 
@@ -1194,11 +1193,11 @@ def _render_pdf_from_context(ctx, base_url):
         if page_index > 0:
             elements.append(PageBreak())
         if page['title']:
-            elements.append(Paragraph(xml_escape(page['title']), page_title_style))
+            elements.append(Paragraph(paragraph_text(page['title']), page_title_style))
         if page['subtitle']:
-            elements.append(Paragraph(xml_escape(page['subtitle']), page_sub_style))
+            elements.append(Paragraph(paragraph_text(page['subtitle']), page_sub_style))
         for test in page['tests']:
-            elements.append(Paragraph(test['name'].upper(), test_title_style))
+            elements.append(Paragraph(paragraph_text(test['name'].upper()), test_title_style))
             table_data = [['Investigation', 'Result', 'Ref. Range', 'Unit']]
             style_commands = [
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#667eea')),
@@ -1210,19 +1209,24 @@ def _render_pdf_from_context(ctx, base_url):
             for row in test['rows']:
                 # High/Low marker (Unit 6) — red "H" / blue "L" next to the value, gender-range-aware.
                 if row['hl'] == 'high':
-                    result_cell = Paragraph(f"{row['result_value'] or '-'} <font color='#c0392b'><b>H</b></font>", cell_style)
+                    result_cell = Paragraph(f"{paragraph_text(row['result_value']) or '-'} <font color='#c0392b'><b>H</b></font>", cell_style)
                 elif row['hl'] == 'low':
-                    result_cell = Paragraph(f"{row['result_value'] or '-'} <font color='#1d4ed8'><b>L</b></font>", cell_style)
+                    result_cell = Paragraph(f"{paragraph_text(row['result_value']) or '-'} <font color='#1d4ed8'><b>L</b></font>", cell_style)
                 else:
-                    result_cell = row['result_value'] or '-'
-                table_data.append([row['name'], result_cell, row['reference_range'] or '-', row['unit'] or '-'])
+                    result_cell = Paragraph(paragraph_text(row['result_value']) or '-', cell_style)
+                table_data.append([
+                    Paragraph(paragraph_text(row['name']), cell_style),
+                    result_cell,
+                    Paragraph(paragraph_text(row['reference_range']) or '-', cell_style),
+                    Paragraph(paragraph_text(row['unit']) or '-', cell_style),
+                ])
             t = Table(table_data, colWidths=[2.6 * inch, 1.5 * inch, 1.5 * inch, 1.2 * inch])
             t.setStyle(TableStyle(style_commands))
             elements.append(t)
             elements.append(Spacer(1, 10))
 
         if page['comments']:
-            lines = [f"<b>{xml_escape(c['test_name'])}:</b> {xml_escape(c['comment'])}" for c in page['comments']]
+            lines = [f"<b>{paragraph_text(c['test_name'])}:</b> {paragraph_text(c['comment'])}" for c in page['comments']]
             comments_table = Table([[Paragraph(
                 '<b>Comments:</b><br/>' + '<br/>'.join(lines), styles['Normal'])]],
                 colWidths=[6.9 * inch])
@@ -1235,7 +1239,7 @@ def _render_pdf_from_context(ctx, base_url):
 
     # --- Interpretation (global — spans every page's abnormal notes) ---
     if ctx['interpretations']:
-        lines = [f"<b>{xml_escape(i['parameter'])}:</b> {xml_escape(i['note'])}" for i in ctx['interpretations']]
+        lines = [f"<b>{paragraph_text(i['parameter'])}:</b> {paragraph_text(i['note'])}" for i in ctx['interpretations']]
         interp_table = Table([[Paragraph(
             '<b>Interpretation:</b><br/>' + '<br/>'.join(lines), styles['Normal'])]],
             colWidths=[6.9 * inch])
@@ -1247,7 +1251,7 @@ def _render_pdf_from_context(ctx, base_url):
         elements.append(Spacer(1, 15))
 
     footer = config.report_footer_note or 'This report is not valid for medical legal purposes.'
-    elements.append(Paragraph(footer, small))
+    elements.append(Paragraph(paragraph_text(footer), small))
 
     doc.build(elements, onFirstPage=_page_decorations, onLaterPages=_page_decorations)
     buffer.seek(0)

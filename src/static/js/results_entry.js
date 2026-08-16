@@ -1,3 +1,19 @@
+// Delegates to the opener window's t() (script_lab.js) so alerts here honor whatever
+// language the main app tab is set to; falls back to the English `fallback` text if this
+// page was opened standalone (no opener) or the opener hasn't loaded translations yet.
+function t(key, fallback, vars) {
+    if (window.opener && typeof window.opener.t === 'function') {
+        return window.opener.t(key, fallback, vars);
+    }
+    let template = fallback;
+    if (vars) {
+        Object.keys(vars).forEach(k => {
+            template = template.split(`{${k}}`).join(vars[k]);
+        });
+    }
+    return template;
+}
+
 // Standalone page (opened in a new window from the pending-samples "Enter Results" action).
 // Deliberately not part of script_lab.js's SPA — no shared state needed beyond the visit id.
 
@@ -392,7 +408,7 @@ async function saveResults() {
         });
         const body = await response.json();
         if (!response.ok || !body.success) {
-            alert('Failed to save results: ' + (body.error || 'unknown error'));
+            alert(t('re_save_failed', 'Failed to save results: {msg}', {msg: body.error || t('hr_unknown_error', 'unknown error')}));
             return;
         }
 
@@ -422,7 +438,7 @@ async function saveResults() {
 
         showSuccess(body, messagingResult);
     } catch (error) {
-        alert('Error saving results: ' + error.message);
+        alert(t('re_save_error', 'Error saving results: {msg}', {msg: error.message}));
     }
 }
 
@@ -438,7 +454,7 @@ async function sendCompletionMessage(messaging, reportUrl) {
     let cleanUrl = encodeURI(reportUrl.trim());
     if (!cleanUrl.startsWith('/')) cleanUrl = '/' + cleanUrl;
 
-    const message = `Hello ${messaging.patient_name || 'Patient'},\n\nYour results are ready:\n\n📄 Report: ${liveServer}${cleanUrl}\n\nHistory: ${liveServer}/patient-history/${messaging.patient_id}`;
+    const message = `مرحباً ${messaging.patient_name || 'عميلنا العزيز'}،\n\nنتائج التحاليل الخاصة بك جاهزة الآن:\n\n📄 التقرير: ${liveServer}${cleanUrl}\n\nلعرض السجل الطبي الكامل: ${liveServer}/patient-history/${messaging.patient_id}`;
 
     const payload = { centerId: 'lab', phone: messaging.phone, message };
     if (messaging.method !== 'sms') {
@@ -510,7 +526,7 @@ let layoutState = { pageOf: {}, pages: {} }; // pageOf: {lab_test_id: pageNumber
 
 async function openLayoutEditor() {
     if (!schema || !schema.tests.length) {
-        alert('No tests booked for this visit yet.');
+        alert(t('re_no_tests_booked', 'No tests booked for this visit yet.'));
         return;
     }
     try {
@@ -607,7 +623,7 @@ async function saveLayout() {
         closeLayoutEditor();
         previewReport(); // "after organise another preview" — reflect the new layout immediately
     } catch (error) {
-        alert('Error saving report layout: ' + error.message);
+        alert(t('re_layout_save_error', 'Error saving report layout: {msg}', {msg: error.message}));
     }
 }
 
@@ -617,7 +633,7 @@ async function resetLayout() {
         layoutState = { pageOf: {}, pages: {} };
         renderLayoutEditor();
     } catch (error) {
-        alert('Error resetting report layout: ' + error.message);
+        alert(t('re_layout_reset_error', 'Error resetting report layout: {msg}', {msg: error.message}));
     }
 }
 
