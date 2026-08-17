@@ -57,10 +57,29 @@ def compute_expected_hours(employee_id, date_from, date_to, config):
     return total
 
 
+def _open_session_live_seconds(employee_id, window_start, window_end):
+    """Live (in-progress) seconds contributed by a still-open session, clipped to "now" and
+    to [window_start, window_end]. Only ever nonzero when "now" actually falls inside the
+    window — i.e. only for today — so an employee currently clocked in sees worked hours/
+    percentage move in real time today, without a stale multi-day-open session (forgot to
+    clock out) inflating any *past* day: "now" naturally bounds today's contribution, and
+    past days never contain "now" so they're untouched, same as before this was added."""
+    now = now_cairo()
+    if not (window_start <= now <= window_end):
+        return 0.0
+    open_session = AttendanceSession.query.filter_by(employee_id=employee_id, clock_out=None).first()
+    if not open_session:
+        return 0.0
+    clipped_start = max(open_session.clock_in, window_start)
+    clipped_end = min(now, window_end)
+    return max((clipped_end - clipped_start).total_seconds(), 0)
+
+
 def compute_worked_hours(employee_id, date_from, date_to):
-    """Sums CLOSED sessions only (clock_out IS NOT NULL) overlapping the range, clipped to
-    the range boundaries. An open (never clocked-out) session contributes nothing — it must
-    not be able to inflate the percentage no matter how long it's been left open."""
+    """Sums CLOSED sessions (clock_out IS NOT NULL) overlapping the range, clipped to the
+    range boundaries, plus whatever a still-open session has accrued so far today (see
+    _open_session_live_seconds) — so checking an employee in moves this number immediately
+    instead of it staying stuck at 0 until they clock back out."""
     range_start = datetime.combine(date_from, time.min)
     range_end = datetime.combine(date_to, time.max)
     sessions = AttendanceSession.query.filter(
@@ -75,6 +94,7 @@ def compute_worked_hours(employee_id, date_from, date_to):
         clipped_start = max(s.clock_in, range_start)
         clipped_end = min(s.clock_out, range_end)
         total_seconds += max((clipped_end - clipped_start).total_seconds(), 0)
+    total_seconds += _open_session_live_seconds(employee_id, range_start, range_end)
     return total_seconds / 3600.0
 
 
@@ -151,6 +171,7 @@ def compute_daily_trend(employee_id, date_from, date_to):
                 clipped_start = max(s.clock_in, day_start)
                 clipped_end = min(s.clock_out, day_end)
                 worked += max((clipped_end - clipped_start).total_seconds(), 0) / 3600.0
+        worked += _open_session_live_seconds(employee_id, day_start, day_end) / 3600.0
 
         credited = credited_by_date.get(d, 0.0)
         if d > today or d.weekday() in days_off or d in holidays or d in vacation_dates:
