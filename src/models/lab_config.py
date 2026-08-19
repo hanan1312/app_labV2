@@ -37,6 +37,9 @@ class LabConfig(db.Model):
     # pages (see _page_decorations() in src/routes/reports.py) — independent of cover_path
     # itself, which stays in use as the web app's own page background either way.
     show_report_background = db.Column(db.Boolean, default=True)
+    # Whether logo_path is drawn in the report header — independent of logo_path itself,
+    # which stays in use in the sidebar either way.
+    show_logo_on_report = db.Column(db.Boolean, default=True)
 
     # Scheduled access policy. Both existed as raw ALTER TABLE columns (src/main.py) without
     # ever being declared here — save_lab_settings() setting config.force_logout_time was
@@ -118,6 +121,7 @@ class LabConfig(db.Model):
             'signature_path': self.signature_path,
             'signature_title': self.signature_title,
             'show_report_background': self.show_report_background,
+            'show_logo_on_report': self.show_logo_on_report,
             'force_logout_time': self.force_logout_time,
             'idle_logout_timeout': self.idle_logout_timeout,
             'login_resume_time': self.login_resume_time,

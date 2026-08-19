@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify
 from sqlalchemy import or_
 from src.models.client import Client
 from src.models.test_result import TestResult
-from src.models.user import db
+from src.models.user import db, PatientVisit
 from src.utils.validators import validate_client_data
 from datetime import datetime
 from reportlab.lib.pagesizes import letter
@@ -212,9 +212,17 @@ def delete_client(client_id):
         if not client:
             return jsonify({'error': 'Client not found'}), 404
         
-        # Delete associated test results
+        # Delete associated test results not tied to a visit (visit-linked ones cascade
+        # below via PatientVisit's own ON DELETE CASCADE — see junctions.py/test_result.py).
         TestResult.query.filter_by(client_id=client_id).delete()
-        
+
+        # PatientVisit.patient_id has no ON DELETE CASCADE of its own, so a client with any
+        # booked visit would otherwise fail this delete with a foreign-key constraint error
+        # (caught below as a 500, but the client — and everything blocking it — stays put).
+        # Each visit's own children (VisitTest/VisitReport/TestResult.visit_id) DO cascade
+        # from the visit delete itself, so deleting the visits here is enough.
+        PatientVisit.query.filter_by(patient_id=client_id).delete()
+
         db.session.delete(client)
         db.session.commit()
         

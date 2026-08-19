@@ -538,6 +538,7 @@ def get_results_view(visit_id):
         has_any_result = any(p['status'] != 'pending' for p in params_payload)
         tests_payload.append({
             'test_name': test.name,
+            'sample_type': test.sample_type,
             'status': 'delivered' if has_any_result else 'pending',
             'parameters': params_payload,
         })
@@ -1044,7 +1045,7 @@ def _render_pdf_from_context(ctx, base_url):
     # computed here are reused for both the topMargin calculation below and the actual
     # per-page drawing in _page_decorations, instead of measuring it twice with two
     # independently-maintained copies of the same logic). ---
-    logo = _load_image_reader(config.logo_path)
+    logo = _load_image_reader(config.logo_path) if config.show_logo_on_report else None
     LOGO_H = 0.55 * inch
     logo_w = (LOGO_H * logo[1] / logo[2]) if logo else 0
     text_x = MARGIN + (logo_w + 10 if logo else 0)

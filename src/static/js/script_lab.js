@@ -2060,7 +2060,8 @@ function showTab(tabName) {
         case 'client-history': loadClientHistory(); break;
         case 'reports': loadReports(); break;
         case 'test-list': loadTestList(); break;
-        case 'transaction-history': filterTransactions(); break;
+        case 'price-check': renderPriceCheckTests(); break;
+        case 'transaction-history': filterTransactions(); fetchTransactionsSummary(); break;
         case 'financial-overview': calculateFinancials(); break;
         case 'warehouse': fetchWarehouseData(); break;
         case 'hr-management': fetchHRData(); break;
@@ -2296,6 +2297,7 @@ async function fetchDashboardVisitsPage(type, searchTerm, filterFrom, filterTo, 
         (data.page - 1) * (data.per_page || 100)
     );
     renderPaginationControls('dashboard-table-pagination', data, 'goToDashboardPage');
+    applyTranslations(currentLang);
 }
 
 function renderDashboardTable() {
@@ -2388,6 +2390,7 @@ function renderDashboardTable() {
         renderPaginationControls('dashboard-table-pagination', {
             page: dashboardTablePage, per_page: perPage, total_pages: totalPages, total: totalCount,
         }, 'goToDashboardPage');
+        applyTranslations(currentLang);
         return;
     }
     else if (type === 'tests') {
@@ -2426,8 +2429,9 @@ function renderDashboardTable() {
 
         html = buildAdminTableHTML(title, [t('th_hash','#'), t('th_test_name','Test Name'), t('th_pending_samples','Pending Samples'), t('th_collected_samples','Collected Samples'), t('th_total_demanded','Total Demanded')], testDataArray, type);
     }
-    
+
     container.innerHTML = html;
+    applyTranslations(currentLang);
 }
 
 // Notice the critical 'fileIndex = 0' parameter!
@@ -2502,11 +2506,16 @@ function printPDFReport(visitId, fileIndex = 0) {
 }
 
 function buildAdminTableHTML(title, headers, data, type, clickable = false, paginationContainerId = null, startIndex = 0) {
-    let thead = headers.map(h => `<th>${h}</th>`).join('');
+    // Aggregate rows (type 'tests' — one row per test name, not per visit) have nothing
+    // to individually delete; every other row is a real visit/order, selectable for bulk
+    // delete via DELETE /api/visits/<id> (see handleBulkDeleteVisits()).
+    const selectable = type !== 'tests';
+    let thead = (selectable ? `<th style="width: 32px;"><input type="checkbox" onclick="toggleAllVisitCheckboxes(this)"></th>` : '')
+        + headers.map(h => `<th>${h}</th>`).join('');
     let tbody = "";
-    
+
     if (data.length === 0) {
-        tbody = `<tr><td colspan="${headers.length}" style="text-align:center; padding: 20px; color: var(--muted);">${t('no_entries_match_filters', 'No entries match your filters.')}</td></tr>`;
+        tbody = `<tr><td colspan="${headers.length + (selectable ? 1 : 0)}" style="text-align:center; padding: 20px; color: var(--muted);">${t('no_entries_match_filters', 'No entries match your filters.')}</td></tr>`;
     } else {
         data.forEach((row, index) => {
             console.log("Row Data:", row);
@@ -2620,6 +2629,7 @@ function buildAdminTableHTML(title, headers, data, type, clickable = false, pagi
 
                 tbody += `
                     <tr ${rowAttrs}>
+                        <td class="no-row-click">${row.id ? `<input type="checkbox" class="visit-checkbox" data-id="${row.id}" onchange="updateBulkDeleteVisitsButton()">` : ''}</td>
                         <td>${startIndex + index + 1}</td>
                         <td style="color: var(--muted);">${formatCairoDateTime(row.date, false)}</td>
                         <td><strong>${row.visit_id}</strong></td>
@@ -2640,9 +2650,9 @@ function buildAdminTableHTML(title, headers, data, type, clickable = false, pagi
     return `
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
             <h3 style="margin: 0; color: var(--text);">${title}</h3>
-            
-            <button class="btn ghost" style="border-color: var(--ok); color: var(--ok); padding: 6px 12px; font-size: 12px; display: flex; align-items: center; gap: 6px;" 
-                onclick="exportTableToCSV(this, '${safeFilename}_report')">
+            ${selectable ? `<button class="btn btn-danger bulk-delete-visits-btn" style="display: none; padding: 6px 12px; font-size: 12px; margin-left: auto; margin-right: 8px;" onclick="handleBulkDeleteVisits()">🗑️ <span data-i18n="actions.delete_selected">Delete Selected</span></button>` : ''}
+            <button class="btn ghost" style="border-color: var(--ok); color: var(--ok); padding: 6px 12px; font-size: 12px; display: flex; align-items: center; gap: 6px;"
+                onclick="exportTableToExcel(this, '${safeFilename}_report')">
                 📥 <span data-i18n="actions.export_excel">Export to Excel</span>
             </button>
         </div>
@@ -2654,6 +2664,61 @@ function buildAdminTableHTML(title, headers, data, type, clickable = false, pagi
         </div>
         ${paginationContainerId ? `<div id="${paginationContainerId}"></div>` : ''}
     `;
+}
+
+// Shared by every buildAdminTableHTML() consumer (Dashboard drill-downs, Tech Screen,
+// Pending Samples) — global .visit-checkbox lookups rather than scoping to one container,
+// since only one of these tables is ever visible at a time (same convention already used
+// for .client-checkbox/.test-checkbox/.warehouse-checkbox elsewhere in this file). Multiple
+// "Delete Selected" buttons can exist in the DOM at once (one per rendered instance) even
+// though only one is visible — updated by class, not id, to avoid duplicate-id collisions.
+function toggleAllVisitCheckboxes(masterCheckbox) {
+    document.querySelectorAll('.visit-checkbox').forEach(cb => { cb.checked = masterCheckbox.checked; });
+    updateBulkDeleteVisitsButton();
+}
+
+function updateBulkDeleteVisitsButton() {
+    const anyChecked = document.querySelectorAll('.visit-checkbox:checked').length > 0;
+    document.querySelectorAll('.bulk-delete-visits-btn').forEach(btn => {
+        btn.style.display = anyChecked ? 'inline-block' : 'none';
+    });
+}
+
+async function handleBulkDeleteVisits() {
+    const ids = Array.from(document.querySelectorAll('.visit-checkbox:checked')).map(cb => cb.dataset.id);
+    if (ids.length === 0) return;
+    if (!confirm(t('confirm_delete_visits', 'Delete {count} order(s)/visit(s)? This cannot be undone. Any payment already recorded for them is not affected.', {count: ids.length}))) return;
+
+    let succeeded = 0;
+    const failures = [];
+    for (const id of ids) {
+        try {
+            const response = await apiFetch(`/api/visits/${id}`, { method: 'DELETE' });
+            if (response.ok) {
+                succeeded++;
+            } else {
+                const body = await response.json().catch(() => ({}));
+                failures.push(`#${id}: ${body.error || response.status}`);
+            }
+        } catch (error) {
+            failures.push(`#${id}: ${error.message}`);
+        }
+    }
+
+    if (failures.length === 0) {
+        showAlert(t('visits_deleted', 'Deleted {count} order(s)/visit(s).', {count: succeeded}), 'success');
+    } else if (succeeded === 0) {
+        showAlert(t('visits_delete_error', 'Error deleting orders/visits: {msg}', {msg: failures.join('; ')}), 'error');
+    } else {
+        showAlert(t('visits_delete_partial', 'Deleted {ok}; {failed} failed: {msg}', {ok: succeeded, failed: failures.length, msg: failures.join('; ')}), 'warn');
+    }
+
+    // Whichever screen is active re-renders its own table with fresh data — matches
+    // each caller's own existing refresh-after-action pattern.
+    await loadInitialData();
+    if (currentDashboardTableType) renderDashboardTable();
+    if (document.getElementById('tech-screen')?.classList.contains('active') && currentTechTableType) renderTechTable();
+    if (document.getElementById('pending-samples')?.classList.contains('active')) fetchPendingSamplesPage();
 }
 
 // --- CLIENT MANAGEMENT ---
@@ -2963,12 +3028,13 @@ function renderTechTable() {
     // 5. Use your existing table builder to draw the UI inside the Tech Screen!
     container.innerHTML = buildAdminTableHTML(
         title,
-        [t('th_hash','#'), t('th_date_created','Date Created'), t('th_trans_id','Trans ID'), t('th_patient','Patient'), t('th_phone','Phone'), t('th_tests','Tests'), t('th_status','Status'), t('th_action','Action')],
+        [t('th_hash','#'), t('th_date_created','Date Created'), t('th_trans_id','Trans ID'), t('th_patient','Patient'), t('th_phone','Phone'), t('th_physician','Physician'), t('th_tests','Tests'), t('th_status','Status'), t('th_action','Action')],
         pageData, type, false, 'tech-table-pagination', startIndex
     );
     renderPaginationControls('tech-table-pagination', {
         page: techTablePage, per_page: perPage, total_pages: totalPages, total: totalCount,
     }, 'goToTechTablePage');
+    applyTranslations(currentLang);
 }
 
 async function markSampleCollected(visitId) {
@@ -3079,16 +3145,35 @@ async function handleBulkDelete() {
     
     if (!confirm(t('confirm_delete_clients', 'Delete {count} client(s)? This cannot be undone.', {count: ids.length}))) return;
     
-    try {
-        for (const id of ids) {
-            await apiFetch(`/api/clients/${id}`, { method: 'DELETE' });
+    // Each DELETE is checked individually — apiFetch() never throws for a non-2xx response
+    // (only for an actual network failure), so blindly awaiting it without checking .ok
+    // is exactly how this used to report "deleted successfully" while a client that still
+    // had booked visits silently failed server-side (FK constraint) and stayed put.
+    let succeeded = 0;
+    const failures = [];
+    for (const id of ids) {
+        try {
+            const response = await apiFetch(`/api/clients/${id}`, { method: 'DELETE' });
+            if (response.ok) {
+                succeeded++;
+            } else {
+                const body = await response.json().catch(() => ({}));
+                failures.push(`#${id}: ${body.error || response.status}`);
+            }
+        } catch (error) {
+            failures.push(`#${id}: ${error.message}`);
         }
-        showAlert(t('clients_deleted', 'Clients deleted successfully!'), 'success');
-        await loadInitialData();
-        displayClients(clients);
-    } catch (error) {
-        showAlert(t('clients_delete_error', 'Error deleting clients: {msg}', {msg: error.message}), 'error');
     }
+
+    if (failures.length === 0) {
+        showAlert(t('clients_deleted', 'Clients deleted successfully!'), 'success');
+    } else if (succeeded === 0) {
+        showAlert(t('clients_delete_error', 'Error deleting clients: {msg}', {msg: failures.join('; ')}), 'error');
+    } else {
+        showAlert(t('clients_delete_partial', 'Deleted {ok} client(s); {failed} failed: {msg}', {ok: succeeded, failed: failures.length, msg: failures.join('; ')}), 'warn');
+    }
+    await loadInitialData();
+    displayClients(clients);
 }
 
 async function logout(isPolicyTriggered = false) {
@@ -3180,7 +3265,7 @@ async function fetchPendingSamplesPage() {
     const listDiv = document.getElementById('pending-samples-list');
     listDiv.innerHTML = buildAdminTableHTML(
         t('title_pending_appointments', 'List of Pending Appointments'),
-        [t('th_hash','#'), t('th_date_created','Date Created'), t('th_code','Code'), t('th_patient','Patient'), t('th_phone','Phone'), t('th_test','Test'), t('th_status','Status'), t('th_action','Action')],
+        [t('th_hash','#'), t('th_date_created','Date Created'), t('th_code','Code'), t('th_patient','Patient'), t('th_phone','Phone'), t('th_physician','Physician'), t('th_test','Test'), t('th_status','Status'), t('th_action','Action')],
         data.items || [],
         'pending', // This tells the builder to use the "Collect Sample" buttons
         false,
@@ -3188,6 +3273,7 @@ async function fetchPendingSamplesPage() {
         (data.page - 1) * (data.per_page || 100)
     );
     renderPaginationControls('pending-samples-pagination', data, 'goToPendingSamplesPage');
+    applyTranslations(currentLang);
 }
 
 // Track checkbox changes to show/hide the bulk button
@@ -3712,6 +3798,7 @@ function renderVisitResultsModal(data) {
                     <span>🧪 ${test.test_name}</span>
                     <span style="display: flex; align-items: center; gap: 10px;">
                         <span class="pill ${isDelivered ? 'ok' : 'danger'}">${isDelivered ? t('status_delivered', 'Delivered') : t('status_pending_badge', 'Pending')}</span>
+                        <button class="btn ghost" style="padding: 4px 10px; font-size: 11px;" onclick="event.stopPropagation(); printTestBarcode('${data.visit_code}', '${(data.patient_name || '').replace(/'/g, "\\'")}', '${(test.sample_type || '').replace(/'/g, "\\'")}')">🏷️ ${t('btn_print_barcode', 'Print Barcode')}</button>
                         <span style="color: var(--muted);">▾</span>
                     </span>
                 </div>
@@ -3898,7 +3985,7 @@ function renderStatisticsTable(rows) {
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
             <h3 style="margin: 0; color: var(--text);" data-i18n="stats.title">Test Results Statistics</h3>
             <button class="btn ghost" style="border-color: var(--ok); color: var(--ok); padding: 6px 12px; font-size: 12px; display: flex; align-items: center; gap: 6px;"
-                onclick="exportTableToCSV(this, 'statistics_report')">
+                onclick="exportTableToExcel(this, 'statistics_report')">
                 📥 <span data-i18n="actions.export_excel">Export to Excel</span>
             </button>
         </div>
@@ -4806,6 +4893,69 @@ document.querySelector('.nav-tab[data-tab="test-list"]').addEventListener('click
     loadTestList();
 });
 
+// --- "Check Tests Total Price" — a standalone price quote, no patient/booking/payment
+// involved at all (fully anonymous by design). Selections are kept in this object rather
+// than read back from the checkboxes themselves, so ticking a test, then searching for
+// something else (hiding it from the DOM), then clearing the search doesn't silently drop
+// it from the total — the object is the single source of truth; the checkboxes just
+// reflect it. Deliberately its own `.price-check-checkbox` class, distinct from the
+// booking modal's `.test-checkbox` (used elsewhere for the Tests List's own bulk-delete
+// selection too) so none of these three checkbox groups can ever cross-count each other.
+let priceCheckSelectedTests = {}; // test name -> price
+
+function renderPriceCheckTests() {
+    const container = document.getElementById('price-check-test-list');
+    if (!container) return;
+
+    const searchTerm = (document.getElementById('price-check-search')?.value || '').toLowerCase();
+    const filtered = (availableTests || []).filter(test =>
+        test.name.toLowerCase().includes(searchTerm) ||
+        (test.sample_type || '').toLowerCase().includes(searchTerm)
+    );
+
+    if (filtered.length === 0) {
+        container.innerHTML = `<p style="color: var(--muted); text-align: center; padding: 20px;">${t('empty_no_tests_available', 'No tests available. Click "Add New Test" to begin.')}</p>`;
+    } else {
+        container.innerHTML = filtered.map(test => `
+            <label style="display: flex; align-items: center; cursor: pointer; color: var(--text); padding: 8px; border-radius: 4px;">
+                <input type="checkbox" class="price-check-checkbox" value="${test.name}"
+                       ${Object.prototype.hasOwnProperty.call(priceCheckSelectedTests, test.name) ? 'checked' : ''}
+                       onchange="togglePriceCheckTest('${test.name.replace(/'/g, "\\'")}', ${test.price}, this.checked)"
+                       style="margin-right: 10px; width: auto;">
+                <span style="flex: 1;">${test.name} <span style="font-size: 11px; color: var(--muted);">(${test.sample_type || 'Unspecified'})</span></span>
+                <span style="color: var(--ok); font-size: 12px;">${parseFloat(test.price).toFixed(2)} EGP</span>
+            </label>
+        `).join('');
+    }
+    updatePriceCheckTotal();
+    applyTranslations(currentLang);
+}
+
+function togglePriceCheckTest(testName, price, isChecked) {
+    if (isChecked) {
+        priceCheckSelectedTests[testName] = price;
+    } else {
+        delete priceCheckSelectedTests[testName];
+    }
+    updatePriceCheckTotal();
+}
+
+function updatePriceCheckTotal() {
+    const names = Object.keys(priceCheckSelectedTests);
+    const total = names.reduce((sum, name) => sum + (parseFloat(priceCheckSelectedTests[name]) || 0), 0);
+    const countEl = document.getElementById('price-check-count');
+    const totalEl = document.getElementById('price-check-total');
+    if (countEl) countEl.textContent = names.length;
+    if (totalEl) totalEl.textContent = `${total.toFixed(2)} EGP`;
+}
+
+function clearPriceCheckSelection() {
+    priceCheckSelectedTests = {};
+    const searchInput = document.getElementById('price-check-search');
+    if (searchInput) searchInput.value = '';
+    renderPriceCheckTests();
+}
+
 function closeBookTestModal() {
     document.getElementById('book-test-modal').style.display = 'none';
     currentBookingClientId = null;
@@ -5026,19 +5176,92 @@ function generateBarcodeImage(text) {
     return canvas.toDataURL('image/png');
 }
 
+// One barcode value per (visit, sample type) — deterministic (not random) so printing it
+// again later, e.g. via the "Print Barcode" button on a test's card in the visit-results
+// modal, reproduces the exact same code that was on the tube's original sticker instead of
+// a fresh unrelated one. Tests sharing a sample type share one tube/one code, matching
+// groupTestsBySampleType() below. visitCode is stable (PatientVisit.visit_id, same string
+// used as pendingTransaction.transaction_id at checkout — see confirmBooking()).
+function sampleBarcodeValue(visitCode, sampleType) {
+    const slug = (sampleType || 'SAMPLE').toString().toUpperCase().replace(/[^A-Z0-9]+/g, '').slice(0, 6) || 'SAMPLE';
+    return `${visitCode}-${slug}`;
+}
+
 // Helper: Groups tests that share the same Sample Type
 function groupTestsBySampleType() {
     const groups = {};
     pendingTransaction.tests.forEach((testName, i) => {
         const sType = pendingTransaction.sampleTypes[i] || 'Unspecified';
         if (!groups[sType]) {
-            // Generate a random 7-digit barcode ID for this specific tube/sample
-            const barcodeNum = Math.floor(1000000 + Math.random() * 9000000).toString();
-            groups[sType] = { barcode: barcodeNum, tests: [] };
+            groups[sType] = { barcode: sampleBarcodeValue(pendingTransaction.transaction_id, sType), tests: [] };
         }
         groups[sType].tests.push(testName);
     });
     return groups;
+}
+
+// Measures how wide `text` actually renders at `fontSizePx`, in mm — used to size a
+// barcode sticker snugly around its own content instead of guessing a fixed label size.
+function _measureTextWidthMm(text, fontSizePx, bold) {
+    const span = document.createElement('span');
+    span.style.position = 'absolute';
+    span.style.visibility = 'hidden';
+    span.style.whiteSpace = 'nowrap';
+    span.style.fontFamily = 'Arial, sans-serif';
+    span.style.fontSize = `${fontSizePx}px`;
+    if (bold) span.style.fontWeight = 'bold';
+    span.textContent = text || '';
+    document.body.appendChild(span);
+    const widthPx = span.getBoundingClientRect().width;
+    document.body.removeChild(span);
+    return widthPx / 3.7795275591; // 96 CSS px/inch ÷ 25.4mm/inch
+}
+
+// Opens a print window sized to fit a small roll-fed barcode sticker (a real physical
+// label, unlike a full A4/Letter sheet) — each sticker's page is sized around its own
+// barcode/caption content rather than a fixed guess, per `stickers`: [{ caption,
+// barcodeValue }]. Every sticker in one call shares the same page size (the widest one
+// needed in the batch), so a whole multi-tube order still prints as one continuous job.
+function printBarcodeStickers(stickers) {
+    const BAR_HEIGHT_MM = 6.5;   // physical height of the barcode bars themselves
+    const LINE_HEIGHT_MM = 3;    // the one caption line under the barcode
+    const PAD_MM = 1;
+    const MIN_WIDTH_MM = 18;
+    const MAX_WIDTH_MM = 42;
+
+    let widestMm = MIN_WIDTH_MM;
+    const rendered = stickers.map(s => {
+        const canvas = document.createElement('canvas');
+        JsBarcode(canvas, s.barcodeValue, { format: 'CODE128', width: 1, height: 60, displayValue: false, margin: 0 });
+        const barcodeWidthMm = BAR_HEIGHT_MM * (canvas.width / canvas.height);
+        const captionWidthMm = s.caption ? _measureTextWidthMm(s.caption, 9, false) : 0;
+        const neededMm = Math.max(barcodeWidthMm, captionWidthMm) + PAD_MM * 2;
+        widestMm = Math.max(widestMm, Math.min(neededMm, MAX_WIDTH_MM));
+        return { ...s, dataUrl: canvas.toDataURL('image/png') };
+    });
+    const width = Math.ceil(widestMm);
+    const height = Math.ceil(BAR_HEIGHT_MM + LINE_HEIGHT_MM + PAD_MM * 2);
+
+    let html = `<html><head><title>Print Barcode</title><style>
+        @page { size: ${width}mm ${height}mm; margin: 0; }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: Arial, sans-serif; }
+        .sticker {
+            width: ${width}mm; height: ${height}mm; padding: ${PAD_MM}mm;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            page-break-after: always; overflow: hidden; text-align: center;
+        }
+        .sticker .caption { font-size: 2.6mm; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+        .sticker img { height: ${BAR_HEIGHT_MM}mm; max-width: 100%; }
+    </style></head><body>`;
+    rendered.forEach(s => {
+        html += `<div class="sticker"><img src="${s.dataUrl}">${s.caption ? `<div class="caption">${s.caption}</div>` : ''}</div>`;
+    });
+    html += '<script>window.onload = function(){ setTimeout(()=>{window.print(); window.close();}, 200); }</script></body></html>';
+
+    const printWindow = window.open('', '_blank', 'width=400,height=300');
+    printWindow.document.write(html);
+    printWindow.document.close();
 }
 
 // 1. Print Receipt
@@ -5059,25 +5282,26 @@ function printReceipt() {
     printWindow.document.close();
 }
 
-// 2. Print Barcode Stickers
+// 2. Print Barcode Stickers — one small sticker per sample type/tube (see
+// printBarcodeStickers()), not a full sheet of paper per barcode.
 function printBarcodes() {
     const groups = groupTestsBySampleType();
-    let printWindow = window.open('', '_blank', 'width=400,height=600');
-    let html = '<html><head><title>Print Barcodes</title></head><body style="font-family: Arial, sans-serif; text-align: center; margin: 0; padding: 10px;">';
-    
-    for (const [sType, data] of Object.entries(groups)) {
-        html += `
-            <div style="margin-bottom: 20px; padding: 10px; border: 1px dashed #ccc; page-break-inside: avoid; display: inline-block; width: 200px;">
-                <div style="font-size: 13px; font-weight: bold; margin-bottom: 4px;">${pendingTransaction.patient_name}</div>
-                <div style="font-size: 11px; margin-bottom: 4px; color: #444;">${data.tests.join(', ')}</div>
-                <div style="font-size: 11px; margin-bottom: 6px; font-weight: bold;">Type: ${sType}</div>
-                <img src="${generateBarcodeImage(data.barcode)}" style="max-width: 100%;">
-            </div><br>
-        `;
-    }
-    html += '<script>window.onload = function(){ setTimeout(()=>{window.print(); window.close();}, 200); }</script></body></html>';
-    printWindow.document.write(html);
-    printWindow.document.close();
+    const stickers = Object.entries(groups).map(([sType, data]) => ({
+        barcodeValue: data.barcode,
+        caption: `${pendingTransaction.patient_name} · ${sType}`,
+    }));
+    printBarcodeStickers(stickers);
+}
+
+// Reprints the sticker for one already-booked test's sample/tube — same deterministic
+// value sampleBarcodeValue() would have produced for it at checkout, so it matches
+// whatever's physically on that tube already. Called from the "Print Barcode" button on
+// each test's card in the visit-results modal (see renderVisitResultsModal()).
+function printTestBarcode(visitCode, patientName, sampleType) {
+    printBarcodeStickers([{
+        barcodeValue: sampleBarcodeValue(visitCode, sampleType),
+        caption: `${patientName} · ${sampleType}`,
+    }]);
 }
 
 // 3. Print the Detailed Sampling Sheet (Matches your Image)
@@ -5229,6 +5453,7 @@ async function saveSettings() {
         signature_path: document.getElementById('settings-signature-preview').src,
         signature_title: document.getElementById('setting-signature-title').value,
         show_report_background: document.getElementById('setting-show-report-background').checked,
+        show_logo_on_report: document.getElementById('setting-show-logo-on-report').checked,
         lab_director: document.getElementById('setting-lab-director').value,
         doctor_qualification: document.getElementById('setting-doctor-qualification').value,
         doctor_reg_no: document.getElementById('setting-doctor-reg-no').value,
@@ -5361,6 +5586,10 @@ async function applyGlobalSettings() {
         if (settings.show_report_background !== undefined) {
             const bgCheckbox = document.getElementById('setting-show-report-background');
             if (bgCheckbox) bgCheckbox.checked = !!settings.show_report_background;
+        }
+        if (settings.show_logo_on_report !== undefined) {
+            const logoCheckbox = document.getElementById('setting-show-logo-on-report');
+            if (logoCheckbox) logoCheckbox.checked = !!settings.show_logo_on_report;
         }
 
         // 3. Apply Report Branding fields (doctor/tech credentials, contact, social, footer)
@@ -5535,6 +5764,7 @@ async function fetchTransactionsHistoryPage() {
             : `<span class="pill ok">Fully Paid</span>`;
         return `
         <tr>
+            <td><input type="checkbox" class="transaction-checkbox" data-id="${t.id}" onchange="updateBulkDeleteTransactionsButton()"></td>
             <td style="color: var(--muted);">${formatCairoDateTime(t.date, false)}</td>
             <td><strong>${t.transaction_id}</strong></td>
             <td>${t.patient_name}</td>
@@ -5548,10 +5778,18 @@ async function fetchTransactionsHistoryPage() {
     }).join('');
 
     container.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h3 style="margin: 0; color: var(--text);"></h3>
+            <div style="display: flex; gap: 8px;">
+                <button id="bulk-delete-transactions-btn" class="btn btn-danger" style="display: none; padding: 6px 12px; font-size: 12px;" onclick="handleBulkDeleteTransactions()">🗑️ <span data-i18n="actions.delete_selected">Delete Selected</span></button>
+                <button class="btn ghost" style="border-color: var(--ok); color: var(--ok); padding: 6px 12px; font-size: 12px;" onclick="exportTableToExcel(this, 'transaction_history')">📥 <span data-i18n="actions.export_excel">Export to Excel</span></button>
+            </div>
+        </div>
         <div class="table-container glass-panel">
             <table class="admin-table" style="width: 100%;">
                 <thead>
                     <tr>
+                        <th style="width: 32px;"><input type="checkbox" id="select-all-transactions" onclick="toggleAllTransactionCheckboxes(this)"></th>
                         <th>Date</th>
                         <th>Trans ID</th>
                         <th>Patient</th>
@@ -5568,6 +5806,70 @@ async function fetchTransactionsHistoryPage() {
         <div id="transactions-history-pagination"></div>
     `;
     renderPaginationControls('transactions-history-pagination', data, 'goToTransactionsHistoryPage');
+    applyTranslations(currentLang); // this table's markup (buttons above it) carries data-i18n and was just injected fresh
+}
+
+function toggleAllTransactionCheckboxes(checkbox) {
+    document.querySelectorAll('.transaction-checkbox').forEach(cb => { cb.checked = checkbox.checked; });
+    updateBulkDeleteTransactionsButton();
+}
+
+function updateBulkDeleteTransactionsButton() {
+    const btn = document.getElementById('bulk-delete-transactions-btn');
+    if (btn) btn.style.display = document.querySelectorAll('.transaction-checkbox:checked').length > 0 ? 'inline-block' : 'none';
+}
+
+async function handleBulkDeleteTransactions() {
+    const ids = Array.from(document.querySelectorAll('.transaction-checkbox:checked')).map(cb => cb.dataset.id);
+    if (ids.length === 0) return;
+    if (!confirm(t('confirm_delete_transactions', 'Delete {count} transaction(s)? This cannot be undone and does not affect the underlying visit/order.', {count: ids.length}))) return;
+
+    let succeeded = 0;
+    const failures = [];
+    for (const id of ids) {
+        try {
+            const response = await apiFetch(`/api/transactions/${id}`, { method: 'DELETE' });
+            if (response.ok) {
+                succeeded++;
+            } else {
+                const body = await response.json().catch(() => ({}));
+                failures.push(`#${id}: ${body.error || response.status}`);
+            }
+        } catch (error) {
+            failures.push(`#${id}: ${error.message}`);
+        }
+    }
+
+    if (failures.length === 0) {
+        showAlert(t('transactions_deleted', 'Deleted {count} transaction(s).', {count: succeeded}), 'success');
+    } else if (succeeded === 0) {
+        showAlert(t('transactions_delete_error', 'Error deleting transactions: {msg}', {msg: failures.join('; ')}), 'error');
+    } else {
+        showAlert(t('transactions_delete_partial', 'Deleted {ok} transaction(s); {failed} failed: {msg}', {ok: succeeded, failed: failures.length, msg: failures.join('; ')}), 'warn');
+    }
+    fetchTransactionsHistoryPage();
+    fetchTransactionsSummary();
+    fetchTransactionsData(); // keep Financial Overview's totals in sync too
+}
+
+// Today/this-week/this-month collected totals shown above the Transaction History table —
+// computed server-side (see get_transactions_summary()) so it always reflects every
+// matching transaction, not just whatever page happens to be loaded here.
+async function fetchTransactionsSummary() {
+    try {
+        const response = await apiFetch('/api/transactions/summary');
+        if (!response.ok) return;
+        const data = await response.json();
+        const setVal = (id, value) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = `${(value || 0).toFixed(2)} EGP`;
+        };
+        setVal('trans-summary-today', data.today);
+        setVal('trans-summary-week', data.this_week);
+        setVal('trans-summary-month', data.this_month);
+    } catch (error) {
+        console.error('Failed to load transactions summary:', error);
+    }
 }
 
 // --- COMPLETE PAYMENT (settle an outstanding balance from Transaction History) ---
@@ -6208,16 +6510,34 @@ async function handleBulkDeleteWarehouse() {
     const checkboxes = document.querySelectorAll('.warehouse-checkbox:checked');
     const ids = Array.from(checkboxes).map(cb => cb.dataset.id);
     if (ids.length === 0 || !confirm(t('confirm_delete_warehouse_items', 'Delete {count} item(s) from warehouse?', {count: ids.length}))) return;
-    
-    try {
-        for (const id of ids) {
-            await apiFetch(`/api/warehouse/${id}`, { method: 'DELETE' });
+
+    // Checked individually — an item with bills/batches/work orders on record is blocked
+    // server-side (409, see delete_warehouse_item()), and blindly awaiting each request
+    // without checking .ok used to report "deleted successfully" regardless either way.
+    let succeeded = 0;
+    const failures = [];
+    for (const id of ids) {
+        try {
+            const response = await apiFetch(`/api/warehouse/${id}`, { method: 'DELETE' });
+            if (response.ok) {
+                succeeded++;
+            } else {
+                const body = await response.json().catch(() => ({}));
+                failures.push(`#${id}: ${body.error || response.status}`);
+            }
+        } catch (error) {
+            failures.push(`#${id}: ${error.message}`);
         }
-        showAlert(t('items_deleted', 'Items deleted successfully!'), 'success');
-        fetchWarehouseData();
-    } catch (error) {
-        showAlert(t('items_delete_error', 'Error deleting items'), 'error');
     }
+
+    if (failures.length === 0) {
+        showAlert(t('items_deleted', 'Items deleted successfully!'), 'success');
+    } else if (succeeded === 0) {
+        showAlert(t('items_delete_error', 'Error deleting items: {msg}', {msg: failures.join('; ')}), 'error');
+    } else {
+        showAlert(t('items_delete_partial', 'Deleted {ok} item(s); {failed} failed: {msg}', {ok: succeeded, failed: failures.length, msg: failures.join('; ')}), 'warn');
+    }
+    fetchWarehouseData();
 }
 
 // --- Excel Import Engine for Warehouse ---
@@ -7268,9 +7588,11 @@ document.addEventListener('click', function(e) {
 });
 
 // ==========================================
-// EXCEL / CSV EXPORT ENGINE
+// EXCEL EXPORT ENGINE — real .xlsx workbooks via the SheetJS library already loaded for
+// Excel *import* (index_lab.html's xlsx.full.min.js), not a .csv file wearing an "Excel"
+// label. Every "📥 Export to Excel" button across the app calls this.
 // ==========================================
-function exportTableToCSV(btnElement, filename) {
+function exportTableToExcel(btnElement, filename) {
     // Every caller renders the export button inside a header row that's immediately
     // followed by a sibling ".table-container" holding the actual table — target that
     // specific table instead of "the first table anywhere in this tab/modal". The Dashboard
@@ -7284,45 +7606,38 @@ function exportTableToCSV(btnElement, filename) {
         return;
     }
 
-    let csv = [];
     const rows = table.querySelectorAll('tr');
-    
-    // 3. Identify the "Action" column so we can skip exporting buttons
+
+    // Identify the "Action"/checkbox columns so we don't export buttons or checkbox cells.
     let actionColIndex = -1;
+    let checkboxColIndex = -1;
     const headers = table.querySelectorAll('th');
     headers.forEach((th, index) => {
         if (th.innerText.includes('Action') || th.innerText.includes('إجراء')) {
             actionColIndex = index;
         }
+        if (th.querySelector('input[type="checkbox"]')) {
+            checkboxColIndex = index;
+        }
     });
 
-    // 4. Loop through rows and columns
+    const sheetData = [];
     for (let i = 0; i < rows.length; i++) {
-        let row = [];
+        const row = [];
         const cols = rows[i].querySelectorAll('td, th');
 
         for (let j = 0; j < cols.length; j++) {
-            // Skip the Action column
-            if (j === actionColIndex) continue;
-
-            // Clean the text
-            let data = cols[j].innerText.replace(/(\r\n|\n|\r)/gm, ' ').replace(/"/g, '""').trim();
-            row.push('"' + data + '"');
+            if (j === actionColIndex || j === checkboxColIndex) continue;
+            if (cols[j].querySelector('input[type="checkbox"]')) continue;
+            row.push(cols[j].innerText.replace(/(\r\n|\n|\r)/gm, ' ').trim());
         }
-        csv.push(row.join(','));
+        sheetData.push(row);
     }
 
-    // 5. Create the file
-    const csvFile = new Blob(['\uFEFF' + csv.join('\n')], {type: 'text/csv;charset=utf-8;'});
-    const downloadLink = document.createElement('a');
-    
-    downloadLink.download = filename ? filename + '.csv' : 'export.csv';
-    downloadLink.href = window.URL.createObjectURL(csvFile);
-    downloadLink.style.display = 'none';
-    
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-    document.body.removeChild(downloadLink);
+    const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
+    XLSX.writeFile(workbook, (filename || 'export') + '.xlsx');
 }
 // ==========================================
 // EXCEL IMPORT ENGINE (PATIENTS / CLIENTS)
@@ -7951,7 +8266,7 @@ function updateActivitySelectAllState() {
 // Exports only the checked rows; if none are checked, falls back to exporting every row on
 // the current page (i.e. the same "export what I'm looking at" behavior as before checkboxes
 // existed) — this only ever operates on the loaded page, not the full filtered result set,
-// same limitation exportTableToCSV already has everywhere else in the app.
+// same limitation exportTableToExcel already has everywhere else in the app.
 function exportActivityLogSelected() {
     const checked = [...document.querySelectorAll('.activity-row-checkbox:checked')]
         .map(cb => currentActivityLogItems[parseInt(cb.dataset.index)]);
@@ -7963,20 +8278,16 @@ function exportActivityLogSelected() {
     }
 
     const headers = ['Timestamp', 'User', 'Event', 'Resource', 'Resource ID', 'Description', 'Status', 'IP'];
-    const csvRows = [headers, ...items.map(entry => [
+    const sheetData = [headers, ...items.map(entry => [
         entry.timestamp || '', entry.username || '', activityEventLabel(entry.event_type),
         entry.resource || '', entry.resource_id || '', entry.description || '',
         entry.status || '', entry.ip_address || '',
-    ])].map(row => row.map(cell => '"' + String(cell).replace(/"/g, '""') + '"').join(','));
+    ])];
 
-    const csvFile = new Blob(['﻿' + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const downloadLink = document.createElement('a');
-    downloadLink.download = 'activity_log.csv';
-    downloadLink.href = window.URL.createObjectURL(csvFile);
-    downloadLink.style.display = 'none';
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-    document.body.removeChild(downloadLink);
+    const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
+    XLSX.writeFile(workbook, 'activity_log.xlsx');
 }
 
 function activityEventPillClass(eventType) {

@@ -345,6 +345,14 @@ with app.app_context():
         except Exception:
             db.session.rollback()
 
+        # Report logo toggle — same DEFAULT-1 reasoning as show_report_background above.
+        db.session.bind = engine
+        try:
+            db.session.execute(text("ALTER TABLE lab_config ADD COLUMN show_logo_on_report BOOLEAN DEFAULT 1"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
 # Requests to these /api/* paths are allowed without a logged-in session — login itself,
 # logout (a no-op if there's no session to clear anyway), and the feature-flag endpoint the
 # frontend needs before it knows whether anyone is logged in.
@@ -584,6 +592,8 @@ def save_lab_settings():
     config.signature_title = data.get('signature_title', config.signature_title)
     if 'show_report_background' in data:
         config.show_report_background = bool(data['show_report_background'])
+    if 'show_logo_on_report' in data:
+        config.show_logo_on_report = bool(data['show_logo_on_report'])
     # --- REPORT BRANDING (doctor/tech credentials, contact, social) ---
     for field in ('lab_director', 'lab_phone', 'lab_address', 'lab_email',
                   'doctor_qualification', 'doctor_reg_no', 'tech_name',
@@ -1065,6 +1075,25 @@ def get_all_visits():
         })
     return jsonify(results)
 
+@app.route('/api/visits/<int:visit_id>', methods=['DELETE'])
+def delete_visit(visit_id):
+    """Deletes one visit/order and everything scoped to it (VisitTest, VisitReport(Page),
+    TestResult.visit_id) — all already ON DELETE CASCADE (see junctions.py/test_result.py),
+    so a plain delete+commit here is enough. Deliberately does NOT touch any TransactionList
+    row tied to the same booking (matched by visit_id string == transaction_id string) —
+    removing the order/test-tracking record shouldn't also erase the payment/financial
+    record; delete that separately from Transaction History if that's really intended too."""
+    visit = db.session.get(PatientVisit, visit_id)
+    if not visit:
+        return jsonify({'error': 'Visit not found'}), 404
+    try:
+        db.session.delete(visit)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/visits/<visit_id>/collect', methods=['PUT'])
 def collect_sample(visit_id):
     """Updates the status of a specific historical test row."""
@@ -1176,6 +1205,44 @@ def record_transaction_payment(transaction_id):
         'success': True,
         'amount_paid': transaction.amount_paid,
         'remaining_fees': transaction.remaining_fees,
+    })
+
+@app.route('/api/transactions/<int:transaction_id>', methods=['DELETE'])
+def delete_transaction(transaction_id):
+    """TransactionLineItem rows are ON DELETE CASCADE on transaction_id (see junctions.py),
+    so deleting the transaction itself is enough. Deliberately independent of PatientVisit —
+    the visit/order this was for, if it still exists, is untouched (see delete_visit())."""
+    transaction = db.session.get(TransactionList, transaction_id)
+    if not transaction:
+        return jsonify({'error': 'Transaction not found'}), 404
+    try:
+        db.session.delete(transaction)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/transactions/summary', methods=['GET'])
+def get_transactions_summary():
+    """Total collected (amount_paid, falling back to final_payment for rows predating
+    partial payments — same fallback get_all_transactions() uses) for today/this
+    week/this month, all measured in Africa/Cairo local time like every other date
+    boundary in this app (see now_cairo())."""
+    today = now_cairo().date()
+    week_start = today - timedelta(days=today.weekday())  # Monday
+    month_start = today.replace(day=1)
+
+    paid_expr = db.func.coalesce(TransactionList.amount_paid, TransactionList.final_payment)
+
+    def total_since(start_date):
+        return TransactionList.query.filter(TransactionList.date >= start_date.isoformat()) \
+            .with_entities(db.func.sum(paid_expr)).scalar() or 0
+
+    return jsonify({
+        'today': total_since(today),
+        'this_week': total_since(week_start),
+        'this_month': total_since(month_start),
     })
 
 
@@ -1368,11 +1435,20 @@ def save_warehouse_item():
 @require_permission('warehouse')
 def delete_warehouse_item(item_id):
     item = WarehouseItem.query.get(item_id)
-    if item:
+    if not item:
+        return jsonify({'error': 'Not found'}), 404
+    try:
         db.session.delete(item)
         db.session.commit()
         return jsonify({'success': True})
-    return jsonify({'error': 'Not found'}), 404
+    except Exception:
+        # WarehouseBill/WarehouseBatch/WarehouseWorkOrder all reference this item with no
+        # ON DELETE CASCADE (purchase/batch/issue history shouldn't silently vanish just
+        # because the item itself is removed) — this used to surface as an unhandled 500
+        # that the frontend's bulk-delete loop never checked, so it reported "deleted
+        # successfully" while the item, still fully intact, stayed in the list.
+        db.session.rollback()
+        return jsonify({'error': 'Cannot delete: this item has bills, received batches, or work orders on record.'}), 409
 
 # --- WAREHOUSE BILLS ROUTES ---
 @app.route('/api/warehouse/bills', methods=['GET'])

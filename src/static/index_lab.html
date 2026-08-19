@@ -47,6 +47,9 @@
                 <button class="nav-tab" data-tab="test-list">
                     <span class="nav-icon">📋</span> <span data-i18n="sidebar.tests">Tests List</span>
                 </button>
+                <button class="nav-tab" data-tab="price-check">
+                    <span class="nav-icon">🧮</span> <span data-i18n="sidebar.price_check">Check Tests Total Price</span>
+                </button>
                 <button class="nav-tab" data-tab="test-results">
                     <span class="nav-icon">🔬</span> <span data-i18n="sidebar.results">Test Results</span>
                 </button>
@@ -210,7 +213,7 @@
                                 📤 Import Excel
                             </button>
                             
-                            <button class="btn ghost" style="border-color: var(--ok); color: var(--ok);" onclick="exportTableToCSV(this, 'hr_employees_directory')">
+                            <button class="btn ghost" style="border-color: var(--ok); color: var(--ok);" onclick="exportTableToExcel(this, 'hr_employees_directory')">
                                 📥 Export Excel
                             </button>
                             
@@ -859,7 +862,7 @@
                         <button id="bulk-delete-btn" class="btn btn-danger" onclick="handleBulkDelete()" style="display: none;">Delete Selected</button>
                         
                         <button class="btn ghost" style="border-color: var(--ok); color: var(--ok); padding: 6px 12px; font-size: 12px; display: flex; align-items: center; gap: 6px; margin-left: auto;" 
-                            onclick="exportTableToCSV(this, 'patient_directory')">
+                            onclick="exportTableToExcel(this, 'patient_directory')">
                             📥 <span data-i18n="actions.export_excel">Export to Excel</span>
                         </button>
                     </div>
@@ -1080,7 +1083,11 @@
                         </div>
                         <div style="display: flex; gap: 10px;">
                             <button id="bulk-delete-tests-btn" class="btn btn-danger" onclick="handleBulkDeleteTests()" style="display: none;" data-i18n="actions.delete_selected">Delete Selected</button>
-                
+
+                            <button class="btn ghost" style="border-color: var(--ok); color: var(--ok);" onclick="exportTableToExcel(this, 'test_directory')">
+                                📥 <span data-i18n="actions.export_excel">Export to Excel</span>
+                            </button>
+
                             <input type="file" id="import-excel-file" accept=".xlsx, .xls, .csv" style="display: none;" onchange="processExcelImport(event)">
                             
                             <button class="btn ghost" style="border-color: #3b82f6; color: #3b82f6;" onclick="document.getElementById('import-excel-file').click()">
@@ -1095,8 +1102,39 @@
                     
                     <div id="test-list-container"></div>
                 </div>
+
+                <div id="price-check" class="tab-content">
+                    <div style="margin-bottom: 24px;">
+                        <h1 data-i18n="price_check.title">Check Tests Total Price</h1>
+                        <p style="color: var(--muted)" data-i18n="price_check.subtitle">Select tests to quote a total price to a patient — nothing is booked or saved.</p>
+                    </div>
+
+                    <div class="card" style="padding: 20px;">
+                        <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap; margin-bottom: 15px;">
+                            <div class="search-box" style="margin: 0; flex: 1; min-width: 220px;">
+                                <span class="search-icon">⌕</span>
+                                <input type="text" id="price-check-search" data-i18n="price_check.search_placeholder" placeholder="Search tests by name or sample type..." oninput="renderPriceCheckTests()">
+                            </div>
+                            <button type="button" class="btn ghost" onclick="clearPriceCheckSelection()">🔄 <span data-i18n="price_check.clear_selection">Clear Selection</span></button>
+                        </div>
+
+                        <div id="price-check-test-list" style="max-height: 420px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; padding: 6px;"></div>
+                    </div>
+
+                    <div class="card" style="padding: 20px; margin-top: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                        <div>
+                            <div style="font-size: 12px; text-transform: uppercase; color: var(--muted);" data-i18n="price_check.tests_selected">Tests Selected</div>
+                            <div id="price-check-count" style="font-size: 20px; font-weight: bold; color: var(--text);">0</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 12px; text-transform: uppercase; color: var(--muted);" data-i18n="price_check.total_price">Total Price</div>
+                            <div id="price-check-total" style="font-size: 30px; font-weight: bold; color: var(--ok);">0.00 EGP</div>
+                        </div>
+                    </div>
+                </div>
+
                 <div id="warehouse" class="tab-content">
-    
+
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 15px; margin-bottom: 24px;">
                         <div>
                             <h1 data-i18n="warehouse.title">Warehouse Management</h1>
@@ -1129,7 +1167,7 @@
                             <button class="btn ghost" style="border-color: #3b82f6; color: #3b82f6;" onclick="document.getElementById('import-warehouse-excel').click()">
                                 📤 Import Excel
                             </button>
-                            <button class="btn ghost" style="border-color: var(--ok); color: var(--ok);" onclick="exportTableToCSV(this, 'warehouse_inventory')">
+                            <button class="btn ghost" style="border-color: var(--ok); color: var(--ok);" onclick="exportTableToExcel(this, 'warehouse_inventory')">
                                 📥 Export Excel
                             </button>
                             
@@ -1214,7 +1252,22 @@
                             <p style="color: var(--muted)" data-i18n="history.subtitle">View and filter all patient payments</p>
                         </div>
                     </div>
-                
+
+                    <div style="display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap;">
+                        <div class="card" style="flex: 1; min-width: 160px; padding: 16px; text-align: center;">
+                            <div style="font-size: 11px; text-transform: uppercase; color: var(--muted);" data-i18n="history.total_today">Total Paid Today</div>
+                            <div id="trans-summary-today" style="font-size: 22px; font-weight: bold; color: var(--ok);">0.00 EGP</div>
+                        </div>
+                        <div class="card" style="flex: 1; min-width: 160px; padding: 16px; text-align: center;">
+                            <div style="font-size: 11px; text-transform: uppercase; color: var(--muted);" data-i18n="history.total_week">Total Paid This Week</div>
+                            <div id="trans-summary-week" style="font-size: 22px; font-weight: bold; color: var(--ok);">0.00 EGP</div>
+                        </div>
+                        <div class="card" style="flex: 1; min-width: 160px; padding: 16px; text-align: center;">
+                            <div style="font-size: 11px; text-transform: uppercase; color: var(--muted);" data-i18n="history.total_month">Total Paid This Month</div>
+                            <div id="trans-summary-month" style="font-size: 22px; font-weight: bold; color: var(--ok);">0.00 EGP</div>
+                        </div>
+                    </div>
+
                     <div style="margin-bottom: 20px; display: flex; gap: 10px; align-items: flex-end;">
                         <div style="width: 140px;">
                             <label style="font-size: 11px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.from_date">From Date</label>
@@ -1503,6 +1556,10 @@
                                 </div>
                                 <label for="logo-upload" class="btn ghost" style="cursor: pointer; margin-top: 10px; font-size: 12px; padding: 6px 12px;" data-i18n="settings.change_logo">Change Logo</label>
                                 <input type="file" id="logo-upload" accept="image/*" style="display: none;" onchange="previewImage(this, 'settings-logo-preview')">
+                                <label style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 10px; font-size: 13px; color: #333; cursor: pointer;">
+                                    <input type="checkbox" id="setting-show-logo-on-report" checked>
+                                    <span data-i18n="settings.show_logo_on_report">Show this logo on generated reports</span>
+                                </label>
                             </div>
 
                             <div style="text-align: center; margin-bottom: 40px;">
@@ -1735,7 +1792,12 @@
     <div id="work-orders-history-modal" class="modal" style="display: none;">
         <div class="modal-content glass-panel" style="max-width: 900px;">
             <span class="close" onclick="document.getElementById('work-orders-history-modal').style.display='none'">&times;</span>
-            <h2 style="margin-bottom: 20px; color: var(--text);">Warehouse Work Orders</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="margin: 0; color: var(--text);">Warehouse Work Orders</h2>
+                <button class="btn ghost" style="border-color: var(--ok); color: var(--ok); padding: 6px 12px; font-size: 12px;" onclick="exportTableToExcel(this, 'warehouse_work_orders')">
+                    📥 <span data-i18n="actions.export_excel">Export to Excel</span>
+                </button>
+            </div>
             <div id="work-orders-history-container" style="max-height: 400px; overflow-y: auto;"></div>
         </div>
     </div>
@@ -1746,7 +1808,7 @@
 
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                 <h2 style="color: var(--text);">Warehouse Bills History</h2>
-                <button class="btn ghost" style="border-color: var(--ok); color: var(--ok); font-size: 12px; padding: 4px 10px;" onclick="exportTableToCSV(this, 'warehouse_bills_history')">📥 Export Excel</button>
+                <button class="btn ghost" style="border-color: var(--ok); color: var(--ok); font-size: 12px; padding: 4px 10px;" onclick="exportTableToExcel(this, 'warehouse_bills_history')">📥 Export Excel</button>
             </div>
 
             <div id="bills-history-container" style="max-height: 400px; overflow-y: auto;"></div>

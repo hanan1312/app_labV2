@@ -16,7 +16,8 @@
       "activity_log": "Activity Log",
       "hr": "HR & Staff",
       "tech_screen": "Tech Screen",
-      "warehouse": "Warehouse"
+      "warehouse": "Warehouse",
+      "price_check": "Check Tests Total Price"
     },
     "dashboard": {
       "title": "Laboratory Dashboard",
@@ -170,7 +171,8 @@
       "toggle_theme": "Toggle Light/Dark",
       "user_mgt": "User Management & Permissions",
       "username": "Username",
-      "show_report_background": "Show this cover as a background on generated reports"
+      "show_report_background": "Show this cover as a background on generated reports",
+      "show_logo_on_report": "Show this logo on generated reports"
     },
     "modals": {
       "add_test": "Add New Test",
@@ -218,7 +220,10 @@
     "history": {
       "title": "Transaction History",
       "subtitle": "View and filter all patient payments",
-      "clear_filter": "Clear Filter"
+      "clear_filter": "Clear Filter",
+      "total_today": "Total Paid Today",
+      "total_week": "Total Paid This Week",
+      "total_month": "Total Paid This Month"
     },
     "stats": {
       "title": "Test Results Statistics",
@@ -409,7 +414,7 @@
       "importing_tests": "Importing {count} tests...",
       "interface_settings_updated": "Interface settings updated successfully!",
       "internet_restored": "Internet restored! Syncing data in background...",
-      "items_delete_error": "Error deleting items",
+      "items_delete_error": "Error deleting items: {msg}",
       "items_deleted": "Items deleted successfully!",
       "lab_config_update_failed": "Failed to update configuration",
       "lab_config_updated": "Lab configuration updated successfully!",
@@ -589,7 +594,26 @@
       "title_finished_appointments_collected": "List of Finished (Collected) Appointments",
       "title_ordered_tests": "List of Ordered Tests",
       "title_pending_appointments": "List of Pending Appointments",
-      "title_view_results": "View results"
+      "title_view_results": "View results",
+      "btn_print_barcode": "Print Barcode",
+      "clients_delete_partial": "Deleted {ok} client(s); {failed} failed: {msg}",
+      "items_delete_partial": "Deleted {ok} item(s); {failed} failed: {msg}",
+      "confirm_delete_transactions": "Delete {count} transaction(s)? This cannot be undone and does not affect the underlying visit/order.",
+      "transactions_deleted": "Deleted {count} transaction(s).",
+      "transactions_delete_error": "Error deleting transactions: {msg}",
+      "transactions_delete_partial": "Deleted {ok} transaction(s); {failed} failed: {msg}",
+      "confirm_delete_visits": "Delete {count} order(s)/visit(s)? This cannot be undone. Any payment already recorded for them is not affected.",
+      "visits_deleted": "Deleted {count} order(s)/visit(s).",
+      "visits_delete_error": "Error deleting orders/visits: {msg}",
+      "visits_delete_partial": "Deleted {ok}; {failed} failed: {msg}"
+    },
+    "price_check": {
+      "title": "Check Tests Total Price",
+      "subtitle": "Select tests to quote a total price to a patient — nothing is booked or saved.",
+      "search_placeholder": "Search tests by name or sample type...",
+      "clear_selection": "Clear Selection",
+      "tests_selected": "Tests Selected",
+      "total_price": "Total Price"
     }
   },
   "AR": {
@@ -609,7 +633,8 @@
       "activity_log": "سجل النشاط",
       "hr": "الموارد البشرية",
       "tech_screen": "شاشة الفني",
-      "warehouse": "المخزن"
+      "warehouse": "المخزن",
+      "price_check": "حساب إجمالي سعر التحاليل"
     },
     "dashboard": {
       "title": "لوحة تحكم المختبر",
@@ -763,7 +788,8 @@
       "toggle_theme": "تبديل الوضع الفاتح/الداكن",
       "user_mgt": "إدارة المستخدمين والصلاحيات",
       "username": "اسم المستخدم",
-      "show_report_background": "إظهار هذا الغلاف كخلفية في التقارير التي يتم إنشاؤها"
+      "show_report_background": "إظهار هذا الغلاف كخلفية في التقارير التي يتم إنشاؤها",
+      "show_logo_on_report": "إظهار هذا الشعار في التقارير التي يتم إنشاؤها"
     },
     "modals": {
       "add_test": "إضافة تحليل جديد",
@@ -811,7 +837,10 @@
     "history": {
       "title": "سجل المعاملات",
       "subtitle": "عرض و تصنيف المعاملات المالية للمريض",
-      "clear_filter": "مسح الفلتر"
+      "clear_filter": "مسح الفلتر",
+      "total_today": "إجمالي المدفوع اليوم",
+      "total_week": "إجمالي المدفوع هذا الأسبوع",
+      "total_month": "إجمالي المدفوع هذا الشهر"
     },
     "stats": {
       "title": "إحصائيات نتائج التحاليل",
@@ -1002,7 +1031,7 @@
       "importing_tests": "جارٍ استيراد {count} تحليل...",
       "interface_settings_updated": "تم تحديث إعدادات الواجهة بنجاح!",
       "internet_restored": "عاد الاتصال بالإنترنت! جارٍ مزامنة البيانات في الخلفية...",
-      "items_delete_error": "خطأ أثناء حذف الأصناف",
+      "items_delete_error": "خطأ أثناء حذف الأصناف: {msg}",
       "items_deleted": "تم حذف الأصناف بنجاح!",
       "lab_config_update_failed": "فشل تحديث الإعدادات",
       "lab_config_updated": "تم تحديث إعدادات المعمل بنجاح!",
@@ -1182,7 +1211,26 @@
       "title_finished_appointments_collected": "قائمة المواعيد المنتهية (تم تجميع العينات)",
       "title_ordered_tests": "قائمة التحاليل المطلوبة",
       "title_pending_appointments": "قائمة المواعيد المعلقة",
-      "title_view_results": "عرض النتائج"
+      "title_view_results": "عرض النتائج",
+      "btn_print_barcode": "طباعة الباركود",
+      "clients_delete_partial": "تم حذف {ok} عميل؛ فشل حذف {failed}: {msg}",
+      "items_delete_partial": "تم حذف {ok} صنف؛ فشل حذف {failed}: {msg}",
+      "confirm_delete_transactions": "هل تريد حذف {count} معاملة؟ لا يمكن التراجع عن هذا الإجراء ولن يؤثر على الزيارة/الطلب المرتبط بها.",
+      "transactions_deleted": "تم حذف {count} معاملة.",
+      "transactions_delete_error": "خطأ أثناء حذف المعاملات: {msg}",
+      "transactions_delete_partial": "تم حذف {ok} معاملة؛ فشل حذف {failed}: {msg}",
+      "confirm_delete_visits": "هل تريد حذف {count} طلب/زيارة؟ لا يمكن التراجع عن هذا الإجراء. لن يتأثر أي دفع مسجل مسبقاً لها.",
+      "visits_deleted": "تم حذف {count} طلب/زيارة.",
+      "visits_delete_error": "خطأ أثناء حذف الطلبات/الزيارات: {msg}",
+      "visits_delete_partial": "تم حذف {ok}؛ فشل حذف {failed}: {msg}"
+    },
+    "price_check": {
+      "title": "حساب إجمالي سعر التحاليل",
+      "subtitle": "اختر التحاليل لمعرفة السعر الإجمالي لإخبار المريض — لا يتم حجز أو حفظ أي شيء.",
+      "search_placeholder": "ابحث عن تحليل بالاسم أو نوع العينة...",
+      "clear_selection": "مسح التحديد",
+      "tests_selected": "عدد التحاليل المحددة",
+      "total_price": "السعر الإجمالي"
     }
   }
 }
