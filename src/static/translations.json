@@ -169,7 +169,8 @@
       "title": "System Settings",
       "toggle_theme": "Toggle Light/Dark",
       "user_mgt": "User Management & Permissions",
-      "username": "Username"
+      "username": "Username",
+      "show_report_background": "Show this cover as a background on generated reports"
     },
     "modals": {
       "add_test": "Add New Test",
@@ -761,7 +762,8 @@
       "title": "إعدادات النظام",
       "toggle_theme": "تبديل الوضع الفاتح/الداكن",
       "user_mgt": "إدارة المستخدمين والصلاحيات",
-      "username": "اسم المستخدم"
+      "username": "اسم المستخدم",
+      "show_report_background": "إظهار هذا الغلاف كخلفية في التقارير التي يتم إنشاؤها"
     },
     "modals": {
       "add_test": "إضافة تحليل جديد",

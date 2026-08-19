@@ -335,6 +335,16 @@ with app.app_context():
             EmployeeVacation.__table__, Holiday.__table__,
         ])
 
+        # Report background toggle — DEFAULT 1 so existing labs keep today's actual behavior
+        # (the cover image has always been drawn on generated reports whenever one was set)
+        # instead of the setting silently switching off for them on upgrade.
+        db.session.bind = engine
+        try:
+            db.session.execute(text("ALTER TABLE lab_config ADD COLUMN show_report_background BOOLEAN DEFAULT 1"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
 # Requests to these /api/* paths are allowed without a logged-in session — login itself,
 # logout (a no-op if there's no session to clear anyway), and the feature-flag endpoint the
 # frontend needs before it knows whether anyone is logged in.
@@ -572,6 +582,8 @@ def save_lab_settings():
     config.cover_path = data.get('cover_path', config.cover_path)
     config.signature_path = data.get('signature_path', config.signature_path)
     config.signature_title = data.get('signature_title', config.signature_title)
+    if 'show_report_background' in data:
+        config.show_report_background = bool(data['show_report_background'])
     # --- REPORT BRANDING (doctor/tech credentials, contact, social) ---
     for field in ('lab_director', 'lab_phone', 'lab_address', 'lab_email',
                   'doctor_qualification', 'doctor_reg_no', 'tech_name',

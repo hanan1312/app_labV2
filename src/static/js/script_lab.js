@@ -5228,6 +5228,7 @@ async function saveSettings() {
         cover_path: document.getElementById('settings-cover-preview').src,
         signature_path: document.getElementById('settings-signature-preview').src,
         signature_title: document.getElementById('setting-signature-title').value,
+        show_report_background: document.getElementById('setting-show-report-background').checked,
         lab_director: document.getElementById('setting-lab-director').value,
         doctor_qualification: document.getElementById('setting-doctor-qualification').value,
         doctor_reg_no: document.getElementById('setting-doctor-reg-no').value,
@@ -5356,6 +5357,10 @@ async function applyGlobalSettings() {
             
             const coverPreview = document.getElementById('settings-cover-preview');
             if (coverPreview) coverPreview.src = coverUrl;
+        }
+        if (settings.show_report_background !== undefined) {
+            const bgCheckbox = document.getElementById('setting-show-report-background');
+            if (bgCheckbox) bgCheckbox.checked = !!settings.show_report_background;
         }
 
         // 3. Apply Report Branding fields (doctor/tech credentials, contact, social, footer)

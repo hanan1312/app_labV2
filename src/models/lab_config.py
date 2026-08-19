@@ -33,6 +33,10 @@ class LabConfig(db.Model):
     report_footer_note = db.Column(db.Text)
     signature_path = db.Column(db.Text)  # pathologist signature image — same data:/static-path convention as logo_path/cover_path
     signature_title = db.Column(db.String(200))  # caption under the signature, e.g. "Consultant Pathologist"
+    # Whether cover_path is also drawn as the faint background wash on generated report
+    # pages (see _page_decorations() in src/routes/reports.py) — independent of cover_path
+    # itself, which stays in use as the web app's own page background either way.
+    show_report_background = db.Column(db.Boolean, default=True)
 
     # Scheduled access policy. Both existed as raw ALTER TABLE columns (src/main.py) without
     # ever being declared here — save_lab_settings() setting config.force_logout_time was
@@ -113,6 +117,7 @@ class LabConfig(db.Model):
             'report_footer_note': self.report_footer_note,
             'signature_path': self.signature_path,
             'signature_title': self.signature_title,
+            'show_report_background': self.show_report_background,
             'force_logout_time': self.force_logout_time,
             'idle_logout_timeout': self.idle_logout_timeout,
             'login_resume_time': self.login_resume_time,

@@ -1111,8 +1111,9 @@ def _render_pdf_from_context(ctx, base_url):
         signature bottom-left — reusing the exact Paragraph objects/heights computed above."""
         canvas_obj.saveState()
 
-        # --- Background wash ---
-        bg = _load_image_reader(config.cover_path)
+        # --- Background wash (Settings > Cover) — only drawn when show_report_background
+        # is on; the cover image otherwise stays in use as the web app's own background. ---
+        bg = _load_image_reader(config.cover_path) if config.show_report_background else None
         if bg:
             reader, iw, ih = bg
             scale = min(PAGE_W / iw, PAGE_H / ih)  # contain-fit: shrink to fit within the page, no cropping
