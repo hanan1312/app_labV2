@@ -1126,6 +1126,20 @@
                             <div style="font-size: 12px; text-transform: uppercase; color: var(--muted);" data-i18n="price_check.tests_selected">Tests Selected</div>
                             <div id="price-check-count" style="font-size: 20px; font-weight: bold; color: var(--text);">0</div>
                         </div>
+                        <div>
+                            <div style="font-size: 12px; text-transform: uppercase; color: var(--muted);" data-i18n="price_check.subtotal">Subtotal</div>
+                            <div id="price-check-subtotal" style="font-size: 20px; font-weight: bold; color: var(--text);">0.00 EGP</div>
+                        </div>
+                        <div style="width: 150px;">
+                            <label style="font-size: 12px; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="checkout.discount">Discount</label>
+                            <select id="price-check-discount" onchange="updatePriceCheckTotal()">
+                                <option value="0" data-i18n="checkout.discount_none">None (0%)</option>
+                                <option value="10">10%</option>
+                                <option value="15">15%</option>
+                                <option value="30">30%</option>
+                                <option value="50">50%</option>
+                            </select>
+                        </div>
                         <div style="text-align: right;">
                             <div style="font-size: 12px; text-transform: uppercase; color: var(--muted);" data-i18n="price_check.total_price">Total Price</div>
                             <div id="price-check-total" style="font-size: 30px; font-weight: bold; color: var(--ok);">0.00 EGP</div>
@@ -1556,8 +1570,8 @@
                                 </div>
                                 <label for="logo-upload" class="btn ghost" style="cursor: pointer; margin-top: 10px; font-size: 12px; padding: 6px 12px;" data-i18n="settings.change_logo">Change Logo</label>
                                 <input type="file" id="logo-upload" accept="image/*" style="display: none;" onchange="previewImage(this, 'settings-logo-preview')">
-                                <label style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 10px; font-size: 13px; color: #333; cursor: pointer;">
-                                    <input type="checkbox" id="setting-show-logo-on-report" checked>
+                                <label style="display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 10px; font-size: 13px; color: var(--ok); font-weight: 600; cursor: pointer;">
+                                    <input type="checkbox" id="setting-show-logo-on-report" checked style="width: auto; flex: none; padding: 0; margin: 0;">
                                     <span data-i18n="settings.show_logo_on_report">Show this logo on generated reports</span>
                                 </label>
                             </div>
@@ -1583,8 +1597,8 @@
                                     <label for="cover-upload" class="browse-btn" data-i18n="settings.browse">Browse</label>
                                     <input type="file" id="cover-upload" accept="image/*" style="display: none;" onchange="previewImage(this, 'settings-cover-preview', 'cover-filename')">
                                 </div>
-                                <label style="display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; color: #333; cursor: pointer;">
-                                    <input type="checkbox" id="setting-show-report-background" checked>
+                                <label style="display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px; color: var(--ok); font-weight: 600; cursor: pointer;">
+                                    <input type="checkbox" id="setting-show-report-background" checked style="width: auto; flex: none; padding: 0; margin: 0;">
                                     <span data-i18n="settings.show_report_background">Show this cover as a background on generated reports</span>
                                 </label>
                             </div>

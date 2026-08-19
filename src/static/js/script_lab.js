@@ -4942,10 +4942,15 @@ function togglePriceCheckTest(testName, price, isChecked) {
 
 function updatePriceCheckTotal() {
     const names = Object.keys(priceCheckSelectedTests);
-    const total = names.reduce((sum, name) => sum + (parseFloat(priceCheckSelectedTests[name]) || 0), 0);
+    const subtotal = names.reduce((sum, name) => sum + (parseFloat(priceCheckSelectedTests[name]) || 0), 0);
+    const discountPercent = parseFloat(document.getElementById('price-check-discount')?.value) || 0;
+    const total = subtotal - (subtotal * discountPercent / 100);
+
     const countEl = document.getElementById('price-check-count');
+    const subtotalEl = document.getElementById('price-check-subtotal');
     const totalEl = document.getElementById('price-check-total');
     if (countEl) countEl.textContent = names.length;
+    if (subtotalEl) subtotalEl.textContent = `${subtotal.toFixed(2)} EGP`;
     if (totalEl) totalEl.textContent = `${total.toFixed(2)} EGP`;
 }
 
@@ -4953,6 +4958,8 @@ function clearPriceCheckSelection() {
     priceCheckSelectedTests = {};
     const searchInput = document.getElementById('price-check-search');
     if (searchInput) searchInput.value = '';
+    const discountSelect = document.getElementById('price-check-discount');
+    if (discountSelect) discountSelect.value = '0';
     renderPriceCheckTests();
 }
 

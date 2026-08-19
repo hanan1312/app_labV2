@@ -613,7 +613,8 @@
       "search_placeholder": "Search tests by name or sample type...",
       "clear_selection": "Clear Selection",
       "tests_selected": "Tests Selected",
-      "total_price": "Total Price"
+      "total_price": "Total Price",
+      "subtotal": "Subtotal"
     }
   },
   "AR": {
@@ -1230,7 +1231,8 @@
       "search_placeholder": "ابحث عن تحليل بالاسم أو نوع العينة...",
       "clear_selection": "مسح التحديد",
       "tests_selected": "عدد التحاليل المحددة",
-      "total_price": "السعر الإجمالي"
+      "total_price": "السعر الإجمالي",
+      "subtotal": "الإجمالي الفرعي"
     }
   }
 }
