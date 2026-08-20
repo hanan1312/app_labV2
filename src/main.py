@@ -797,24 +797,48 @@ def save_test():
         db.session.add(test)
         
     db.session.commit()
-    return jsonify({'success': True, 'message': 'Test saved successfully!'})
+    # id is needed by processExcelImport()'s parameter-attaching step (script_lab.js) — a
+    # newly-created test's id has to come from somewhere, and this is the only response it
+    # gets back.
+    return jsonify({'success': True, 'message': 'Test saved successfully!', 'id': test.id})
 
 
 # Route 3: Delete a test
 @app.route('/api/tests/<int:test_id>', methods=['DELETE'])
 def delete_test(test_id):
+    # Find the exact test in your LabTest database model
+    test = LabTest.query.get(test_id)
+
+    # If the test doesn't exist, return an error
+    if not test:
+        return jsonify({'error': 'Test not found'}), 404
+
+    # VisitTest/TransactionLineItem/TestPanelItem.lab_test_id are all explicitly
+    # ON DELETE RESTRICT (see junctions.py/test_panel.py) — a test that's ever been booked,
+    # billed, or added to a panel can't be deleted, by design: those rows are real visit/
+    # order/financial history that must not silently vanish just because the test itself
+    # is removed. Checked here up front instead of just letting the resulting
+    # IntegrityError bubble up as a generic 500, so the user sees exactly why (previously:
+    # every one of these always failed silently, and the bulk-delete UI just reported
+    # "0 tests deleted" with no explanation).
+    visit_count = VisitTest.query.filter_by(lab_test_id=test_id).count()
+    transaction_count = TransactionLineItem.query.filter_by(lab_test_id=test_id).count()
+    panel_count = TestPanelItem.query.filter_by(lab_test_id=test_id).count()
+    if visit_count or transaction_count or panel_count:
+        reasons = []
+        if visit_count:
+            reasons.append(f'{visit_count} booked visit(s)')
+        if transaction_count:
+            reasons.append(f'{transaction_count} transaction(s)')
+        if panel_count:
+            reasons.append(f'{panel_count} panel(s)')
+        return jsonify({'error': f'Cannot delete "{test.name}": still referenced by {", ".join(reasons)}.'}), 409
+
     try:
-        # Find the exact test in your LabTest database model
-        test = LabTest.query.get(test_id)
-        
-        # If the test doesn't exist, return an error
-        if not test:
-            return jsonify({'error': 'Test not found'}), 404
-            
         # Delete it and save the changes to the database
         db.session.delete(test)
         db.session.commit()
-        
+
         return jsonify({'success': True, 'message': f'Test {test_id} deleted successfully!'}), 200
 
     except Exception as e:

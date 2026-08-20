@@ -4378,26 +4378,38 @@ async function handleBulkDeleteTests() {
     
     if (!confirm(t('confirm_delete_tests', 'Are you sure you want to delete {count} test(s)? This cannot be undone.', {count: ids.length}))) return;
     
-    try {
-        let successCount = 0;
-        
-        // Loop through the selected IDs and send DELETE requests to the backend
-        for (const id of ids) {
-            const response = await fetch(`/api/tests/${id}`, { 
+    // Checked individually — a test still referenced by a booked visit, transaction, or
+    // panel is blocked server-side (409, see delete_test()) instead of silently failing,
+    // and a bare success count would otherwise hide exactly why nothing got deleted.
+    let successCount = 0;
+    const failures = [];
+    for (const id of ids) {
+        try {
+            const response = await fetch(`/api/tests/${id}`, {
                 method: 'DELETE',
                 headers: { 'X-App-Mode': typeof currentWorkspace !== 'undefined' ? currentWorkspace : 'lab' }
             });
-            if (response.ok) successCount++;
+            if (response.ok) {
+                successCount++;
+            } else {
+                const body = await response.json().catch(() => ({}));
+                failures.push(body.error || `#${id}: ${response.status}`);
+            }
+        } catch (error) {
+            failures.push(`#${id}: ${error.message}`);
         }
-        
-        showAlert(t('tests_deleted', 'Successfully deleted {count} tests!', {count: successCount}), 'success');
-        
-        // Re-fetch the live data from DB to update the table instantly
-        await fetchLabTests(); 
-
-    } catch (error) {
-        showAlert(t('tests_delete_error', 'Error deleting tests: {msg}', {msg: error.message}), 'error');
     }
+
+    if (failures.length === 0) {
+        showAlert(t('tests_deleted', 'Successfully deleted {count} tests!', {count: successCount}), 'success');
+    } else if (successCount === 0) {
+        showAlert(t('tests_delete_error', 'Error deleting tests: {msg}', {msg: failures.join('; ')}), 'error');
+    } else {
+        showAlert(t('tests_delete_partial', 'Deleted {ok} test(s); {failed} failed: {msg}', {ok: successCount, failed: failures.length, msg: failures.join('; ')}), 'warn');
+    }
+
+    // Re-fetch the live data from DB to update the table instantly
+    await fetchLabTests();
 }
 
 // 3. Popup Modal Logic
@@ -5789,7 +5801,7 @@ async function fetchTransactionsHistoryPage() {
             <h3 style="margin: 0; color: var(--text);"></h3>
             <div style="display: flex; gap: 8px;">
                 <button id="bulk-delete-transactions-btn" class="btn btn-danger" style="display: none; padding: 6px 12px; font-size: 12px;" onclick="handleBulkDeleteTransactions()">🗑️ <span data-i18n="actions.delete_selected">Delete Selected</span></button>
-                <button class="btn ghost" style="border-color: var(--ok); color: var(--ok); padding: 6px 12px; font-size: 12px;" onclick="exportTableToExcel(this, 'transaction_history')">📥 <span data-i18n="actions.export_excel">Export to Excel</span></button>
+                <button class="btn ghost" style="border-color: var(--ok); color: var(--ok); padding: 6px 12px; font-size: 12px;" onclick="exportTableToExcel(this, 'transaction_history', '#transactions-list-container')">📥 <span data-i18n="actions.export_excel">Export to Excel</span></button>
             </div>
         </div>
         <div class="table-container glass-panel">
@@ -7599,14 +7611,19 @@ document.addEventListener('click', function(e) {
 // Excel *import* (index_lab.html's xlsx.full.min.js), not a .csv file wearing an "Excel"
 // label. Every "📥 Export to Excel" button across the app calls this.
 // ==========================================
-function exportTableToExcel(btnElement, filename) {
-    // Every caller renders the export button inside a header row that's immediately
+function exportTableToExcel(btnElement, filename, containerSelector) {
+    // Most callers render the export button inside a header row that's immediately
     // followed by a sibling ".table-container" holding the actual table — target that
     // specific table instead of "the first table anywhere in this tab/modal". The Dashboard
     // tab in particular has a second, unrelated 5-row "Latest Registered Clients" table
     // earlier in the DOM; searching the whole tab-content grabbed that one instead of the
-    // KPI drill-down table the button actually belongs to.
-    const table = btnElement.parentElement?.nextElementSibling?.querySelector('table');
+    // KPI drill-down table the button actually belongs to. A caller whose button sits one
+    // level deeper (e.g. grouped with other action buttons in their own wrapper div, so
+    // "next sibling of the button's parent" isn't the table container) passes an explicit
+    // containerSelector instead of relying on this relative-DOM guess.
+    const table = containerSelector
+        ? document.querySelector(containerSelector)?.querySelector('table')
+        : btnElement.parentElement?.nextElementSibling?.querySelector('table');
 
     if (!table) {
         showAlert(t('no_table_to_export', 'Error: No table found to export.'), 'error');
@@ -7824,6 +7841,60 @@ function getStandardizedTestName(name) {
     return n.replace(/\s+/g, ' ').trim();
 }
 
+// Tests have a nested "Parameters" table (Settings > Test List > "Parameters") that never
+// appears in the Test Directory's own visible table — a plain generic table-scrape
+// (exportTableToExcel()) has no way to see it, so this exports Tests and Parameters as two
+// linked sheets in one workbook instead: "Parameters" carries a "Test Name" column back to
+// its parent test, which processExcelImport() below reads to recreate each test's
+// parameters on import. Formula fields (relation_formula/absolute_count_formula) are
+// deliberately left out — they reference sibling parameters by internal numeric {id}, which
+// wouldn't mean anything after re-import creates fresh rows with new ids.
+async function exportTestsWithParameters() {
+    if (!availableTests || availableTests.length === 0) {
+        showAlert(t('no_table_to_export', 'Error: No table found to export.'), 'error');
+        return;
+    }
+
+    const testsSheet = availableTests.map(test => ({
+        'Test Name': test.name,
+        'Sample Type': test.sample_type || '',
+        'Price': test.price,
+    }));
+
+    const parameterRows = [];
+    for (const test of availableTests) {
+        try {
+            const response = await apiFetch(`/api/lab-tests/${test.id}/parameters`);
+            if (!response.ok) continue;
+            const params = await response.json();
+            params.forEach(p => {
+                parameterRows.push({
+                    'Test Name': test.name,
+                    'Parameter Name': p.name,
+                    'Unit': p.unit || '',
+                    'Method': p.method || '',
+                    'Ref Low': p.ref_low ?? '',
+                    'Ref High': p.ref_high ?? '',
+                    'Reference Range (display)': p.reference_range_text || '',
+                    'Abnormal Interpretation': p.abnormal_note || '',
+                    'Gender Specific': p.gender_specific ? 'Yes' : 'No',
+                    'Ref Low (Male)': p.ref_low_male ?? '',
+                    'Ref High (Male)': p.ref_high_male ?? '',
+                    'Ref Low (Female)': p.ref_low_female ?? '',
+                    'Ref High (Female)': p.ref_high_female ?? '',
+                });
+            });
+        } catch (error) {
+            console.error(`Failed to load parameters for test "${test.name}":`, error);
+        }
+    }
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(testsSheet), 'Tests');
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(parameterRows), 'Parameters');
+    XLSX.writeFile(workbook, 'test_directory.xlsx');
+}
+
 async function processExcelImport(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -7835,14 +7906,50 @@ async function processExcelImport(event) {
         try {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, {type: 'array'});
-            
-            const firstSheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[firstSheetName];
+
+            // A workbook from exportTestsWithParameters() names its two sheets explicitly;
+            // fall back to "whichever sheet is first" for a plain single-sheet file someone
+            // built by hand (unnamed, or named something else entirely) — same leniency the
+            // column-name matching below already has.
+            const testsSheetName = workbook.SheetNames.includes('Tests') ? 'Tests' : workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[testsSheetName];
             const json = XLSX.utils.sheet_to_json(worksheet);
-            
+
             if (json.length === 0) {
                 showAlert(t('excel_sheet_empty', 'The Excel sheet is empty.'), 'warn');
                 return;
+            }
+
+            // Parameters sheet is optional — a plain Tests-only import (no nested data)
+            // still works exactly as before. Rows are grouped by their own normalized test
+            // name (same normalization as the duplicate-detection below) so "CBC " and "cbc"
+            // on the Parameters sheet both attach to a Tests-sheet row named "CBC".
+            const parametersByTestName = new Map();
+            if (workbook.SheetNames.includes('Parameters')) {
+                const paramRows = XLSX.utils.sheet_to_json(workbook.Sheets['Parameters']);
+                paramRows.forEach(row => {
+                    const cleanRow = {};
+                    for (let key in row) cleanRow[key.trim().toLowerCase()] = row[key];
+                    const forTest = getStandardizedTestName(cleanRow['test name'] || '');
+                    const paramName = (cleanRow['parameter name'] || '').toString().trim();
+                    if (!forTest || !paramName) return;
+                    const parsed = {
+                        name: paramName,
+                        unit: (cleanRow['unit'] || '').toString().trim() || null,
+                        method: (cleanRow['method'] || '').toString().trim() || null,
+                        ref_low: cleanRow['ref low'] !== undefined && cleanRow['ref low'] !== '' ? parseFloat(cleanRow['ref low']) : null,
+                        ref_high: cleanRow['ref high'] !== undefined && cleanRow['ref high'] !== '' ? parseFloat(cleanRow['ref high']) : null,
+                        reference_range_text: (cleanRow['reference range (display)'] || '').toString().trim() || null,
+                        abnormal_note: (cleanRow['abnormal interpretation'] || '').toString().trim() || null,
+                        gender_specific: ['yes', 'true', '1'].includes((cleanRow['gender specific'] || '').toString().trim().toLowerCase()),
+                        ref_low_male: cleanRow['ref low (male)'] !== undefined && cleanRow['ref low (male)'] !== '' ? parseFloat(cleanRow['ref low (male)']) : null,
+                        ref_high_male: cleanRow['ref high (male)'] !== undefined && cleanRow['ref high (male)'] !== '' ? parseFloat(cleanRow['ref high (male)']) : null,
+                        ref_low_female: cleanRow['ref low (female)'] !== undefined && cleanRow['ref low (female)'] !== '' ? parseFloat(cleanRow['ref low (female)']) : null,
+                        ref_high_female: cleanRow['ref high (female)'] !== undefined && cleanRow['ref high (female)'] !== '' ? parseFloat(cleanRow['ref high (female)']) : null,
+                    };
+                    if (!parametersByTestName.has(forTest)) parametersByTestName.set(forTest, []);
+                    parametersByTestName.get(forTest).push(parsed);
+                });
             }
 
             // 1. Create a "Fuzzy" map of existing tests
@@ -7873,14 +7980,15 @@ async function processExcelImport(event) {
 
                 if (!testName || testName.trim() === "") continue;
 
+                // Normalize the incoming Excel test name
+                let normalizedExcelName = getStandardizedTestName(testName.trim());
+
                 const payload = {
                     name: testName.trim(),
                     sample_type: sampleType,
-                    price: parseFloat(price) || 0
+                    price: parseFloat(price) || 0,
+                    _normalizedName: normalizedExcelName, // looked up against parametersByTestName below, stripped before POSTing
                 };
-
-                // Normalize the incoming Excel test name
-                let normalizedExcelName = getStandardizedTestName(payload.name);
 
                 // 3. Check for Fuzzy Duplicates
                 if (existingTestsMap.has(normalizedExcelName)) {
@@ -7916,9 +8024,12 @@ async function processExcelImport(event) {
 
             showAlert(t('importing_tests', 'Importing {count} tests...', {count: toImport.length}), 'info');
             let successCount = 0;
+            let paramSuccessCount = 0;
 
             // 5. Send the final approved list to the database
             for (let payload of toImport) {
+                const normalizedName = payload._normalizedName;
+                delete payload._normalizedName; // helper only -- not a real LabTest field
                 const response = await fetch('/api/tests', {
                     method: 'POST',
                     headers: {
@@ -7928,13 +8039,31 @@ async function processExcelImport(event) {
                     body: JSON.stringify(payload)
                 });
 
-                if (response.ok) successCount++;
+                if (!response.ok) continue;
+                successCount++;
+
+                // Attach this test's parameters, if the workbook's Parameters sheet had any
+                // rows for it — same nested-data round-trip exportTestsWithParameters() sets
+                // up on the way out.
+                const created = await response.json().catch(() => null);
+                const params = created?.id ? parametersByTestName.get(normalizedName) : null;
+                if (params) {
+                    for (const param of params) {
+                        const paramResponse = await apiFetch(`/api/lab-tests/${created.id}/parameters`, {
+                            method: 'POST',
+                            body: JSON.stringify(param),
+                        });
+                        if (paramResponse.ok) paramSuccessCount++;
+                    }
+                }
             }
 
             // 6. Clean up and Refresh
-            event.target.value = ''; 
-            showAlert(t('tests_imported', 'Successfully imported {count} tests!', {count: successCount}), 'success');
-            await fetchLabTests(); 
+            event.target.value = '';
+            showAlert(paramSuccessCount > 0
+                ? t('tests_imported_with_params', 'Successfully imported {count} tests and {paramCount} parameter(s)!', {count: successCount, paramCount: paramSuccessCount})
+                : t('tests_imported', 'Successfully imported {count} tests!', {count: successCount}), 'success');
+            await fetchLabTests();
             
         } catch (error) {
             console.error("Excel Parsing Error:", error);

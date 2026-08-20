@@ -213,7 +213,7 @@
                                 📤 Import Excel
                             </button>
                             
-                            <button class="btn ghost" style="border-color: var(--ok); color: var(--ok);" onclick="exportTableToExcel(this, 'hr_employees_directory')">
+                            <button class="btn ghost" style="border-color: var(--ok); color: var(--ok);" onclick="exportTableToExcel(this, 'hr_employees_directory', '#hr-list-container')">
                                 📥 Export Excel
                             </button>
                             
@@ -1084,7 +1084,7 @@
                         <div style="display: flex; gap: 10px;">
                             <button id="bulk-delete-tests-btn" class="btn btn-danger" onclick="handleBulkDeleteTests()" style="display: none;" data-i18n="actions.delete_selected">Delete Selected</button>
 
-                            <button class="btn ghost" style="border-color: var(--ok); color: var(--ok);" onclick="exportTableToExcel(this, 'test_directory')">
+                            <button class="btn ghost" style="border-color: var(--ok); color: var(--ok);" onclick="exportTestsWithParameters()">
                                 📥 <span data-i18n="actions.export_excel">Export to Excel</span>
                             </button>
 
@@ -1181,7 +1181,7 @@
                             <button class="btn ghost" style="border-color: #3b82f6; color: #3b82f6;" onclick="document.getElementById('import-warehouse-excel').click()">
                                 📤 Import Excel
                             </button>
-                            <button class="btn ghost" style="border-color: var(--ok); color: var(--ok);" onclick="exportTableToExcel(this, 'warehouse_inventory')">
+                            <button class="btn ghost" style="border-color: var(--ok); color: var(--ok);" onclick="exportTableToExcel(this, 'warehouse_inventory', '#warehouse-list-container')">
                                 📥 Export Excel
                             </button>
                             

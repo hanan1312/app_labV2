@@ -605,7 +605,9 @@
       "confirm_delete_visits": "Delete {count} order(s)/visit(s)? This cannot be undone. Any payment already recorded for them is not affected.",
       "visits_deleted": "Deleted {count} order(s)/visit(s).",
       "visits_delete_error": "Error deleting orders/visits: {msg}",
-      "visits_delete_partial": "Deleted {ok}; {failed} failed: {msg}"
+      "visits_delete_partial": "Deleted {ok}; {failed} failed: {msg}",
+      "tests_imported_with_params": "Successfully imported {count} tests and {paramCount} parameter(s)!",
+      "tests_delete_partial": "Deleted {ok} test(s); {failed} failed: {msg}"
     },
     "price_check": {
       "title": "Check Tests Total Price",
@@ -1223,7 +1225,9 @@
       "confirm_delete_visits": "هل تريد حذف {count} طلب/زيارة؟ لا يمكن التراجع عن هذا الإجراء. لن يتأثر أي دفع مسجل مسبقاً لها.",
       "visits_deleted": "تم حذف {count} طلب/زيارة.",
       "visits_delete_error": "خطأ أثناء حذف الطلبات/الزيارات: {msg}",
-      "visits_delete_partial": "تم حذف {ok}؛ فشل حذف {failed}: {msg}"
+      "visits_delete_partial": "تم حذف {ok}؛ فشل حذف {failed}: {msg}",
+      "tests_imported_with_params": "تم استيراد {count} تحليل و {paramCount} معيار بنجاح!",
+      "tests_delete_partial": "تم حذف {ok} تحليل؛ فشل حذف {failed}: {msg}"
     },
     "price_check": {
       "title": "حساب إجمالي سعر التحاليل",
