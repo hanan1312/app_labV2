@@ -83,6 +83,14 @@ class PatientVisit(db.Model):
     date = db.Column(db.String(100))
     status = db.Column(db.String(50), default='pending') # pending, collected, delivered_link, delivered_hard
     referred_by = db.Column(db.String(200), default='Self')  # shown on the generated report
+    # Results-approval workflow (independent of `status` above, which already carries
+    # delivery-state values other code branches on) — NULL for every visit predating this
+    # feature, or one not yet complete; 'not_required'/'pending_approval' set once complete,
+    # depending on LabConfig.require_results_approval at that moment; 'approved' once a
+    # permitted user clears it via Test Results > Check (see /api/visits/approve).
+    approval_status = db.Column(db.String(20))
+    approved_by = db.Column(db.String(100))  # session username/master id — no real User row to FK for master_* sessions
+    approved_at = db.Column(db.DateTime)
     # test_names/report_url used to live here (JSON string / comma-separated paths); now in
     # visit_tests/visit_reports (see src/models/junctions.py, get_visit_test_names()/get_visit_report_url())
 

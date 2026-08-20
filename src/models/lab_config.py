@@ -17,6 +17,9 @@ class LabConfig(db.Model):
     msg_enabled = db.Column(db.Boolean, default=False)
     msg_method = db.Column(db.String(20), default='whatsapp')
     msg_phone = db.Column(db.String(50), default='')
+    # When True, a completed visit's results-ready message is held for a permitted user to
+    # approve (Test Results > Check) instead of being auto-sent — see PatientVisit.approval_status.
+    require_results_approval = db.Column(db.Boolean, default=False)
     theme = db.Column(db.String(10), default='dark')
 
     # Report branding — lab_director/lab_phone/lab_address above double as the doctor's name /
@@ -107,6 +110,7 @@ class LabConfig(db.Model):
             'msg_enabled': self.msg_enabled,
             'msg_method': self.msg_method,
             'msg_phone': self.msg_phone,
+            'require_results_approval': self.require_results_approval,
             'theme': self.theme,
             'lab_email': self.lab_email,
             'doctor_qualification': self.doctor_qualification,

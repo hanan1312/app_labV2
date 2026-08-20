@@ -491,6 +491,8 @@ function showSuccess(body, messagingResult) {
             statusLine = messagingResult.ok
                 ? `✅ All results delivered — message sent via ${messagingResult.method.toUpperCase()}.`
                 : `✅ All results delivered — sending the ${messagingResult.method.toUpperCase()} message failed (is the Node bot running?).`;
+        } else if (body.messaging && body.messaging.approval_pending) {
+            statusLine = '✅ All results delivered — pending approval before the message is sent (Test Results > Check).';
         } else {
             statusLine = '✅ All results delivered.';
         }

@@ -1978,6 +1978,11 @@ async function initApp() {
     document.querySelector('.sidebar').style.visibility = 'visible'; 
 }
 
+// Set by setupUIForRole() below, read by the Visit Results modal (renderVisitResultsModal)
+// to decide whether to show its "Approve & Send" action — kept as a global rather than
+// recomputed locally there so both places can never disagree about who's allowed to approve.
+let userCanApproveResults = false;
+
 function setupUIForRole() {
     const permissions = currentUser?.permissions ? currentUser.permissions.split(',') : [];
     const allTabs = document.querySelectorAll('.nav-tab');
@@ -1997,12 +2002,18 @@ function setupUIForRole() {
         }
     });
     const dashboardTab = document.querySelector('.nav-tab[data-tab="dashboard"]');
-    
+
     // If the dashboard is hidden for this user, but there is another allowed tab, switch to it immediately
     if (dashboardTab && dashboardTab.style.display === 'none' && firstAllowedTab) {
         showTab(firstAllowedTab);
     }
     console.log("Current Permissions:", permissions)
+
+    // Test Results > Check — gated by its own permission, independent of the "test-results"
+    // tab permission itself, so a tab-visible user doesn't automatically get to approve.
+    userCanApproveResults = currentUser?.role === 'admin' || currentUser?.role === 'lab_master' || permissions.includes('approve_results');
+    const checkApprovalsBtn = document.getElementById('check-approvals-btn');
+    if (checkApprovalsBtn) checkApprovalsBtn.style.display = userCanApproveResults ? 'inline-block' : 'none';
 }
 document.addEventListener('DOMContentLoaded', () => {
     const savedTheme = localStorage.getItem('theme');
@@ -2411,7 +2422,7 @@ function renderDashboardTable() {
                 if (!testSummary[tName]) testSummary[tName] = { total: 0, pending: 0, collected: 0 };
                 testSummary[tName].total++;
                 if (v.status === 'pending') testSummary[tName].pending++;
-                if (v.status === 'collected' || v.status === 'partially_delivered' || v.status === 'results_delivered_by_link') testSummary[tName].collected++;
+                if (v.status === 'collected' || v.status === 'partially_delivered' || v.status === 'awaiting_approval' || v.status === 'results_delivered_by_link') testSummary[tName].collected++;
             });
         });
         
@@ -2552,6 +2563,9 @@ function buildAdminTableHTML(title, headers, data, type, clickable = false, pagi
                     const totalCount = row.tests ? row.tests.length : 0;
                     const doneCount = row.completed_tests ? row.completed_tests.length : 0;
                     countBadge = `<span style="position: absolute; top: -8px; right: -10px; background: var(--danger); color: white; border-radius: 50%; padding: 1px 5px; font-size: 9px; font-weight: bold; min-width: 14px; text-align: center; line-height: 1.4; box-shadow: 0 1px 3px rgba(0,0,0,0.4);">${doneCount}/${totalCount}</span>`;
+                } else if (row.status === 'awaiting_approval') {
+                    pillClass = 'warn'; // Yellow/Orange — results are complete but held for approval
+                    badgeText = t('status_awaiting_approval', 'Waiting for Approval');
                 } else if (row.status === 'results_delivered_by_link') {
                     pillClass = 'info'; // Blue
                     badgeText = t('status_delivered', 'Delivered');
@@ -2594,6 +2608,21 @@ function buildAdminTableHTML(title, headers, data, type, clickable = false, pagi
                                 <button onclick="printPDFReport('${row.visit_id}')">${t('btn_print_report', '🖨️ Print Report')}</button>
                                 <button onclick="window.open('/results-entry/${row.id}', 'EnterResults', 'width=1000,height=800,resizable=yes,scrollbars=yes')">${t('btn_enter_results', '🧪 Enter Results')}</button>
                                 <button onclick="openUploadModal('${row.visit_id}', '${row.patient_id}', '${row.patient_name}')">${t('btn_upload_pdf_report', '📤 Upload PDF Report')}</button>
+                                <button onclick="openBookTestModal(${row.patient_id})">${t('btn_new_order', '📋 New Order')}</button>
+                                <button onclick="quickEditPatient(${row.patient_id})">${t('btn_edit_patient', '✏️ Edit Patient')}</button>
+                            </div>
+                        </div>
+                    `;
+                } else if (row.status === 'awaiting_approval') {
+                    // Approval itself happens in bulk via Test Results > Check (approve_results
+                    // permission) — no per-row "approve" action here on purpose, so there's one
+                    // single place that gates the actual message send.
+                    actionBtn = `
+                        <div class="action-dropdown" style="position: relative; display: inline-block;">
+                            <button class="btn ghost">${t('action_menu_label', 'Action ▾')}</button>
+                            <div class="action-dropdown-content" style="display: none; position: absolute; right: 0; background: var(--bg-panel); border: 1px solid var(--border); border-radius: 4px; z-index: 100; min-width: 160px;">
+                                <button onclick="printPDFReport('${row.visit_id}')">${t('btn_print_report', '🖨️ Print Report')}</button>
+                                <button onclick="openUploadModal('${row.visit_id}', '${row.patient_id}', '${row.patient_name}')">${t('btn_upload_additional_pdf', '📤 Upload Additional PDF')}</button>
                                 <button onclick="openBookTestModal(${row.patient_id})">${t('btn_new_order', '📋 New Order')}</button>
                                 <button onclick="quickEditPatient(${row.patient_id})">${t('btn_edit_patient', '✏️ Edit Patient')}</button>
                             </div>
@@ -3361,9 +3390,10 @@ async function fetchTestResultsPage() {
     const filterFrom = document.getElementById('results-filter-date-from').value;
     const filterTo = document.getElementById('results-filter-date-to').value;
     const filterGender = document.getElementById('results-filter-gender').value;
+    const filterStatus = document.getElementById('results-filter-status').value || 'results_delivered_by_link';
 
     const params = new URLSearchParams({
-        page: testResultsPage, per_page: 100, status: 'results_delivered_by_link',
+        page: testResultsPage, per_page: 100, status: filterStatus,
     });
     if (searchTerm) params.set('search', searchTerm);
     if (filterFrom) params.set('date_from', filterFrom);
@@ -3382,23 +3412,32 @@ async function fetchTestResultsPage() {
     const filtered = data.items || [];
 
     if (filtered.length === 0) {
-        listDiv.innerHTML = '<div class="table-container"><table style="width:100%;"><tr><td style="text-align:center; padding: 30px; color: var(--muted);">No delivered results match your filters.</td></tr></table></div>';
+        listDiv.innerHTML = '<div class="table-container"><table style="width:100%;"><tr><td style="text-align:center; padding: 30px; color: var(--muted);">No results match your filters.</td></tr></table></div>';
         return;
     }
 
+    const isAwaitingView = filterStatus === 'awaiting_approval';
     const startIndex = (data.page - 1) * (data.per_page || 100);
+    // Rows are clickable (same whole-row-opens-a-modal convention as the Dashboard tables,
+    // see openVisitResultsModal's other call site) so a technician can drill into the actual
+    // entered results — the Print PDF button is marked no-row-click so its own click doesn't
+    // also trigger the row's modal-open handler.
     let rows = filtered.map((v, index) => {
         const patientCode = `2024${String(v.patient_id).padStart(4, '0')}`;
+        const statusBadge = isAwaitingView
+            ? `<span class="pill warn">${t('status_awaiting_approval', 'Waiting for Approval')}</span>`
+            : `<span class="pill ok">${t('status_delivered', 'Delivered')}</span>`;
 
         return `
-        <tr>
+        <tr onclick="if (!event.target.closest('.no-row-click')) openVisitResultsModal(${v.id})" style="cursor: pointer;" title="${t('view_results_title', 'View results')}">
             <td>${startIndex + index + 1}</td>
             <td><strong>${patientCode}</strong></td>
             <td style="color: var(--muted);">${formatCairoDateTime(v.date, false)}</td>
             <td>${v.patient_name}</td>
             <td style="color: var(--muted);">${v.phone || 'N/A'}</td>
             <td>${v.tests.join(', ')}</td>
-            <td style="text-align: right;">
+            <td>${statusBadge}</td>
+            <td class="no-row-click" style="text-align: right;">
                 <button class="btn ghost" style="border-color: var(--ok); color: var(--ok);" onclick="printPDFReport('${v.visit_id}')">🖨️ Print PDF</button>
             </td>
         </tr>
@@ -3416,6 +3455,7 @@ async function fetchTestResultsPage() {
                     <th>Patient Name</th>
                     <th>Phone Number</th>
                     <th>Tests Included</th>
+                    <th>Status</th>
                     <th style="text-align: right;">Action</th>
                 </tr>
             </thead>
@@ -3425,6 +3465,131 @@ async function fetchTestResultsPage() {
     <div id="test-results-pagination"></div>`;
 
     renderPaginationControls('test-results-pagination', data, 'goToTestResultsPage');
+}
+
+// --- Test Results > Check: approve results held back by LabConfig.require_results_approval
+// (see save_results()/upload_report() in the backend) before their WhatsApp/SMS message
+// sends. Gated by the 'approve_results' permission — see setupUIForRole(). ---
+
+async function openPendingApprovalModal() {
+    const listDiv = document.getElementById('pending-approval-list');
+    const selectAll = document.getElementById('approval-select-all');
+    if (selectAll) selectAll.checked = false;
+    listDiv.innerHTML = `<p style="color: var(--muted); text-align: center; padding: 20px;">${t('loading', 'Loading...')}</p>`;
+    document.getElementById('pending-approval-modal').style.display = 'block';
+
+    try {
+        const response = await apiFetch('/api/visits/pending-approval');
+        const items = response.ok ? await response.json() : [];
+        renderPendingApprovalList(items);
+    } catch (error) {
+        console.error('Failed to load pending approvals:', error);
+        listDiv.innerHTML = `<p style="color: var(--danger); text-align: center; padding: 20px;">${t('network_error_occurred', 'Network error occurred.')}</p>`;
+    }
+}
+
+function renderPendingApprovalList(items) {
+    const listDiv = document.getElementById('pending-approval-list');
+    if (!items || items.length === 0) {
+        listDiv.innerHTML = `<p style="color: var(--muted); text-align: center; padding: 20px;">${t('no_pending_approval', 'No results are waiting for approval.')}</p>`;
+        return;
+    }
+    listDiv.innerHTML = items.map(v => `
+        <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer; color: var(--text); padding: 10px; border-bottom: 1px solid var(--border);">
+            <input type="checkbox" class="approval-checkbox" value="${v.id}" style="margin-top: 3px; width: auto;">
+            <span style="flex: 1;">
+                <strong>${v.patient_name}</strong> <span style="color: var(--muted); font-size: 12px;">(${v.phone || 'No phone'})</span><br>
+                <small style="color: var(--muted);">${formatCairoDateTime(v.date, false)} — ${(v.tests || []).join(', ')}</small>
+            </span>
+        </label>
+    `).join('');
+}
+
+function closePendingApprovalModal() {
+    document.getElementById('pending-approval-modal').style.display = 'none';
+}
+
+function toggleAllApprovalRows(checkbox) {
+    document.querySelectorAll('#pending-approval-list .approval-checkbox').forEach(cb => {
+        cb.checked = checkbox.checked;
+    });
+}
+
+// Shared core for both bulk approval (Test Results > Check) and single-visit approval (the
+// Visit Results modal's "Approve & Send" button) — POSTs to /api/visits/approve, sends the
+// results-ready message for every returned visit that has a phone on file, and surfaces one
+// aggregate summary toast rather than one per visit. Returns true on success so callers know
+// whether to close their own modal; always refreshes the visible data either way it can.
+async function approveVisitsAndNotify(body) {
+    let data;
+    try {
+        const response = await apiFetch('/api/visits/approve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        data = await response.json();
+        if (!response.ok || !data.success) {
+            showAlert(data.error || t('network_error_occurred', 'Network error occurred.'), 'error');
+            return false;
+        }
+    } catch (error) {
+        console.error('Approve failed:', error);
+        showAlert(t('network_error_occurred', 'Network error occurred.'), 'error');
+        return false;
+    }
+
+    let sent = 0, skipped = 0, failed = 0;
+    for (const result of data.results) {
+        if (!result.phone) {
+            skipped++;
+            continue;
+        }
+        const outcome = await sendResultsReadyMessage({
+            phone: result.phone,
+            patientName: result.patient_name,
+            patientId: result.patient_id,
+            reportUrls: result.report_urls,
+            method: result.method,
+        });
+        if (outcome.ok) sent++; else failed++;
+    }
+
+    showAlert(
+        t('approve_summary', '{approved} approved — {sent} sent, {skipped} skipped (no phone), {failed} failed.',
+          { approved: data.approved_count, sent, skipped, failed }),
+        failed > 0 ? 'warn' : 'success'
+    );
+
+    await loadInitialData();
+    fetchTestResultsPage();
+    return true;
+}
+
+async function approveSelectedResults() {
+    const selectAll = document.getElementById('approval-select-all')?.checked;
+    const checkedIds = Array.from(document.querySelectorAll('#pending-approval-list .approval-checkbox:checked')).map(cb => parseInt(cb.value, 10));
+
+    if (!selectAll && checkedIds.length === 0) {
+        showAlert(t('select_at_least_one_test', 'Please select at least one test.'), 'warn');
+        return;
+    }
+
+    // "Select all" is sent as an explicit server-side flag, not the checked-id list, so it
+    // always means "every visit pending right now" — never limited to what happened to be
+    // rendered in this modal.
+    const body = selectAll ? { approve_all: true } : { visit_ids: checkedIds };
+    const ok = await approveVisitsAndNotify(body);
+    if (ok) closePendingApprovalModal();
+}
+
+// Called from the Visit Results modal's "Approve & Send" button (see renderVisitResultsModal)
+// when that visit's status is 'awaiting_approval' — lets a permitted user review (and, via
+// "Edit Results", correct) the actual entered values before approving a single visit, as an
+// alternative to the bulk Check-approvals flow.
+async function approveVisitFromModal(visitId) {
+    const ok = await approveVisitsAndNotify({ visit_ids: [visitId] });
+    if (ok) closeVisitResultsModal();
 }
 
 function searchClientHistory() {
@@ -3558,6 +3723,9 @@ function searchReports() {
         } else if (latestStatus === 'partially_delivered') {
             pillClass = 'info'; // Blue
             badgeText = t('status_partially_delivered', 'Partially Delivered');
+        } else if (latestStatus === 'awaiting_approval') {
+            pillClass = 'warn'; // Yellow/Orange
+            badgeText = t('status_awaiting_approval', 'Waiting for Approval');
         } else if (latestStatus === 'results_delivered_by_link') {
             pillClass = 'ok'; // Green
             badgeText = t('status_results_delivered', 'Results Delivered');
@@ -3639,6 +3807,9 @@ function openPatientHistoryModal(clientId) {
                 const totalCount = v.tests ? v.tests.length : 0;
                 const doneCount = v.completed_tests ? v.completed_tests.length : 0;
                 countBadge = `<span style="position: absolute; top: -8px; right: -10px; background: var(--danger); color: white; border-radius: 50%; padding: 1px 5px; font-size: 9px; font-weight: bold; min-width: 14px; text-align: center; line-height: 1.4; box-shadow: 0 1px 3px rgba(0,0,0,0.4);">${doneCount}/${totalCount}</span>`;
+            } else if (v.status === 'awaiting_approval') {
+                pillClass = 'warn';
+                badgeText = t('status_awaiting_approval', 'Waiting for Approval');
             } else if (v.status === 'results_delivered_by_link') {
                 pillClass = 'ok';
                 badgeText = t('status_delivered', 'Delivered');
@@ -3647,7 +3818,7 @@ function openPatientHistoryModal(clientId) {
             // --- THE NEW MULTI-FILE PRINT LOGIC ---
             let actionBtn = `<span style="color: var(--muted); font-size: 11px;">${t('status_awaiting_results', 'Awaiting Results')}</span>`;
 
-            if ((v.status === 'results_delivered_by_link' || v.status === 'partially_delivered') && v.report_url) {
+            if ((v.status === 'results_delivered_by_link' || v.status === 'partially_delivered' || v.status === 'awaiting_approval') && v.report_url) {
                 // Split the comma-separated URLs
                 const urls = v.report_url.split(',').filter(url => url.trim() !== '');
 
@@ -3740,6 +3911,8 @@ function openVisitResultsModal(visitId) {
     modal.style.display = 'block';
     document.getElementById('vr-modal-title').textContent = 'Loading...';
     document.getElementById('vr-modal-subtitle').textContent = '';
+    document.getElementById('vr-approval-bar').style.display = 'none';
+    document.getElementById('vr-approval-bar').innerHTML = '';
     document.getElementById('vr-charts-container').innerHTML = '';
     document.getElementById('vr-modal-body').innerHTML = '';
     destroyVrCharts();
@@ -3769,6 +3942,28 @@ function renderVisitResultsModal(data) {
 
     document.getElementById('vr-modal-title').textContent = `${data.patient_name} — ${data.visit_code}`;
     document.getElementById('vr-modal-subtitle').textContent = data.date || '';
+
+    // Lets a permitted user review the entered values right here and either fix them first
+    // (Edit Results, reusing the same results-entry popup the "Enter Results" action opens
+    // elsewhere) or approve directly — an alternative, single-visit path to the bulk Check-
+    // approvals flow. Only shown for a visit actually awaiting approval, and only to someone
+    // with the approve_results permission (userCanApproveResults, set in setupUIForRole()).
+    const approvalBar = document.getElementById('vr-approval-bar');
+    if (data.status === 'awaiting_approval' && userCanApproveResults) {
+        approvalBar.style.display = 'block';
+        approvalBar.innerHTML = `
+            <div class="card" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-color: var(--warn);">
+                <span class="pill warn">${t('status_awaiting_approval', 'Waiting for Approval')}</span>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn ghost" onclick="window.open('/results-entry/${data.visit_id}', 'EnterResults', 'width=1000,height=800,resizable=yes,scrollbars=yes')">${t('btn_enter_results', '🧪 Enter Results')}</button>
+                    <button class="btn" style="background: var(--teal); color: #04121d;" onclick="approveVisitFromModal(${data.visit_id})">✅ ${t('results.approve_selected', 'Approve & Send')}</button>
+                </div>
+            </div>
+        `;
+    } else {
+        approvalBar.style.display = 'none';
+        approvalBar.innerHTML = '';
+    }
 
     const body = document.getElementById('vr-modal-body');
     if (!data.tests || !data.tests.length) {
@@ -4128,68 +4323,93 @@ async function handleFileUpload(event) {
 
         // 5. Background WhatsApp Sending via Node.js
         if (data.success && data.report_urls.length > 0) {
-            // Server-authoritative: same LabConfig.msg_enabled/msg_method the DB actually
-            // holds, fetched fresh in upload_report() (main.py) — NOT this page's live
-            // Settings checkbox, which only matches the DB if the last toggle was actually
-            // saved (and reverted on a failed/permission-denied save, which it isn't). That
-            // mismatch used to make this path send when "Enter Results" (which always asked
-            // the DB) would correctly have skipped, or vice versa.
-            const isEnabled = data.messaging?.enabled;
+            // Server-authoritative: same LabConfig.msg_enabled/msg_method/require_results_
+            // approval the DB actually holds, fetched fresh in upload_report() (main.py) —
+            // NOT this page's live Settings checkbox, which only matches the DB if the last
+            // toggle was actually saved (and reverted on a failed/permission-denied save,
+            // which it isn't). That mismatch used to make this path send when "Enter Results"
+            // (which always asked the DB) would correctly have skipped, or vice versa.
             const method = data.messaging?.method || 'whatsapp';
 
-            if (!isEnabled) {
+            if (data.messaging?.approval_pending) {
+                showAlert(t('report_uploaded_pending_approval', 'Report uploaded. Results are pending approval before sending — use Test Results > Check to approve.'), 'info');
+                return;
+            }
+            if (!data.messaging?.enabled) {
                 showAlert(t('report_uploaded_messaging_disabled', 'Report uploaded. Auto-messaging is disabled.'), 'info');
                 return;
             }
-            const liveServer = `http://${window.location.hostname}:${window.APP_PORTS.backend}`;
-            const nodeServer = `http://${window.location.hostname}:${window.APP_PORTS.node}`; // Your Node.js Bot Port
-            const endpoint = (method === 'sms') ? '/api/sms/send' : '/api/whatsapp/send';
 
-            const patientName = window.currentUploadPatientName || "عميلنا العزيز";
-            let pdfLinksText = data.report_urls.map((url, index) => {
-                // FIX: encodeURI converts spaces into '%20' so WhatsApp doesn't break the link
-                let cleanUrl = encodeURI(url.trim());
-
-                // Ensure absolute routing
-                if (!cleanUrl.startsWith('/')) {
-                    cleanUrl = '/' + cleanUrl;
-                }
-
-                return `📄 التقرير ${index + 1}: ${liveServer}${cleanUrl}`;
-            }).join('\n');
-
-            let message = `مرحباً ${patientName}،\n\nنتائج التحاليل الخاصة بك جاهزة الآن:\n\n${pdfLinksText}\n\nلعرض السجل الطبي الكامل: ${liveServer}/patient-history/${data.patient_id}`;
-            const messagingPayload = {
-                centerId: 'lab',
+            const result = await sendResultsReadyMessage({
                 phone: data.phone,
-                message: message // <-- Now passing the valid string
-            };
-            if (method === 'whatsapp') {
-                messagingPayload.pdfUrl = `${liveServer}${encodeURI(data.report_urls[0].trim().startsWith('/') ? data.report_urls[0].trim() : '/' + data.report_urls[0].trim())}`;
-            }
-
-            try {
-                const waResponse = await fetch(`${nodeServer}${endpoint}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(messagingPayload)
-                });
-        
-                if (!waResponse.ok) {
-                    throw new Error(`Server returned ${waResponse.status}`);
-                }
-        
+                patientName: window.currentUploadPatientName,
+                patientId: data.patient_id,
+                reportUrls: data.report_urls,
+                method,
+            });
+            if (result.ok) {
                 showAlert(t('message_sent_via', 'Message sent successfully via {method}!', {method: method.toUpperCase()}), 'success');
-                
-            } catch (err) {
-                console.error("Messaging Error:", err);
+            } else {
                 showAlert(t('message_send_failed', 'Failed to send {method} message. Ensure Node server is running.', {method: method.toUpperCase()}), 'error');
             }
         }
-        
+
     } catch (error) {
         console.error("Upload/WhatsApp Error:", error);
         showAlert(error.message || t('network_error_occurred', 'Network error occurred.'), 'error');
+    }
+}
+
+// Builds the Arabic "results ready" message and sends it via the Node WhatsApp/SMS bot.
+// Shared by handleFileUpload() above and approveSelectedResults() below, so the two flows
+// (auto-send, and approve-then-send) can't drift into two different message templates again.
+// Returns {ok, error, method} rather than showing its own toast — a single send (upload flow)
+// and a batch of sends (approval flow) each want to surface the outcome differently.
+async function sendResultsReadyMessage({ phone, patientName, patientId, reportUrls, method }) {
+    method = method || 'whatsapp';
+    if (!phone) {
+        return { ok: false, error: 'no_phone', method };
+    }
+
+    const liveServer = `http://${window.location.hostname}:${window.APP_PORTS.backend}`;
+    const nodeServer = `http://${window.location.hostname}:${window.APP_PORTS.node}`; // Your Node.js Bot Port
+    const endpoint = (method === 'sms') ? '/api/sms/send' : '/api/whatsapp/send';
+
+    const safeName = patientName || "عميلنا العزيز";
+    const urls = reportUrls || [];
+    let pdfLinksText = urls.map((url, index) => {
+        // FIX: encodeURI converts spaces into '%20' so WhatsApp doesn't break the link
+        let cleanUrl = encodeURI(url.trim());
+        if (!cleanUrl.startsWith('/')) {
+            cleanUrl = '/' + cleanUrl;
+        }
+        return `📄 التقرير ${index + 1}: ${liveServer}${cleanUrl}`;
+    }).join('\n');
+
+    let message = `مرحباً ${safeName}،\n\nنتائج التحاليل الخاصة بك جاهزة الآن:\n\n${pdfLinksText}\n\nلعرض السجل الطبي الكامل: ${liveServer}/patient-history/${patientId}`;
+    const messagingPayload = {
+        centerId: 'lab',
+        phone,
+        message,
+    };
+    if (method === 'whatsapp' && urls[0]) {
+        const first = urls[0].trim();
+        messagingPayload.pdfUrl = `${liveServer}${encodeURI(first.startsWith('/') ? first : '/' + first)}`;
+    }
+
+    try {
+        const waResponse = await fetch(`${nodeServer}${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(messagingPayload)
+        });
+        if (!waResponse.ok) {
+            throw new Error(`Server returned ${waResponse.status}`);
+        }
+        return { ok: true, method };
+    } catch (err) {
+        console.error("Messaging Error:", err);
+        return { ok: false, error: err.message, method };
     }
 }
 
@@ -4487,6 +4707,14 @@ async function openParametersModal(testId, testName) {
     currentParameterRows.forEach((row) => {
         row.relation_formula = formulaToDisplay(row.relation_formula || '');
         row.absolute_count_formula = formulaToDisplay(row.absolute_count_formula || '');
+        // parent_parameter_id (a real DB id, when loaded) is tracked in the modal as an array
+        // index instead (_parentRowIndex) — a newly-added row has no id yet, so "Depends On"-
+        // style dropdowns here reference rows by position, resolved back to real ids at save
+        // time (see saveParameterRows()'s pass 2), same reasoning as the {id}-token formulas.
+        const parentIdx = row.parent_parameter_id
+            ? currentParameterRows.findIndex((r) => r.id === row.parent_parameter_id)
+            : -1;
+        row._parentRowIndex = parentIdx >= 0 ? parentIdx : null;
     });
 
     renderParameterRows();
@@ -4528,6 +4756,22 @@ function renderParameterRows() {
                placeholder="${placeholder}"
                style="width: 100%; min-width: 200px;">
     `;
+    // Candidates for "Parent Parameter": named rows other than this one that don't
+    // themselves already have a parent (mirrors the one-level-nesting rule the backend
+    // enforces, so the dropdown never even offers an invalid choice).
+    const parentCell = (row, idx) => {
+        const options = currentParameterRows
+            .map((r, i) => ({ r, i }))
+            .filter(({ r, i }) => i !== idx && r.name && r.name.trim() && r._parentRowIndex == null)
+            .map(({ r, i }) => `<option value="${i}" ${row._parentRowIndex === i ? 'selected' : ''}>${r.name}</option>`)
+            .join('');
+        return `
+        <select onchange="currentParameterRows[${idx}]._parentRowIndex = this.value === '' ? null : parseInt(this.value, 10)" style="width: 100%; min-width: 120px;">
+            <option value="">—</option>
+            ${options}
+        </select>
+        `;
+    };
 
     tbody.innerHTML = currentParameterRows.map((row) => {
         const idx = currentParameterRows.indexOf(row);
@@ -4553,12 +4797,14 @@ function renderParameterRows() {
             <td style="min-width: 220px;">${formulaCell(row, idx, 'absolute_count_formula', "= e.g. [Neutrophils] / 100 * [WBC]")}</td>
             <td>${cell(row, 'absolute_count_unit')}</td>
             <td style="min-width: 150px;">${absoluteRangeCell}</td>
+            <td style="min-width: 110px;">${cell(row, 'category')}</td>
+            <td style="min-width: 140px;">${parentCell(row, idx)}</td>
             <td style="text-align: center;">
                 <span style="cursor: pointer; color: var(--danger); font-size: 18px;" onclick="removeParameterRow(${idx})">&times;</span>
             </td>
         </tr>
         `;
-    }).join('') || `<tr><td colspan="12" style="text-align: center; color: var(--muted); padding: 15px;">${t('empty_no_parameters_yet', 'No parameters yet — click "+ Add Parameter" below.')}</td></tr>`;
+    }).join('') || `<tr><td colspan="14" style="text-align: center; color: var(--muted); padding: 15px;">${t('empty_no_parameters_yet', 'No parameters yet — click "+ Add Parameter" below.')}</td></tr>`;
 }
 
 function addParameterRow() {
@@ -4568,6 +4814,7 @@ function addParameterRow() {
         gender_specific: false, ref_low_male: '', ref_high_male: '', ref_low_female: '', ref_high_female: '',
         relation_formula: '',
         absolute_count_formula: '', absolute_count_unit: '', absolute_ref_low: '', absolute_ref_high: '',
+        category: '', parent_parameter_id: null, _parentRowIndex: null,
     });
     renderParameterRows();
 }
@@ -4576,6 +4823,14 @@ function removeParameterRow(index) {
     const row = currentParameterRows[index];
     if (row.id) deletedParameterIds.push(row.id);
     currentParameterRows.splice(index, 1);
+    // _parentRowIndex references are positional (see openParametersModal) — removing a row
+    // shifts every later index, so a row parented to the one just removed must fall back to
+    // top-level rather than silently pointing at whatever row slides into that slot.
+    currentParameterRows.forEach((r) => {
+        if (r._parentRowIndex == null) return;
+        if (r._parentRowIndex === index) r._parentRowIndex = null;
+        else if (r._parentRowIndex > index) r._parentRowIndex -= 1;
+    });
     if (activeFormulaTarget && activeFormulaTarget.rowIndex === index) activeFormulaTarget = null;
     renderParameterRows();
 }
@@ -4661,6 +4916,7 @@ async function saveParameterRows() {
                 absolute_count_unit: row.absolute_count_unit || null,
                 absolute_ref_low: numOrNull(row.absolute_ref_low),
                 absolute_ref_high: numOrNull(row.absolute_ref_high),
+                category: row.category || null,
             };
 
             if (row.id) {
@@ -4696,6 +4952,20 @@ async function saveParameterRows() {
             if (!absoluteResponse.ok) {
                 const body = await absoluteResponse.json().catch(() => ({}));
                 showAlert(t('absolute_formula_not_saved', 'Absolute Count formula for "{name}" was not saved: {error}', {name: row.name, error: body.error || t('hr_unknown_error', 'unknown error')}), 'error');
+            }
+
+            // Same reasoning as the formulas above: a chosen parent may only just have gotten
+            // its real id in pass 1, so this resolves _parentRowIndex -> a real id last.
+            const parentId = (row._parentRowIndex != null && currentParameterRows[row._parentRowIndex])
+                ? currentParameterRows[row._parentRowIndex].id
+                : null;
+            const parentResponse = await apiFetch(`/api/parameters/${row.id}`, {
+                method: 'PUT',
+                body: JSON.stringify({ parent_parameter_id: parentId }),
+            });
+            if (!parentResponse.ok) {
+                const body = await parentResponse.json().catch(() => ({}));
+                showAlert(t('parent_parameter_not_saved', 'Parent parameter for "{name}" was not saved: {error}', {name: row.name, error: body.error || t('hr_unknown_error', 'unknown error')}), 'error');
             }
         }
 
@@ -4856,24 +5126,21 @@ async function deletePanel(panelId) {
 
 // 4. OVERRIDE: Dynamic "Book Test" Modal
 // This overrides the old function to generate checkboxes from our live array!
+// Selections for the "Book Tests" modal are tracked here (name -> {price, sample_type}),
+// same reasoning as priceCheckSelectedTests below: renderBookTestCheckboxes() re-renders the
+// (filtered) checkbox list on every search keystroke, and a checked-but-filtered-out box
+// would otherwise lose its checked state the moment it leaves the DOM. This object is the
+// source of truth; submitTestBooking() reads from it, not from the checkboxes.
+let bookTestSelectedTests = {};
+
 function openBookTestModal(clientId) {
     currentBookingClientId = clientId;
+    bookTestSelectedTests = {};
 
-    // Get the container in your modal where the checkboxes go
-    const container = document.getElementById('dynamic-test-checkboxes');
+    const searchInput = document.getElementById('book-test-search');
+    if (searchInput) searchInput.value = '';
 
-    if (availableTests.length === 0) {
-        container.innerHTML = `<p style="color: var(--danger);">${t('empty_no_tests_in_directory', 'No tests available in directory. Please add tests in the "Test List" tab first.')}</p>`;
-    } else {
-        // Dynamically create a checkbox for every test in your database
-        container.innerHTML = availableTests.map(t => `
-        <label style="display: flex; align-items: center; cursor: pointer; color: var(--text); padding: 8px; border-radius: 4px;">
-            <input type="checkbox" class="test-checkbox" value="${t.name}" data-price="${t.price}" data-sample="${t.sample_type || 'Unspecified'}" style="margin-right: 10px; width: auto;">
-            <span style="flex: 1;">${t.name} <span style="font-size:11px; color:var(--muted)">(${t.sample_type || 'Unspecified'})</span></span>
-            <span style="color: var(--ok); font-size: 12px;">${parseFloat(t.price).toFixed(2)} EGP</span>
-        </label>
-    `).join('');
-    }
+    renderBookTestCheckboxes();
 
     const panelContainer = document.getElementById('panel-quick-select');
     if (panelContainer) {
@@ -4888,16 +5155,59 @@ function openBookTestModal(clientId) {
     document.getElementById('book-test-modal').style.display = 'block';
 }
 
+function renderBookTestCheckboxes() {
+    const container = document.getElementById('dynamic-test-checkboxes');
+    if (!container) return;
+
+    if (availableTests.length === 0) {
+        container.innerHTML = `<p style="color: var(--danger);">${t('empty_no_tests_in_directory', 'No tests available in directory. Please add tests in the "Test List" tab first.')}</p>`;
+        return;
+    }
+
+    const searchTerm = (document.getElementById('book-test-search')?.value || '').toLowerCase();
+    const filtered = availableTests.filter(test =>
+        test.name.toLowerCase().includes(searchTerm) ||
+        (test.sample_type || '').toLowerCase().includes(searchTerm)
+    );
+
+    container.innerHTML = filtered.length === 0
+        ? `<p style="color: var(--muted);">${t('empty_no_tests_available', 'No tests available. Click "Add New Test" to begin.')}</p>`
+        : filtered.map(test => `
+        <label style="display: flex; align-items: center; cursor: pointer; color: var(--text); padding: 8px; border-radius: 4px;">
+            <input type="checkbox" class="test-checkbox" value="${test.name}"
+                   ${Object.prototype.hasOwnProperty.call(bookTestSelectedTests, test.name) ? 'checked' : ''}
+                   onchange="toggleBookTestSelection('${test.name.replace(/'/g, "\\'")}', ${test.price}, '${(test.sample_type || 'Unspecified').replace(/'/g, "\\'")}', this.checked)"
+                   style="margin-right: 10px; width: auto;">
+            <span style="flex: 1;">${test.name} <span style="font-size:11px; color:var(--muted)">(${test.sample_type || 'Unspecified'})</span></span>
+            <span style="color: var(--ok); font-size: 12px;">${parseFloat(test.price).toFixed(2)} EGP</span>
+        </label>
+    `).join('');
+}
+
+function toggleBookTestSelection(testName, price, sampleType, isChecked) {
+    if (isChecked) {
+        bookTestSelectedTests[testName] = { price, sample_type: sampleType };
+    } else {
+        delete bookTestSelectedTests[testName];
+    }
+}
+
 // Toggle-checks every test that belongs to a panel — check all if any are unchecked, else
-// uncheck all. The technician can still adjust individual checkboxes afterward.
+// uncheck all. The technician can still adjust individual checkboxes afterward. Writes into
+// bookTestSelectedTests (not just DOM checked state) so a quick-selected panel survives a
+// subsequent search re-render.
 function applyPanelQuickSelect(panelId) {
     const panel = (availablePanels || []).find(p => p.id === panelId);
     if (!panel) return;
-    const boxes = panel.tests
-        .map(t => document.querySelector(`#dynamic-test-checkboxes .test-checkbox[value="${t.name}"]`))
-        .filter(Boolean);
-    const allChecked = boxes.length > 0 && boxes.every(b => b.checked);
-    boxes.forEach(b => { b.checked = !allChecked; });
+    const allSelected = panel.tests.every(t => Object.prototype.hasOwnProperty.call(bookTestSelectedTests, t.name));
+    panel.tests.forEach(t => {
+        if (allSelected) {
+            delete bookTestSelectedTests[t.name];
+        } else {
+            bookTestSelectedTests[t.name] = { price: t.price, sample_type: t.sample_type || 'Unspecified' };
+        }
+    });
+    renderBookTestCheckboxes();
 }
 
 // Call loadTestList when the tab is clicked (Assuming you have a tab switcher in your script)
@@ -4978,6 +5288,7 @@ function clearPriceCheckSelection() {
 function closeBookTestModal() {
     document.getElementById('book-test-modal').style.display = 'none';
     currentBookingClientId = null;
+    bookTestSelectedTests = {};
     document.getElementById('book-test-form').reset();
 }
 
@@ -4996,9 +5307,10 @@ function submitTestBooking(event) {
     const patient = clients.find(c => c.id === currentBookingClientId);
     if (!patient) return showAlert(t('patient_data_lost', 'Patient data lost. Please try again.'), 'error');
 
-    // Gather selected tests and prices
-    const selectedBoxes = document.querySelectorAll('.test-checkbox:checked');
-    if (selectedBoxes.length === 0) {
+    // Gather selected tests and prices from the persisted selection object (not the DOM —
+    // see bookTestSelectedTests above for why: a search filter can hide a checked box).
+    const selectedEntries = Object.entries(bookTestSelectedTests);
+    if (selectedEntries.length === 0) {
         showAlert(t('select_at_least_one_test', 'Please select at least one test.'), 'warn');
         return;
     }
@@ -5008,12 +5320,11 @@ function submitTestBooking(event) {
     let samplesList = [];
     let subtotal = 0;
 
-    selectedBoxes.forEach(box => {
-        testsList.push(box.value);
-        samplesList.push(box.getAttribute('data-sample'));
-        const price = parseFloat(box.getAttribute('data-price'));
-        pricesList.push(price);
-        subtotal += price;
+    selectedEntries.forEach(([name, info]) => {
+        testsList.push(name);
+        samplesList.push(info.sample_type);
+        pricesList.push(info.price);
+        subtotal += info.price;
     });
 
     // Generate Unique Trans ID (YYYYMMDDHHMMSS-PID)
@@ -5467,6 +5778,7 @@ async function saveSettings() {
         msg_enabled: document.getElementById('setting-msg-enabled').checked,
         msg_method: document.getElementById('setting-msg-method').value,
         msg_phone: document.getElementById('setting-msg-phone').value,
+        require_results_approval: document.getElementById('setting-require-results-approval').checked,
         logo_path: document.getElementById('settings-logo-preview').src,
         cover_path: document.getElementById('settings-cover-preview').src,
         signature_path: document.getElementById('settings-signature-preview').src,
@@ -5581,6 +5893,11 @@ async function applyGlobalSettings() {
         if (settings.msg_phone) {
             const msgPhone = document.getElementById('setting-msg-phone');
             if (msgPhone) msgPhone.value = settings.msg_phone;
+        }
+
+        if (settings.require_results_approval !== undefined) {
+            const approvalCheckbox = document.getElementById('setting-require-results-approval');
+            if (approvalCheckbox) approvalCheckbox.checked = settings.require_results_approval;
         }
 
         // 2. Force the UI to update based on the loaded settings!
@@ -8075,30 +8392,47 @@ async function processExcelImport(event) {
     reader.readAsArrayBuffer(file);
 }
 
+// Permissions that gate a specific action rather than a whole sidebar tab — openAccessModal()
+// can't auto-generate a checkbox for these from .nav-tab elements (there's no matching tab),
+// so they're listed explicitly and appended after the auto-generated ones.
+const EXTRA_PERMISSIONS = [
+    { key: 'approve_results', label: () => t('approve_results_permission', 'Approve Pending Results (Check)') },
+];
+
 function openAccessModal(userId, permissions) {
     document.getElementById('access-user-id').value = userId;
     const list = document.getElementById('permissions-list');
     const allowed = permissions ? permissions.split(',') : [];
-    
+
     // Clear current list
     list.innerHTML = '';
-    
+
     // Find all sidebar tabs and generate checkboxes dynamically
     document.querySelectorAll('.nav-tab').forEach(tab => {
         const tabName = tab.getAttribute('data-tab');
         const tabText = tab.querySelector('span:last-child').innerText; // Gets the label text
-        
+
         if (!tabName) return; // Skip if no data-tab attribute
 
         const label = document.createElement('label');
         label.style.display = 'block';
         label.innerHTML = `
-            <input type="checkbox" value="${tabName}" ${allowed.includes(tabName) ? 'checked' : ''}> 
+            <input type="checkbox" value="${tabName}" ${allowed.includes(tabName) ? 'checked' : ''}>
             ${tabText}
         `;
         list.appendChild(label);
     });
-    
+
+    EXTRA_PERMISSIONS.forEach(({ key, label: labelFn }) => {
+        const label = document.createElement('label');
+        label.style.display = 'block';
+        label.innerHTML = `
+            <input type="checkbox" value="${key}" ${allowed.includes(key) ? 'checked' : ''}>
+            ${labelFn()}
+        `;
+        list.appendChild(label);
+    });
+
     document.getElementById('access-modal').style.display = 'block';
 }
 

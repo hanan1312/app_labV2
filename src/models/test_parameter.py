@@ -56,6 +56,19 @@ class TestParameterTemplate(db.Model):
     absolute_ref_low = db.Column(db.Float)
     absolute_ref_high = db.Column(db.Float)
 
+    # Optional report-layout grouping (e.g. CBC's "Blood Picture" vs "Differential Count").
+    # Free text, only ever displayed as a section heading — never pattern-matched by value, so
+    # this works generically for any test, not just CBC. NULL (every parameter today) means
+    # "ungrouped" and renders via the original single generic table, unchanged. A test whose
+    # parameters carry 2+ distinct category values switches to the categorized report layout
+    # (see _render_categorized_test in src/routes/reports.py).
+    category = db.Column(db.String(100))
+    # Optional one-level nesting for a sub-row under another parameter of the same test (e.g.
+    # "Segmented"/"Band" under "Neutrophil"). NULL = top-level. Only meaningful within a
+    # categorized differential-count-style section; ON DELETE SET NULL means deleting a parent
+    # parameter demotes its children back to top-level rather than failing/cascading.
+    parent_parameter_id = db.Column(db.Integer, db.ForeignKey('test_parameter_templates.id', ondelete='SET NULL'))
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -78,4 +91,6 @@ class TestParameterTemplate(db.Model):
             'absolute_count_unit': self.absolute_count_unit,
             'absolute_ref_low': self.absolute_ref_low,
             'absolute_ref_high': self.absolute_ref_high,
+            'category': self.category,
+            'parent_parameter_id': self.parent_parameter_id,
         }

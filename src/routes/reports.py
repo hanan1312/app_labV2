@@ -148,6 +148,25 @@ def _validate_absolute_count_formula(row_id, lab_test_id, formula):
     return formula
 
 
+def _validate_parent_parameter(row_id, lab_test_id, parent_id):
+    """Validates a parameter's optional parent (e.g. "Segmented"/"Band" nested under
+    "Neutrophil" — see parent_parameter_id on the model). None/'' clears it. Nesting is
+    capped at one level — the parent itself must not already have a parent — matching the
+    only shape the categorized report layout (_render_relative_absolute_table) knows how to
+    draw: a root row followed by its direct children, never grandchildren."""
+    if parent_id in (None, ''):
+        return None
+    parent_id = int(parent_id)
+    parent = TestParameterTemplate.query.get(parent_id)
+    if not parent or parent.lab_test_id != lab_test_id:
+        raise ValueError('Parent parameter must belong to the same test')
+    if row_id is not None and parent.id == row_id:
+        raise ValueError('A parameter cannot be its own parent')
+    if parent.parent_parameter_id is not None:
+        raise ValueError('A sub-parameter cannot itself have sub-parameters')
+    return parent.id
+
+
 @reports_bp.route('/lab-tests/<int:lab_test_id>/parameters', methods=['GET'])
 def get_test_parameters(lab_test_id):
     rows = (TestParameterTemplate.query
@@ -169,6 +188,7 @@ def create_test_parameter(lab_test_id):
     try:
         relation_formula = _validate_relation_formula(None, lab_test_id, data.get('relation_formula'))
         absolute_count_formula = _validate_absolute_count_formula(None, lab_test_id, data.get('absolute_count_formula'))
+        parent_parameter_id = _validate_parent_parameter(None, lab_test_id, data.get('parent_parameter_id'))
     except ValueError as error:
         return jsonify({'error': str(error)}), 400
 
@@ -195,6 +215,8 @@ def create_test_parameter(lab_test_id):
         absolute_count_unit=data.get('absolute_count_unit'),
         absolute_ref_low=data.get('absolute_ref_low'),
         absolute_ref_high=data.get('absolute_ref_high'),
+        category=data.get('category') or None,
+        parent_parameter_id=parent_parameter_id,
     )
     db.session.add(row)
     db.session.commit()
@@ -224,11 +246,19 @@ def update_test_parameter(param_id):
             return jsonify({'error': str(error)}), 400
         row.absolute_count_formula = absolute_count_formula or None
 
+    if 'parent_parameter_id' in data:
+        try:
+            row.parent_parameter_id = _validate_parent_parameter(
+                row.id, row.lab_test_id, data.get('parent_parameter_id'))
+        except ValueError as error:
+            return jsonify({'error': str(error)}), 400
+
     for field in ('name', 'unit', 'method', 'ref_low', 'ref_high',
                   'reference_range_text', 'abnormal_note', 'display_order',
                   'gender_specific', 'ref_low_male', 'ref_high_male',
                   'ref_low_female', 'ref_high_female',
-                  'absolute_count_unit', 'absolute_ref_low', 'absolute_ref_high'):
+                  'absolute_count_unit', 'absolute_ref_low', 'absolute_ref_high',
+                  'category'):
         if field in data:
             setattr(row, field, data[field])
 
@@ -242,6 +272,11 @@ def delete_test_parameter(param_id):
     if not row:
         return jsonify({'error': 'Parameter not found'}), 404
 
+    # Note: any child parameter's parent_parameter_id pointing at this row needs no cleanup
+    # here — it's a real FK with ON DELETE SET NULL (see the model), so the DB demotes the
+    # child back to top-level on its own, unlike the two dangling-token cases below (plain
+    # strings, not real FKs, so SQLite can't clean them up for us).
+    #
     # Any other parameter in the same test whose formula references this one is left with a
     # dangling {id} token once it's gone — clearing the whole formula (rather than trying to
     # surgically remove just that token, which could leave a malformed expression like
@@ -441,10 +476,25 @@ def save_results(visit_id):
     # otherwise it's "partially_delivered" and the UI surfaces which specific test(s) are
     # done instead of a generic status. Uploading a whole PDF (upload_report() in main.py)
     # is treated as covering the entire visit and is unaffected by this per-test tracking.
+    #
+    # A complete visit doesn't go straight to "delivered" when approval is required — it sits
+    # at "awaiting_approval" (a distinct status, not just approval_status) so it reads
+    # correctly everywhere visit.status is shown (Dashboard, Patient Directory, Test Results)
+    # and, critically, so it does NOT show up in Test Results' "Delivered" history or trigger
+    # delivery-looking UI until a permitted user actually approves it via Test Results > Check.
     all_tests = get_visit_test_names(visit.id)
     completed_tests = get_completed_test_names(visit.id)
     is_complete = bool(all_tests) and len(completed_tests) == len(all_tests)
-    visit.status = 'results_delivered_by_link' if is_complete else 'partially_delivered'
+    config = LabConfig.get_config()
+    if is_complete:
+        if config.require_results_approval:
+            visit.status = 'awaiting_approval'
+            visit.approval_status = 'pending_approval'
+        else:
+            visit.status = 'results_delivered_by_link'
+            visit.approval_status = 'not_required'
+    else:
+        visit.status = 'partially_delivered'
     db.session.commit()
 
     base_url = request.host_url
@@ -463,9 +513,9 @@ def save_results(visit_id):
     # same as the "Upload PDF Report" flow — this only tells it whether/how to.
     messaging = None
     if is_complete:
-        config = LabConfig.get_config()
         messaging = {
-            'enabled': bool(config.msg_enabled),
+            'enabled': bool(config.msg_enabled) and not config.require_results_approval,
+            'approval_pending': bool(config.require_results_approval),
             'method': config.msg_method,
             'phone': patient.phone if patient else None,
             'patient_name': f'{patient.first_name} {patient.last_name}' if patient else visit.patient_name,
@@ -549,6 +599,8 @@ def get_results_view(visit_id):
         'patient_id': visit.patient_id,
         'patient_name': patient.first_name + ' ' + patient.last_name if patient else visit.patient_name,
         'date': visit.date,
+        'status': visit.status,
+        'approval_status': visit.approval_status,
         'tests': tests_payload,
     }), 200
 
@@ -729,12 +781,14 @@ def get_statistics_results():
 
 # --- REPORT CONTEXT + PDF GENERATION ---
 
-def _absolute_count_row(parameter_name, absolute_count, absolute_unit, absolute_reference_range, tpl):
-    """Synthetic second report row for a parameter's Absolute Count, appended right after its
-    main row — same {'name','result_value','unit','reference_range','abnormal','hl'} shape the
-    PDF/HTML rendering already expects, so no changes are needed there to show it. hl is
-    (re)computed fresh from the template's current absolute_ref_low/high, mirroring how the
-    main row's hl is (re)computed rather than trusted from a stored flag."""
+def _absolute_count_fields(absolute_count, absolute_unit, absolute_reference_range, tpl):
+    """Extra keys for a parameter row's Absolute Count, merged into that same row (via
+    row.update(...)) rather than appended as a second row — lets the generic (non-categorized)
+    renderer keep showing it as a stacked second row exactly as before (see
+    _render_generic_test_table), while the categorized differential-count renderer
+    (_render_relative_absolute_table) can lay relative % and absolute count side by side in
+    one row. hl is (re)computed fresh from the template's current absolute_ref_low/high,
+    mirroring how the main row's hl is (re)computed rather than trusted from a stored flag."""
     hl = None
     if absolute_count and tpl:
         try:
@@ -746,12 +800,10 @@ def _absolute_count_row(parameter_name, absolute_count, absolute_unit, absolute_
         except ValueError:
             pass
     return {
-        'name': f'{parameter_name} (Absolute Count)',
-        'result_value': absolute_count,
-        'unit': absolute_unit,
-        'reference_range': absolute_reference_range,
-        'abnormal': hl is not None,
-        'hl': hl,
+        'absolute_value': absolute_count,
+        'absolute_unit': absolute_unit,
+        'absolute_reference_range': absolute_reference_range,
+        'absolute_hl': hl,
     }
 
 
@@ -774,17 +826,20 @@ def _build_test_dict(test, results_by_test, templates_by_key, gender, interpreta
                     hl = 'high'
             except ValueError:
                 pass
-        rows.append({
+        row = {
             'name': r.parameter_name,
             'result_value': r.result_value,
             'unit': r.unit,
             'reference_range': ref_text or r.reference_range,
             'abnormal': r.status == 'abnormal',
             'hl': hl,
-        })
+            'category': tpl.category if tpl else None,
+            'template_id': tpl.id if tpl else None,
+            'parent_template_id': tpl.parent_parameter_id if tpl else None,
+        }
         if r.absolute_count:
-            rows.append(_absolute_count_row(
-                r.parameter_name, r.absolute_count, r.absolute_unit, r.absolute_reference_range, tpl))
+            row.update(_absolute_count_fields(r.absolute_count, r.absolute_unit, r.absolute_reference_range, tpl))
+        rows.append(row)
         if r.status == 'abnormal' and tpl and tpl.abnormal_note:
             interpretations.append({'parameter': r.parameter_name, 'note': tpl.abnormal_note})
     return {'lab_test_id': test.id, 'name': test.name, 'rows': rows} if rows else None
@@ -920,8 +975,10 @@ def build_preview_context(visit_id, entries, comments_map):
             'reference_range': entry.get('reference_range_text') or ref_text,
             'abnormal': abnormal,
             'hl': hl,
+            'category': template.category if template else None,
+            'template_id': template.id if template else None,
+            'parent_template_id': template.parent_parameter_id if template else None,
         }
-        rows_by_test.setdefault(lab_test_id, []).append(row)
 
         absolute_count = (entry.get('absolute_count') or '').strip()
         if absolute_count:
@@ -929,8 +986,9 @@ def build_preview_context(visit_id, entries, comments_map):
             absolute_reference_range = None
             if template and template.absolute_ref_low is not None and template.absolute_ref_high is not None:
                 absolute_reference_range = f'{template.absolute_ref_low:g} - {template.absolute_ref_high:g}'
-            rows_by_test[lab_test_id].append(
-                _absolute_count_row(row['name'], absolute_count, absolute_unit, absolute_reference_range, template))
+            row.update(_absolute_count_fields(absolute_count, absolute_unit, absolute_reference_range, template))
+
+        rows_by_test.setdefault(lab_test_id, []).append(row)
 
         if abnormal and template and template.abnormal_note:
             interpretations.append({'parameter': row['name'], 'note': template.abnormal_note})
@@ -1021,6 +1079,174 @@ def _make_qr_reader(url):
 
 def _safe_filename_part(text):
     return re.sub(r'[^A-Za-z0-9]+', '_', (text or '').strip()).strip('_') or 'patient'
+
+
+def _hl_paragraph(value, hl, cell_style, empty='-'):
+    """Value cell with the same red-H/blue-L abnormal marker used throughout the report,
+    factored out so the generic table, the bulleted section, and the differential table all
+    render the marker identically instead of three near-copies drifting apart over time."""
+    text = paragraph_text(value) or empty
+    if hl == 'high':
+        return Paragraph(f"{text} <font color='#c0392b'><b>H</b></font>", cell_style)
+    if hl == 'low':
+        return Paragraph(f"{text} <font color='#1d4ed8'><b>L</b></font>", cell_style)
+    return Paragraph(text, cell_style)
+
+
+def _render_generic_test_table(elements, test, cell_style, test_title_style, box_w):
+    """The original single 4-column 'Investigation | Result | Ref. Range | Unit' table — used
+    for any test with fewer than 2 distinct parameter categories (i.e. every test that isn't
+    explicitly split into report sections via TestParameterTemplate.category). An absolute
+    count (if any) still expands into a second stacked row here, exactly as this table has
+    always shown it, so nothing changes visually for a test that isn't opted into the
+    categorized layout below."""
+    elements.append(Paragraph(paragraph_text(test['name'].upper()), test_title_style))
+    table_data = [['Investigation', 'Result', 'Ref. Range', 'Unit']]
+    style_commands = [
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#667eea')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#dddddd')),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('PADDING', (0, 0), (-1, -1), 6),
+    ]
+    for row in test['rows']:
+        table_data.append([
+            Paragraph(paragraph_text(row['name']), cell_style),
+            _hl_paragraph(row['result_value'], row['hl'], cell_style),
+            Paragraph(paragraph_text(row['reference_range']) or '-', cell_style),
+            Paragraph(paragraph_text(row['unit']) or '-', cell_style),
+        ])
+        if row.get('absolute_value') is not None:
+            table_data.append([
+                Paragraph(paragraph_text(f"{row['name']} (Absolute Count)"), cell_style),
+                _hl_paragraph(row.get('absolute_value'), row.get('absolute_hl'), cell_style),
+                Paragraph(paragraph_text(row.get('absolute_reference_range')) or '-', cell_style),
+                Paragraph(paragraph_text(row.get('absolute_unit')) or '-', cell_style),
+            ])
+    col_widths = [ratio * box_w for ratio in (0.38, 0.22, 0.22, 0.18)]
+    t = Table(table_data, colWidths=col_widths)
+    t.setStyle(TableStyle(style_commands))
+    elements.append(t)
+    elements.append(Spacer(1, 10))
+
+
+def _render_bulleted_parameter_section(elements, rows, cell_style, box_w):
+    """'Blood Picture'-style section (see the CBC reference layout): bullet + name : boxed
+    value [H/L flag] | reference range + unit. Only the numeric value itself is boxed, not
+    the flag — achieved with a per-cell BACKGROUND/BOX style command targeting just that one
+    column/row coordinate — matching the reference image."""
+    table_data = []
+    style_commands = [
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('PADDING', (0, 0), (-1, -1), 4),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]
+    for i, row in enumerate(rows):
+        if row['hl'] == 'high':
+            flag_cell = Paragraph("<font color='#c0392b'><b>H</b></font>", cell_style)
+        elif row['hl'] == 'low':
+            flag_cell = Paragraph("<font color='#1d4ed8'><b>L</b></font>", cell_style)
+        else:
+            flag_cell = Paragraph('', cell_style)
+        range_text = ' '.join(filter(None, [row.get('reference_range'), row.get('unit')])) or '-'
+        table_data.append([
+            Paragraph(f"• {paragraph_text(row['name'])}:", cell_style),
+            Paragraph(paragraph_text(row['result_value']) or '-', cell_style),
+            flag_cell,
+            Paragraph(paragraph_text(range_text), cell_style),
+        ])
+        style_commands.append(('BACKGROUND', (1, i), (1, i), colors.HexColor('#eef2ff')))
+        style_commands.append(('BOX', (1, i), (1, i), 0.5, colors.HexColor('#c7d2fe')))
+    col_widths = [ratio * box_w for ratio in (0.42, 0.14, 0.06, 0.38)]
+    t = Table(table_data, colWidths=col_widths)
+    t.setStyle(TableStyle(style_commands))
+    elements.append(t)
+
+
+def _render_relative_absolute_table(elements, rows, cell_style, box_w):
+    """'Differential Count'-style section (see the CBC reference layout): Test | Relative
+    count % (value, range) | Absolute count K/uL (value, range), with a root parameter's
+    children (matched by parent_template_id — e.g. Neutrophil's Segmented/Band) indented
+    immediately below it. A row without an absolute value (a category mixing table-shaped and
+    plain rows) just renders '-' in the two absolute-count cells rather than needing
+    special-casing."""
+    child_style = ParagraphStyle('ChildParamName', parent=cell_style, leftIndent=14)
+
+    table_data = [
+        ['Test', 'Relative count %', '', 'Absolute count K/uL', ''],
+        ['', 'Value', 'Reference Range', 'Value', 'Reference Range'],
+    ]
+    style_commands = [
+        ('BACKGROUND', (0, 0), (-1, 1), colors.HexColor('#667eea')),
+        ('TEXTCOLOR', (0, 0), (-1, 1), colors.white),
+        ('SPAN', (0, 0), (0, 1)),
+        ('SPAN', (1, 0), (2, 0)),
+        ('SPAN', (3, 0), (4, 0)),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#dddddd')),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('PADDING', (0, 0), (-1, -1), 4),
+        ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]
+
+    by_template_id = {r['template_id']: r for r in rows if r.get('template_id') is not None}
+    children_by_parent = {}
+    for r in rows:
+        parent_id = r.get('parent_template_id')
+        if parent_id is not None and parent_id in by_template_id:
+            children_by_parent.setdefault(parent_id, []).append(r)
+
+    def add_row(row, indent=False):
+        name_style = child_style if indent else cell_style
+        table_data.append([
+            Paragraph(paragraph_text(row['name']), name_style),
+            _hl_paragraph(row.get('result_value'), row.get('hl'), cell_style),
+            Paragraph(paragraph_text(row.get('reference_range')) or '-', cell_style),
+            _hl_paragraph(row.get('absolute_value'), row.get('absolute_hl'), cell_style),
+            Paragraph(paragraph_text(row.get('absolute_reference_range')) or '-', cell_style),
+        ])
+
+    for row in rows:
+        parent_id = row.get('parent_template_id')
+        if parent_id is not None and parent_id in by_template_id:
+            continue  # printed as a child under its parent, below
+        add_row(row)
+        for child in children_by_parent.get(row.get('template_id'), []):
+            add_row(child, indent=True)
+
+    col_widths = [ratio * box_w for ratio in (0.30, 0.13, 0.22, 0.13, 0.22)]
+    t = Table(table_data, colWidths=col_widths, repeatRows=2)
+    t.setStyle(TableStyle(style_commands))
+    elements.append(t)
+
+
+def _render_categorized_test(elements, test, cell_style, test_title_style, styles, box_w):
+    """Renders a test whose parameters carry 2+ distinct `category` values (e.g. CBC's "Blood
+    Picture"/"Differential Count") as one section per category, in first-seen row order — so
+    a category prints before another purely because its parameters have a lower
+    display_order, with no separate ordering field needed. Each category independently picks
+    its own layout from its rows' shape (does any row carry an absolute value or a parent
+    link?), never from the category's name string, so this works for any future 2+-category
+    test, not just CBC."""
+    elements.append(Paragraph(paragraph_text(test['name'].upper()), test_title_style))
+
+    categories = {}
+    for row in test['rows']:
+        categories.setdefault(row.get('category'), []).append(row)
+
+    section_heading_style = ParagraphStyle(
+        'SectionHeading', parent=styles['Heading4'], textColor=colors.HexColor('#4c51bf'),
+        spaceBefore=4, spaceAfter=2)
+
+    for label, rows in categories.items():
+        if label:
+            elements.append(Paragraph(paragraph_text(label), section_heading_style))
+        has_table_shape = any(r.get('absolute_value') is not None or r.get('parent_template_id') for r in rows)
+        if has_table_shape:
+            _render_relative_absolute_table(elements, rows, cell_style, box_w)
+        else:
+            _render_bulleted_parameter_section(elements, rows, cell_style, box_w)
+        elements.append(Spacer(1, 6))
 
 
 def _render_pdf_from_context(ctx, base_url):
@@ -1199,39 +1425,17 @@ def _render_pdf_from_context(ctx, base_url):
         if page['subtitle']:
             elements.append(Paragraph(paragraph_text(page['subtitle']), page_sub_style))
         for test in page['tests']:
-            elements.append(Paragraph(paragraph_text(test['name'].upper()), test_title_style))
-            table_data = [['Investigation', 'Result', 'Ref. Range', 'Unit']]
-            style_commands = [
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#667eea')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#dddddd')),
-                ('FONTSIZE', (0, 0), (-1, -1), 9),
-                ('PADDING', (0, 0), (-1, -1), 6),
-            ]
-            for row in test['rows']:
-                # High/Low marker (Unit 6) — red "H" / blue "L" next to the value, gender-range-aware.
-                if row['hl'] == 'high':
-                    result_cell = Paragraph(f"{paragraph_text(row['result_value']) or '-'} <font color='#c0392b'><b>H</b></font>", cell_style)
-                elif row['hl'] == 'low':
-                    result_cell = Paragraph(f"{paragraph_text(row['result_value']) or '-'} <font color='#1d4ed8'><b>L</b></font>", cell_style)
-                else:
-                    result_cell = Paragraph(paragraph_text(row['result_value']) or '-', cell_style)
-                table_data.append([
-                    Paragraph(paragraph_text(row['name']), cell_style),
-                    result_cell,
-                    Paragraph(paragraph_text(row['reference_range']) or '-', cell_style),
-                    Paragraph(paragraph_text(row['unit']) or '-', cell_style),
-                ])
-            t = Table(table_data, colWidths=[2.6 * inch, 1.5 * inch, 1.5 * inch, 1.2 * inch])
-            t.setStyle(TableStyle(style_commands))
-            elements.append(t)
-            elements.append(Spacer(1, 10))
+            categories = {r.get('category') for r in test['rows'] if r.get('category')}
+            if len(categories) >= 2:
+                _render_categorized_test(elements, test, cell_style, test_title_style, styles, box_w)
+            else:
+                _render_generic_test_table(elements, test, cell_style, test_title_style, box_w)
 
         if page['comments']:
             lines = [f"<b>{paragraph_text(c['test_name'])}:</b> {paragraph_text(c['comment'])}" for c in page['comments']]
             comments_table = Table([[Paragraph(
                 '<b>Comments:</b><br/>' + '<br/>'.join(lines), styles['Normal'])]],
-                colWidths=[6.9 * inch])
+                colWidths=[box_w])
             comments_table.setStyle(TableStyle([
                 ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#cccccc')),
                 ('PADDING', (0, 0), (-1, -1), 10),
@@ -1244,7 +1448,7 @@ def _render_pdf_from_context(ctx, base_url):
         lines = [f"<b>{paragraph_text(i['parameter'])}:</b> {paragraph_text(i['note'])}" for i in ctx['interpretations']]
         interp_table = Table([[Paragraph(
             '<b>Interpretation:</b><br/>' + '<br/>'.join(lines), styles['Normal'])]],
-            colWidths=[6.9 * inch])
+            colWidths=[box_w])
         interp_table.setStyle(TableStyle([
             ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#cccccc')),
             ('PADDING', (0, 0), (-1, -1), 10),

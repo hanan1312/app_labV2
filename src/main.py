@@ -353,6 +353,43 @@ with app.app_context():
         except Exception:
             db.session.rollback()
 
+        # Results-approval workflow — DEFAULT 0 so existing labs keep today's auto-send
+        # behavior unchanged on upgrade. New patient_visits columns are brand-new nullable
+        # concepts (NULL always meant, and still means, "not applicable/not yet decided"), not
+        # a reinterpretation of an existing column, so no backfill is needed.
+        db.session.bind = engine
+        try:
+            db.session.execute(text("ALTER TABLE lab_config ADD COLUMN require_results_approval BOOLEAN DEFAULT 0"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+        db.session.bind = engine
+        for statement in [
+            "ALTER TABLE patient_visits ADD COLUMN approval_status VARCHAR(20)",
+            "ALTER TABLE patient_visits ADD COLUMN approved_by VARCHAR(100)",
+            "ALTER TABLE patient_visits ADD COLUMN approved_at DATETIME",
+        ]:
+            try:
+                db.session.execute(text(statement))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
+        # CBC-style report grouping — brand-new nullable columns (see TestParameterTemplate
+        # docstring in src/models/test_parameter.py); NULL means "ungrouped/top-level", exactly
+        # today's only behavior for every pre-existing row, so no backfill is needed either.
+        db.session.bind = engine
+        for statement in [
+            "ALTER TABLE test_parameter_templates ADD COLUMN category VARCHAR(100)",
+            "ALTER TABLE test_parameter_templates ADD COLUMN parent_parameter_id INTEGER REFERENCES test_parameter_templates(id) ON DELETE SET NULL",
+        ]:
+            try:
+                db.session.execute(text(statement))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
 # Requests to these /api/* paths are allowed without a logged-in session — login itself,
 # logout (a no-op if there's no session to clear anyway), and the feature-flag endpoint the
 # frontend needs before it knows whether anyone is logged in.
@@ -607,6 +644,8 @@ def save_lab_settings():
         config.msg_method = data['msg_method']
     if 'msg_phone' in data:
         config.msg_phone = data['msg_phone']
+    if 'require_results_approval' in data:
+        config.require_results_approval = bool(data['require_results_approval'])
     # --- NEW SECURITY POLICIES ---
     if 'force_logout_time' in data:
         config.force_logout_time = data['force_logout_time']
@@ -1079,7 +1118,7 @@ def get_all_visits():
             'id': v.id,
             'visit_id': v.visit_id,
             'patient_id': v.patient_id,
-            'patient_name': v.patient_name,
+            'patient_name': f'{patient.first_name} {patient.last_name}' if patient else v.patient_name,
             'date': v.date,
             'tests': [name for _lab_test_id, name in booked],
             'completed_tests': completed,
@@ -1098,6 +1137,120 @@ def get_all_visits():
             'total_pages': max(1, (total + per_page - 1) // per_page),
         })
     return jsonify(results)
+
+
+@app.route('/api/visits/pending-approval', methods=['GET'])
+@require_permission('approve_results')
+def get_pending_approval_visits():
+    """Test Results > Check — every visit whose results are complete and held for approval
+    (LabConfig.require_results_approval was on when it finished). Never matches a visit that
+    predates this feature (approval_status is NULL for those, not 'pending_approval'), and
+    stays available regardless of the setting's current value so a backlog can always be
+    cleared. Unpaginated — this queue is bounded by nature (it only grows as fast as staff
+    let it, and gets drained by approving)."""
+    visits = PatientVisit.query.filter_by(approval_status='pending_approval').order_by(PatientVisit.id.desc()).all()
+    if not visits:
+        return jsonify([])
+
+    visit_ids = [v.id for v in visits]
+    patient_ids = {v.patient_id for v in visits}
+    clients_by_id = {c.id: c for c in Client.query.filter(Client.id.in_(patient_ids)).all()}
+
+    visit_test_rows = (db.session.query(VisitTest.visit_id, LabTest.name)
+                        .join(LabTest, VisitTest.lab_test_id == LabTest.id)
+                        .filter(VisitTest.visit_id.in_(visit_ids))
+                        .order_by(VisitTest.visit_id, VisitTest.position)
+                        .all())
+    tests_by_visit = {}
+    for v_id, name in visit_test_rows:
+        tests_by_visit.setdefault(v_id, []).append(name)
+
+    report_rows = (VisitReport.query
+                   .filter(VisitReport.visit_id.in_(visit_ids))
+                   .order_by(VisitReport.visit_id, VisitReport.id)
+                   .all())
+    reports_by_visit = {}
+    for r in report_rows:
+        reports_by_visit.setdefault(r.visit_id, []).append(r.file_path)
+
+    results = []
+    for v in visits:
+        patient = clients_by_id.get(v.patient_id)
+        results.append({
+            'id': v.id,
+            'visit_id': v.visit_id,
+            'patient_id': v.patient_id,
+            'patient_name': f'{patient.first_name} {patient.last_name}' if patient else v.patient_name,
+            'phone': patient.phone if patient else None,
+            'date': v.date,
+            'tests': tests_by_visit.get(v.id, []),
+            'report_urls': reports_by_visit.get(v.id, []),
+        })
+    return jsonify(results)
+
+
+@app.route('/api/visits/approve', methods=['POST'])
+@require_permission('approve_results')
+def approve_pending_results():
+    """Approves one or more pending-approval visits and hands back, per visit, everything the
+    frontend needs to actually send the results-ready message (the Node WhatsApp/SMS bot call
+    itself always happens client-side in this app — see sendResultsReadyMessage() in
+    script_lab.js). Always re-filters to approval_status == 'pending_approval' at the moment
+    this runs (never trusts the id list alone) so a double-click, a stale/paginated view, or
+    two staff approving concurrently can never double-approve or approve something that was
+    never actually pending."""
+    data = request.json or {}
+    query = PatientVisit.query.filter_by(approval_status='pending_approval')
+    if not data.get('approve_all'):
+        visit_ids = data.get('visit_ids') or []
+        if not visit_ids:
+            return jsonify({'error': 'No visits specified'}), 400
+        query = query.filter(PatientVisit.id.in_(visit_ids))
+    visits = query.all()
+
+    if not visits:
+        return jsonify({'success': True, 'approved_count': 0, 'results': []})
+
+    config = LabConfig.get_config()
+    approver = session.get('user_id') or 'unknown'
+    now = datetime.utcnow()
+
+    patient_ids = {v.patient_id for v in visits}
+    clients_by_id = {c.id: c for c in Client.query.filter(Client.id.in_(patient_ids)).all()}
+
+    visit_ids = [v.id for v in visits]
+    report_rows = (VisitReport.query
+                   .filter(VisitReport.visit_id.in_(visit_ids))
+                   .order_by(VisitReport.visit_id, VisitReport.id)
+                   .all())
+    reports_by_visit = {}
+    for r in report_rows:
+        reports_by_visit.setdefault(r.visit_id, []).append(r.file_path)
+
+    results = []
+    for v in visits:
+        v.approval_status = 'approved'
+        v.approved_by = str(approver)
+        v.approved_at = now
+        # This is the actual "waiting for approval" -> "delivered" transition the approval
+        # workflow exists for — v.status only reaches 'results_delivered_by_link' here, not
+        # when results were first entered/uploaded (see save_results()/upload_report()).
+        v.status = 'results_delivered_by_link'
+        patient = clients_by_id.get(v.patient_id)
+        if patient:
+            patient.sample_status = 'delivered'
+        results.append({
+            'visit_id': v.id,
+            'patient_id': v.patient_id,
+            'patient_name': f'{patient.first_name} {patient.last_name}' if patient else v.patient_name,
+            'phone': patient.phone if patient else None,
+            'method': config.msg_method,
+            'report_urls': reports_by_visit.get(v.id, []),
+        })
+    db.session.commit()
+
+    return jsonify({'success': True, 'approved_count': len(results), 'results': results})
+
 
 @app.route('/api/visits/<int:visit_id>', methods=['DELETE'])
 def delete_visit(visit_id):
@@ -1173,21 +1326,29 @@ def get_all_transactions():
     for t_id, name in line_item_rows:
         tests_by_transaction.setdefault(t_id, []).append(name)
 
-    t_data = [{
-        'id': t.id,
-        'transaction_id': t.transaction_id,
-        'patient_id': t.patient_id,
-        'patient_name': t.patient_name,
-        # ADD OR DEFAULT HERE:
-        'date': t.date if t.date else "2026-01-01 00:00:00",
-        'tests': tests_by_transaction.get(t.id, []),
-        'total_price': t.total_price,
-        'discount_percentage': t.discount_percentage,
-        'payment_method': t.payment_method,
-        'final_payment': t.final_payment,
-        'amount_paid': t.amount_paid if t.amount_paid is not None else t.final_payment,
-        'remaining_fees': t.remaining_fees or 0,
-    } for t in transactions]
+    # Live client name, not the snapshot taken at booking time — see get_all_visits() above,
+    # which already does this for the same reason (a client rename must show up here too).
+    patient_ids = {t.patient_id for t in transactions}
+    clients_by_id = {c.id: c for c in Client.query.filter(Client.id.in_(patient_ids)).all()}
+
+    t_data = []
+    for t in transactions:
+        patient = clients_by_id.get(t.patient_id)
+        t_data.append({
+            'id': t.id,
+            'transaction_id': t.transaction_id,
+            'patient_id': t.patient_id,
+            'patient_name': f'{patient.first_name} {patient.last_name}' if patient else t.patient_name,
+            # ADD OR DEFAULT HERE:
+            'date': t.date if t.date else "2026-01-01 00:00:00",
+            'tests': tests_by_transaction.get(t.id, []),
+            'total_price': t.total_price,
+            'discount_percentage': t.discount_percentage,
+            'payment_method': t.payment_method,
+            'final_payment': t.final_payment,
+            'amount_paid': t.amount_paid if t.amount_paid is not None else t.final_payment,
+            'remaining_fees': t.remaining_fees or 0,
+        })
 
     if page is not None:
         return jsonify({
@@ -1369,22 +1530,6 @@ def upload_report():
         
     visit = PatientVisit.query.filter_by(visit_id=visit_id).first()
     if visit:
-        visit.status = 'results_delivered_by_link'
-
-        patient = Client.query.get(visit.patient_id)
-        patient_phone = None
-
-        if patient:
-            patient.sample_status = 'delivered'
-            patient_phone = patient.phone
-
-        # 3. Save the new report(s) — appends to whatever this visit already has
-        add_visit_reports(visit, saved_relative_paths)
-        db.session.commit()
-
-        # Return ALL URLs (old and new) so the WhatsApp message includes everything
-        all_current_urls = [r.file_path for r in VisitReport.query.filter_by(visit_id=visit.id).order_by(VisitReport.id).all()]
-
         # Same shape/source as save_results()'s messaging object (src/routes/reports.py) —
         # a fresh DB read of LabConfig.msg_enabled, NOT the Settings page's live checkbox.
         # This used to be decided client-side off document.getElementById('setting-msg-
@@ -1394,8 +1539,37 @@ def upload_report():
         # messages "Enter Results" (which always asked the DB) would correctly skip, or
         # vice versa. Both paths now agree on the same authoritative source.
         config = LabConfig.get_config()
+
+        # An uploaded report doesn't count as "delivered" (visit.status) or the patient's
+        # sample as "delivered" (Client.sample_status) until it clears approval, when that's
+        # required — mirrors save_results()'s awaiting_approval handling so both entry points
+        # agree on what "delivered" means. approve_pending_results() finishes the transition
+        # for both fields once a permitted user actually approves it.
+        if config.require_results_approval:
+            visit.status = 'awaiting_approval'
+            visit.approval_status = 'pending_approval'
+        else:
+            visit.status = 'results_delivered_by_link'
+            visit.approval_status = 'not_required'
+
+        patient = Client.query.get(visit.patient_id)
+        patient_phone = None
+
+        if patient:
+            patient_phone = patient.phone
+            if not config.require_results_approval:
+                patient.sample_status = 'delivered'
+
+        # 3. Save the new report(s) — appends to whatever this visit already has
+        add_visit_reports(visit, saved_relative_paths)
+        db.session.commit()
+
+        # Return ALL URLs (old and new) so the WhatsApp message includes everything
+        all_current_urls = [r.file_path for r in VisitReport.query.filter_by(visit_id=visit.id).order_by(VisitReport.id).all()]
+
         messaging = {
-            'enabled': bool(config.msg_enabled),
+            'enabled': bool(config.msg_enabled) and not config.require_results_approval,
+            'approval_pending': bool(config.require_results_approval),
             'method': config.msg_method,
             'phone': patient_phone,
             'patient_name': patient_name,

@@ -339,12 +339,21 @@ def master_update_features():
 @user_bp.route('/users', methods=['GET'])
 @admin_required
 def get_settings_users():
-    """Fetch all users for the Lab Settings table."""
+    """Fetch all users for the Lab Settings table. Includes each user's current permissions
+    (comma-joined, matching the shape savePermissions() PUTs back) — openAccessModal() in
+    script_lab.js reads u.permissions to pre-check the right boxes; without this it always
+    opened with everything unchecked regardless of what was actually saved."""
     from flask import current_app
     db.session.bind = current_app.lab_engine
-    
+
     users = User.query.all()
-    return jsonify([{'id': u.id, 'username': u.username, 'role': u.role} for u in users])
+    perms_by_user = {}
+    for p in UserPermission.query.filter(UserPermission.user_id.in_([u.id for u in users])).all():
+        perms_by_user.setdefault(p.user_id, []).append(p.permission)
+    return jsonify([
+        {'id': u.id, 'username': u.username, 'role': u.role, 'permissions': ','.join(perms_by_user.get(u.id, []))}
+        for u in users
+    ])
 
 @user_bp.route('/users', methods=['POST'])
 @admin_required

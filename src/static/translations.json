@@ -82,7 +82,8 @@
       "processing": "Processing",
       "delivered": "Delivered",
       "collected": "Sample Collected",
-      "collected_short": "Collected"
+      "collected_short": "Collected",
+      "awaiting_approval": "Waiting for Approval"
     },
     "actions": {
       "view_details": "View Details",
@@ -95,6 +96,7 @@
       "save": "Save",
       "cancel": "Cancel",
       "update": "Update",
+      "select_all": "Select All",
       "export_excel": "Export to Excel",
       "parameters": "Parameters",
       "add_parameter": "+ Add Parameter",
@@ -122,6 +124,8 @@
       "param_absolute_formula": "Absolute Count Formula",
       "param_absolute_unit": "Absolute Unit",
       "param_absolute_ref": "Absolute Ref. Low/High",
+      "param_category": "Section",
+      "param_parent": "Parent Parameter",
       "allergies": "Allergies",
       "apartment": "Apartment",
       "area": "Area",
@@ -172,7 +176,8 @@
       "user_mgt": "User Management & Permissions",
       "username": "Username",
       "show_report_background": "Show this cover as a background on generated reports",
-      "show_logo_on_report": "Show this logo on generated reports"
+      "show_logo_on_report": "Show this logo on generated reports",
+      "require_results_approval": "Require manual approval before sending results"
     },
     "modals": {
       "add_test": "Add New Test",
@@ -189,8 +194,10 @@
       "parameters_hint": "These rows appear as the results-entry table for this test on every visit that books it.",
       "parameters_formula_hint": "\"Formula\" auto-calculates a parameter's value from others during results entry, Excel-style: click into a Formula field, click the 🔗 next to another parameter's name to insert it, then type an operator — e.g. \"[WBC] / [RBC] * 2\".",
       "parameters_absolute_hint": "\"Absolute Count\" is a separate computed value with its own unit and reference range (e.g. Absolute Neutrophil Count) — its formula works the same way and, unlike \"Formula\", may reference the parameter's own value, e.g. \"[Neutrophils] / 100 * [WBC]\".",
+      "parameters_category_hint": "\"Section\" splits the report into named groups (e.g. \"Blood Picture\" / \"Differential Count\") once a test has 2 or more — leave blank to keep this test's report as one flat table. \"Parent Parameter\" nests a row under another within the same section (e.g. \"Segmented\"/\"Band\" under \"Neutrophil\").",
       "book_test_desc": "Select the tests to demand for this appointment:",
       "book_test_title": "Book Tests for Patient",
+      "book_test_search_placeholder": "Search tests by name or sample type...",
       "checkout_title": "Checkout Summary",
       "next_action": "Select your next action for this patient.",
       "patient_name": "Patient Name"
@@ -211,7 +218,11 @@
     },
     "results": {
       "title": "Delivered Results History",
-      "subtitle": "Archive of all patients with finished and uploaded PDF reports"
+      "subtitle": "Archive of all patients with finished and uploaded PDF reports",
+      "check_approvals": "Check Pending Approvals",
+      "pending_approval_title": "Results Pending Approval",
+      "pending_approval_subtitle": "Select the results to approve — approving sends the results-ready message to the patient.",
+      "approve_selected": "Approve & Send Selected"
     },
     "reports": {
       "title": "Master Patient Directory & Reports",
@@ -312,6 +323,7 @@
     },
     "alerts": {
       "absolute_formula_not_saved": "Absolute Count formula for \"{name}\" was not saved: {error}",
+      "parent_parameter_not_saved": "Parent parameter for \"{name}\" was not saved: {error}",
       "admin_created_user": "Admin created a new system user: {user} ({role})",
       "attendance_clockin_failed": "Failed to clock in.",
       "attendance_clockin_network_error": "Network error clocking in.",
@@ -463,6 +475,11 @@
       "report_downloaded": "Report downloaded successfully!",
       "report_uploaded": "Report uploaded successfully!",
       "report_uploaded_messaging_disabled": "Report uploaded. Auto-messaging is disabled.",
+      "report_uploaded_pending_approval": "Report uploaded. Results are pending approval before sending — use Test Results > Check to approve.",
+      "approve_results_permission": "Approve Pending Results (Check)",
+      "approve_summary": "{approved} approved — {sent} sent, {skipped} skipped (no phone), {failed} failed.",
+      "no_pending_approval": "No results are waiting for approval.",
+      "loading": "Loading...",
       "revenue_milestone": "Great job! Today's revenue ({today} EGP) surpassed yesterday's ({yesterday} EGP).",
       "role_switched": "Role switched to {role}. Interface updated.",
       "sample_collected": "Sample marked as collected!",
@@ -494,6 +511,7 @@
       "vacation_add_network_error": "Network error adding vacation.",
       "vacation_added": "Vacation added.",
       "vacation_delete_error": "Error deleting vacation.",
+      "view_results_title": "View results",
       "warehouse_import_complete": "Import complete: {added} added, {skipped} skipped.",
       "warehouse_item_save_failed": "Failed to save item",
       "warehouse_item_save_failed_console": "Failed to save item. Check console.",
@@ -540,6 +558,7 @@
       "status_bill_confirmed": "🟡 Confirmed",
       "status_bill_delivered": "🟢 Delivered",
       "status_bill_requested": "🔴 Requested",
+      "status_awaiting_approval": "Waiting for Approval",
       "status_delivered": "Delivered",
       "status_delivered_suffix": "{tests} Delivered",
       "status_disposed": "Disposed",
@@ -702,7 +721,8 @@
       "processing": "قيد الفحص",
       "delivered": "تم التسليم",
       "collected": "تم سحب العينة",
-      "collected_short": "تم السحب"
+      "collected_short": "تم السحب",
+      "awaiting_approval": "بانتظار الموافقة"
     },
     "actions": {
       "view_details": "عرض التفاصيل",
@@ -715,6 +735,7 @@
       "save": "حفظ",
       "cancel": "إلغاء",
       "update": "تحديث",
+      "select_all": "تحديد الكل",
       "export_excel": "تنزيل ملف اكسيل",
       "parameters": "معايير التحليل",
       "add_parameter": "+ إضافة معيار",
@@ -742,6 +763,8 @@
       "param_absolute_formula": "معادلة العدد المطلق",
       "param_absolute_unit": "وحدة العدد المطلق",
       "param_absolute_ref": "الحد الأدنى/الأعلى للعدد المطلق",
+      "param_category": "القسم",
+      "param_parent": "المعيار الأصل",
       "allergies": "الحساسية",
       "apartment": "الشقة",
       "area": "المنطقة",
@@ -792,7 +815,8 @@
       "user_mgt": "إدارة المستخدمين والصلاحيات",
       "username": "اسم المستخدم",
       "show_report_background": "إظهار هذا الغلاف كخلفية في التقارير التي يتم إنشاؤها",
-      "show_logo_on_report": "إظهار هذا الشعار في التقارير التي يتم إنشاؤها"
+      "show_logo_on_report": "إظهار هذا الشعار في التقارير التي يتم إنشاؤها",
+      "require_results_approval": "طلب موافقة يدوية قبل إرسال النتائج"
     },
     "modals": {
       "add_test": "إضافة تحليل جديد",
@@ -809,8 +833,10 @@
       "parameters_hint": "تظهر هذه الصفوف كجدول إدخال النتائج لهذا التحليل في كل زيارة يتم فيها حجزه.",
       "parameters_formula_hint": "\"المعادلة\" تحسب قيمة معيار تلقائيًا من معايير أخرى أثناء إدخال النتائج، بأسلوب إكسل: اضغط داخل حقل المعادلة، ثم اضغط 🔗 بجانب اسم معيار آخر لإدراجه، ثم اكتب عملية حسابية — مثال: \"[WBC] / [RBC] * 2\".",
       "parameters_absolute_hint": "\"العدد المطلق\" قيمة محسوبة منفصلة لها وحدتها ومعدلها الطبيعي الخاص (مثل العدد المطلق للعدلات) — معادلتها تعمل بنفس الطريقة، لكن على عكس \"المعادلة\"، يمكن أن تشير إلى قيمة المعيار نفسه، مثال: \"[Neutrophils] / 100 * [WBC]\".",
+      "parameters_category_hint": "\"القسم\" يقسم التقرير إلى مجموعات مسماة (مثل \"صورة الدم\" / \"عد الكريات التفصيلي\") عندما يحتوي التحليل على قسمين أو أكثر — اتركه فارغًا للإبقاء على جدول واحد. \"المعيار الأصل\" يجعل هذا الصف صفًا فرعيًا تابعًا لمعيار آخر ضمن نفس القسم (مثل \"مجزأ\"/\"عصوي\" تحت \"العدلات\").",
       "book_test_desc": "اختر التحاليل المطلوبة لهذا الموعد:",
       "book_test_title": "حجز تحاليل للمريض",
+      "book_test_search_placeholder": "ابحث عن التحاليل بالاسم أو نوع العينة...",
       "checkout_title": "ملخص الدفع",
       "next_action": "اختر الإجراء التالي لهذا المريض.",
       "patient_name": "اسم المريض"
@@ -831,7 +857,11 @@
     },
     "results": {
       "title": "ملف التقارير الطبية المرسلة",
-      "subtitle": "أرشيف جميع التقارير الطبية المرسلة و المرفوعة على النظام"
+      "subtitle": "أرشيف جميع التقارير الطبية المرسلة و المرفوعة على النظام",
+      "check_approvals": "مراجعة الموافقات المعلقة",
+      "pending_approval_title": "نتائج بانتظار الموافقة",
+      "pending_approval_subtitle": "اختر النتائج المطلوب الموافقة عليها — الموافقة ترسل رسالة جاهزية النتائج للمريض.",
+      "approve_selected": "الموافقة على المحدد وإرساله"
     },
     "reports": {
       "title": "الملف الشامل للمريض بالمعمل",
@@ -932,6 +962,7 @@
     },
     "alerts": {
       "absolute_formula_not_saved": "لم يتم حفظ معادلة العدد المطلق لـ \"{name}\": {error}",
+      "parent_parameter_not_saved": "لم يتم حفظ المعيار الأصل لـ \"{name}\": {error}",
       "admin_created_user": "قام المدير بإنشاء مستخدم جديد: {user} ({role})",
       "attendance_clockin_failed": "فشل تسجيل الحضور.",
       "attendance_clockin_network_error": "خطأ في الشبكة أثناء تسجيل الحضور.",
@@ -1083,6 +1114,11 @@
       "report_downloaded": "تم تنزيل التقرير بنجاح!",
       "report_uploaded": "تم رفع التقرير بنجاح!",
       "report_uploaded_messaging_disabled": "تم رفع التقرير. الإرسال التلقائي للرسائل معطل.",
+      "report_uploaded_pending_approval": "تم رفع التقرير. النتائج بانتظار الموافقة قبل الإرسال — استخدم زر المراجعة في نتائج التحاليل للموافقة.",
+      "approve_results_permission": "الموافقة على النتائج المعلقة (زر المراجعة)",
+      "approve_summary": "تمت الموافقة على {approved} — تم إرسال {sent}، تخطي {skipped} (بدون رقم هاتف)، فشل {failed}.",
+      "no_pending_approval": "لا توجد نتائج بانتظار الموافقة.",
+      "loading": "جارٍ التحميل...",
       "revenue_milestone": "أحسنت! إيرادات اليوم ({today} جنيه) تجاوزت إيرادات الأمس ({yesterday} جنيه).",
       "role_switched": "تم تبديل الدور إلى {role}. تم تحديث الواجهة.",
       "sample_collected": "تم تسجيل سحب العينة!",
@@ -1114,6 +1150,7 @@
       "vacation_add_network_error": "خطأ في الشبكة أثناء إضافة الإجازة.",
       "vacation_added": "تمت إضافة الإجازة.",
       "vacation_delete_error": "خطأ أثناء حذف الإجازة.",
+      "view_results_title": "عرض النتائج",
       "warehouse_import_complete": "اكتمل الاستيراد: تمت إضافة {added}، وتخطي {skipped}.",
       "warehouse_item_save_failed": "فشل حفظ الصنف",
       "warehouse_item_save_failed_console": "فشل حفظ الصنف. راجع الكونسول.",
@@ -1160,6 +1197,7 @@
       "status_bill_confirmed": "🟡 مؤكدة",
       "status_bill_delivered": "🟢 تم التوصيل",
       "status_bill_requested": "🔴 مطلوبة",
+      "status_awaiting_approval": "بانتظار الموافقة",
       "status_delivered": "تم التسليم",
       "status_delivered_suffix": "تم تسليم {tests}",
       "status_disposed": "تم الإتلاف",

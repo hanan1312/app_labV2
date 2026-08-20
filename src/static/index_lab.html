@@ -148,6 +148,11 @@
 
                             <div id="panel-quick-select" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 15px;"></div>
 
+                            <div class="search-box" style="margin: 0 0 15px 0;">
+                                <span class="search-icon">⌕</span>
+                                <input type="text" id="book-test-search" data-i18n="modals.book_test_search_placeholder" placeholder="Search tests by name or sample type..." oninput="renderBookTestCheckboxes()">
+                            </div>
+
                             <div id="dynamic-test-checkboxes" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 25px; background: rgba(0,0,0,0.2); padding: 20px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); max-height: 300px; overflow-y: auto;">
                             </div>
 
@@ -603,6 +608,7 @@
                         <p style="color: var(--muted); font-size: 12px; margin-bottom: 15px;" data-i18n="modals.parameters_hint">These rows appear as the results-entry table for this test on every visit that books it.</p>
                         <p style="color: var(--muted); font-size: 12px; margin-bottom: 15px;" data-i18n="modals.parameters_formula_hint">"Formula" auto-calculates a parameter's value from others during results entry, Excel-style: click into a Formula field, click the 🔗 next to another parameter's name to insert it, then type an operator — e.g. "[WBC] / [RBC] * 2".</p>
                         <p style="color: var(--muted); font-size: 12px; margin-bottom: 15px;" data-i18n="modals.parameters_absolute_hint">"Absolute Count" is a separate computed value with its own unit and reference range (e.g. Absolute Neutrophil Count) — its formula works the same way and, unlike "Formula", may reference the parameter's own value, e.g. "[Neutrophils] / 100 * [WBC]".</p>
+                        <p style="color: var(--muted); font-size: 12px; margin-bottom: 15px;" data-i18n="modals.parameters_category_hint">"Section" splits the report into named groups (e.g. "Blood Picture" / "Differential Count") once a test has 2 or more — leave blank to keep this test's report as one flat table. "Parent Parameter" nests a row under another within the same section (e.g. "Segmented"/"Band" under "Neutrophil").</p>
 
                         <div class="table-container">
                             <table style="width: 100%;">
@@ -619,6 +625,8 @@
                                         <th data-i18n="forms.param_absolute_formula" title="A separate computed value — may reference this parameter's own value, e.g. [Neutrophils] / 100 * [WBC]">Absolute Count Formula</th>
                                         <th data-i18n="forms.param_absolute_unit">Absolute Unit</th>
                                         <th data-i18n="forms.param_absolute_ref">Absolute Ref. Low/High</th>
+                                        <th data-i18n="forms.param_category" title="Groups this parameter into a named report section (e.g. 'Blood Picture') — a test with 2+ distinct sections renders as a categorized report instead of one flat table.">Section</th>
+                                        <th data-i18n="forms.param_parent" title="Nest this parameter as a sub-row under another (e.g. 'Segmented'/'Band' under 'Neutrophil') — only used within a categorized section.">Parent Parameter</th>
                                         <th style="width: 40px;"></th>
                                     </tr>
                                 </thead>
@@ -784,6 +792,7 @@
                                 <option value="registered" data-i18n="status.registered">Registered</option>
                                 <option value="pending" data-i18n="status.pending">Pending</option>
                                 <option value="collected" data-i18n="status.collected_short">Collected</option>
+                                <option value="awaiting_approval" data-i18n="status.awaiting_approval">Waiting for Approval</option>
                             </select>
                         </div>
 
@@ -997,6 +1006,9 @@
                             <h1 data-i18n="results.title">Delivered Results History</h1>
                             <p style="color: var(--muted)" data-i18n="results.subtitle">Archive of all patients with finished and uploaded PDF reports</p>
                         </div>
+                        <button type="button" id="check-approvals-btn" class="btn" style="display: none;" onclick="openPendingApprovalModal()">
+                            ✅ <span data-i18n="results.check_approvals">Check Pending Approvals</span>
+                        </button>
                     </div>
 
                     <div style="display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 20px;">
@@ -1022,10 +1034,40 @@
                                 <option value="Female" data-i18n="filters.female">Female</option>
                             </select>
                         </div>
+                        <div style="width: 170px;">
+                            <label style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; display: block;" data-i18n="filters.status">Status</label>
+                            <select id="results-filter-status" onchange="searchTestResults()">
+                                <option value="results_delivered_by_link" data-i18n="status.delivered">Delivered</option>
+                                <option value="awaiting_approval" data-i18n="status.awaiting_approval">Waiting for Approval</option>
+                            </select>
+                        </div>
                     </div>
 
                     <div id="test-results-list"></div>
                 </div>
+
+                <div id="pending-approval-modal" class="modal">
+                    <div class="modal-content glass-panel" style="max-width: 700px;">
+                        <span class="close" onclick="closePendingApprovalModal()">&times;</span>
+                        <h2 style="margin-bottom: 10px; color: var(--text);" data-i18n="results.pending_approval_title">Results Pending Approval</h2>
+                        <p style="margin-bottom: 15px; color: var(--muted);" data-i18n="results.pending_approval_subtitle">Select the results to approve — approving sends the results-ready message to the patient.</p>
+
+                        <div style="margin-bottom: 10px;">
+                            <label style="display: flex; align-items: center; cursor: pointer; color: var(--text);">
+                                <input type="checkbox" id="approval-select-all" onchange="toggleAllApprovalRows(this)" style="margin-right: 10px; width: auto;">
+                                <span data-i18n="actions.select_all">Select All</span>
+                            </label>
+                        </div>
+
+                        <div id="pending-approval-list" style="max-height: 400px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 20px;"></div>
+
+                        <div style="text-align: right;">
+                            <button type="button" class="btn ghost" onclick="closePendingApprovalModal()" data-i18n="actions.cancel">Cancel</button>
+                            <button type="button" class="btn" style="background: var(--teal); color: #04121d; margin-left: 10px;" onclick="approveSelectedResults()" data-i18n="results.approve_selected">Approve &amp; Send Selected</button>
+                        </div>
+                    </div>
+                </div>
+
                 <div id="statistics" class="tab-content">
                     <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px;">
                         <div>
@@ -1442,7 +1484,16 @@
                                     <label style="font-weight: bold; margin-bottom: 5px; display: block; color: var(--muted); font-size: 12px;">Lab Phone Number (Sender)</label>
                                     <input type="tel" id="setting-msg-phone" style="width: 100%; padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.1); background: rgba(0,0,0,0.3); color: white;" placeholder="e.g. +201000000000">
                                 </div>
-                            
+
+                                <!-- Approval gate: when on, a completed visit's message is held for a permitted user
+                                     to approve (Test Results > Check) instead of being sent immediately. -->
+                                <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1);">
+                                    <label style="display: flex; align-items: center; cursor: pointer; color: var(--text);">
+                                        <input type="checkbox" id="setting-require-results-approval" style="margin-right: 10px; width: 16px; height: 16px;">
+                                        <span data-i18n="settings.require_results_approval">Require manual approval before sending results</span>
+                                    </label>
+                                </div>
+
                                 <!-- WhatsApp Connection Section (Hidden by default, shown via toggleMessagingOptions) -->
                                 <!-- <div id="wa-connection-section" style="margin-top: 20px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); display: none;">
                                     <h4 style="color: var(--teal); margin-bottom: 10px; font-size: 14px;">WhatsApp Connection Status</h4>
@@ -1706,7 +1757,8 @@
         <div class="modal-content glass-panel" style="max-width: 960px;">
             <span class="close" onclick="closeVisitResultsModal()">&times;</span>
             <h2 id="vr-modal-title" style="margin-bottom: 5px; color: var(--text);">Visit Results</h2>
-            <p id="vr-modal-subtitle" style="color: var(--muted); margin-bottom: 20px; font-size: 13px;"></p>
+            <p id="vr-modal-subtitle" style="color: var(--muted); margin-bottom: 10px; font-size: 13px;"></p>
+            <div id="vr-approval-bar" style="display: none; margin-bottom: 20px;"></div>
             <div id="vr-charts-container"></div>
             <div id="vr-modal-body"></div>
         </div>
