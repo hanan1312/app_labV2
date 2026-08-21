@@ -4504,6 +4504,7 @@ async function checkWhatsAppStatus() {
 
 let availableTests = [];
 let editingTestId = null;
+let suggestedNewTestName = ''; // set by loadTestList() when a search has no matches, consumed once by openTestModal()
 
 // 1. Fetch tests from Python Database
 async function fetchLabTests() {
@@ -4529,14 +4530,33 @@ async function fetchLabTests() {
 // 1. UPDATED TABLE GENERATOR (Now includes checkboxes)
 function loadTestList() {
     const container = document.getElementById('test-list-container');
-    if (!container) return; 
-    
+    if (!container) return;
+
+    const searchTerm = (document.getElementById('test-list-search')?.value || '').trim().toLowerCase();
+    const filtered = searchTerm
+        ? availableTests.filter(t =>
+            t.name.toLowerCase().includes(searchTerm) ||
+            (t.sample_type || '').toLowerCase().includes(searchTerm))
+        : availableTests;
+
+    // Nudges the technician toward "+ Add New Test" when a search turns up nothing — the
+    // test they're looking for likely doesn't exist yet. Pre-fills the search term into the
+    // Add modal's name field too (see openTestModal()), so acting on the nudge is one click.
+    const addTestBtn = document.getElementById('add-test-btn');
+    const noMatchesForSearch = searchTerm && filtered.length === 0;
+    if (addTestBtn) addTestBtn.classList.toggle('btn-attention', noMatchesForSearch);
+    suggestedNewTestName = noMatchesForSearch ? document.getElementById('test-list-search').value.trim() : '';
+
     if (availableTests.length === 0) {
         container.innerHTML = `<div class="table-container"><table style="width:100%;"><tr><td style="text-align:center; padding: 30px; color: var(--muted);">${t('empty_no_tests_available', 'No tests available. Click "Add New Test" to begin.')}</td></tr></table></div>`;
         return;
     }
+    if (noMatchesForSearch) {
+        container.innerHTML = `<div class="table-container"><table style="width:100%;"><tr><td style="text-align:center; padding: 30px; color: var(--muted);">${t('empty_no_tests_match_search', 'No tests match "{term}" — click "+ Add New Test" to create it.', {term: document.getElementById('test-list-search').value.trim()})}</td></tr></table></div>`;
+        return;
+    }
 
-    let rows = availableTests.map(t => `
+    let rows = filtered.map(t => `
         <tr>
             <td><input type="checkbox" class="test-checkbox" data-id="${t.id}" onchange="updateBulkDeleteTestButton()"></td>
             <td><strong>${t.id}</strong></td>
@@ -4647,8 +4667,12 @@ function openTestModal(testId = null) {
     } else {
         title.textContent = 'Add New Test';
         document.getElementById('test-form').reset();
+        if (suggestedNewTestName) {
+            document.getElementById('test-name-input').value = suggestedNewTestName;
+            suggestedNewTestName = '';
+        }
     }
-    
+
     modal.style.display = 'block';
 }
 
@@ -4977,15 +5001,48 @@ async function saveParameterRows() {
 }
 
 // 4. Save to Database
+// Case-insensitive match against every other test — this app has no server-side unique
+// constraint on LabTest.name (see src/main.py's save_test()), so without a client-side check
+// two tests could silently share a name, which would make anything that looks tests up by
+// name (booking, reports, formula references) ambiguous about which one it means.
+function findDuplicateTestName(name, excludeId) {
+    const normalized = name.trim().toLowerCase();
+    return availableTests.find(t => t.name.trim().toLowerCase() === normalized && t.id !== excludeId);
+}
+
 async function saveTestRecord(event) {
     event.preventDefault(); // Stop page from refreshing
-    
+
+    let name = document.getElementById('test-name-input').value.trim();
+    if (!name) {
+        showAlert(t('test_name_required', 'Test name is required.'), 'warn');
+        return;
+    }
+
+    // Keep prompting until the name is unique or the user cancels — Cancel aborts the save
+    // entirely rather than falling back to the original (still-duplicate) name.
+    let duplicate = findDuplicateTestName(name, editingTestId);
+    while (duplicate) {
+        const newName = prompt(
+            t('duplicate_test_name_prompt', 'A test named "{name}" already exists. Enter a different name to continue, or press Cancel to stop.', {name: duplicate.name}),
+            ''
+        );
+        if (newName === null) return; // cancelled — do not save anything
+        name = newName.trim();
+        if (!name) {
+            showAlert(t('test_name_required', 'Test name is required.'), 'warn');
+            return;
+        }
+        duplicate = findDuplicateTestName(name, editingTestId);
+    }
+    document.getElementById('test-name-input').value = name;
+
     const payload = {
-        name: document.getElementById('test-name-input').value,
+        name: name,
         sample_type: document.getElementById('test-sample-input').value,
         price: document.getElementById('test-price-input').value
     };
-    
+
     if (editingTestId) payload.id = editingTestId;
     
     try {

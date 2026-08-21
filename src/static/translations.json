@@ -214,7 +214,8 @@
     },
     "tests": {
       "title": "Test Directory",
-      "subtitle": "Manage available laboratory tests and pricing"
+      "subtitle": "Manage available laboratory tests and pricing",
+      "search_placeholder": "Search tests by name or sample type..."
     },
     "results": {
       "title": "Delivered Results History",
@@ -498,6 +499,9 @@
       "settings_saved_server": "Settings saved to server!",
       "test_save_db_failed": "Failed to save to database.",
       "test_saved_db": "Test saved to database!",
+      "test_name_required": "Test name is required.",
+      "duplicate_test_name_prompt": "A test named \"{name}\" already exists. Enter a different name to continue, or press Cancel to stop.",
+      "empty_no_tests_match_search": "No tests match \"{term}\" — click \"+ Add New Test\" to create it.",
       "tests_delete_error": "Error deleting tests: {msg}",
       "tests_deleted": "Successfully deleted {count} tests!",
       "tests_imported": "Successfully imported {count} tests!",
@@ -853,7 +857,8 @@
     },
     "tests": {
       "title": "فسم التحاليل",
-      "subtitle": "إدارة التحالبل الطبية: تعديل و إضافة جديد و تحديد الأسعار"
+      "subtitle": "إدارة التحالبل الطبية: تعديل و إضافة جديد و تحديد الأسعار",
+      "search_placeholder": "ابحث عن التحاليل بالاسم أو نوع العينة..."
     },
     "results": {
       "title": "ملف التقارير الطبية المرسلة",
@@ -1137,6 +1142,9 @@
       "settings_saved_server": "تم حفظ الإعدادات على الخادم!",
       "test_save_db_failed": "فشل الحفظ في قاعدة البيانات.",
       "test_saved_db": "تم حفظ التحليل في قاعدة البيانات!",
+      "test_name_required": "اسم التحليل مطلوب.",
+      "duplicate_test_name_prompt": "يوجد بالفعل تحليل باسم \"{name}\". أدخل اسمًا مختلفًا للمتابعة، أو اضغط إلغاء للتوقف.",
+      "empty_no_tests_match_search": "لا توجد تحاليل مطابقة لـ \"{term}\" — اضغط \"+ إضافة تحليل جديد\" لإنشائه.",
       "tests_delete_error": "خطأ أثناء حذف التحاليل: {msg}",
       "tests_deleted": "تم حذف {count} تحليل بنجاح!",
       "tests_imported": "تم استيراد {count} تحليل بنجاح!",

@@ -1140,10 +1140,15 @@
 
                             <button class="btn ghost" style="border-color: var(--teal); color: var(--teal);" onclick="openPanelsModal()">🗂 Manage Panels</button>
 
-                            <button class="btn" style="background: var(--teal); color: #04121d; font-weight: bold;" onclick="openTestModal()">+ <span data-i18n="modals.add_test">Add New Test</span></button>
+                            <button id="add-test-btn" class="btn" style="background: var(--teal); color: #04121d; font-weight: bold;" onclick="openTestModal()">+ <span data-i18n="modals.add_test">Add New Test</span></button>
                         </div>
                     </div>
-                    
+
+                    <div class="search-box" style="margin: 0 0 20px 0; max-width: 400px;">
+                        <span class="search-icon">⌕</span>
+                        <input type="text" id="test-list-search" data-i18n="tests.search_placeholder" placeholder="Search tests by name or sample type..." oninput="loadTestList()">
+                    </div>
+
                     <div id="test-list-container"></div>
                 </div>
 
