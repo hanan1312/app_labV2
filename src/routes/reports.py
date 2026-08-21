@@ -1231,21 +1231,39 @@ def _render_categorized_test(elements, test, cell_style, test_title_style, style
     elements.append(Paragraph(paragraph_text(test['name'].upper()), test_title_style))
 
     categories = {}
+    uncategorized_rows = []
     for row in test['rows']:
-        categories.setdefault(row.get('category'), []).append(row)
+        label = row.get('category')
+        if label:
+            categories.setdefault(label, []).append(row)
+        else:
+            # A parameter with no category on a test that otherwise has 2+ real categories —
+            # e.g. one added under a different name than an existing category tagging pass
+            # expected, so it was never matched/tagged. Rendering it with no heading at all
+            # (the original behavior here) reads as a rendering bug, not "uncategorized" —
+            # give it a real, visible heading instead, and print it last so the real sections
+            # aren't pushed down by whatever happens to sit first in row order.
+            uncategorized_rows.append(row)
 
     section_heading_style = ParagraphStyle(
         'SectionHeading', parent=styles['Heading4'], textColor=colors.HexColor('#4c51bf'),
         spaceBefore=4, spaceAfter=2)
 
-    for label, rows in categories.items():
-        if label:
-            elements.append(Paragraph(paragraph_text(label), section_heading_style))
+    def render_section(rows):
         has_table_shape = any(r.get('absolute_value') is not None or r.get('parent_template_id') for r in rows)
         if has_table_shape:
             _render_relative_absolute_table(elements, rows, cell_style, box_w)
         else:
             _render_bulleted_parameter_section(elements, rows, cell_style, box_w)
+
+    for label, rows in categories.items():
+        elements.append(Paragraph(paragraph_text(label), section_heading_style))
+        render_section(rows)
+        elements.append(Spacer(1, 6))
+
+    if uncategorized_rows:
+        elements.append(Paragraph('Other Parameters', section_heading_style))
+        render_section(uncategorized_rows)
         elements.append(Spacer(1, 6))
 
 

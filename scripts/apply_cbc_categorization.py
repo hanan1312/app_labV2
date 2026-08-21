@@ -30,7 +30,19 @@ Conservative on purpose, given this is meant to run against a real lab's live da
     original seed value "40 - 75" — this matches the reference report image the redesign was
     built against. If this lab's Neutrophils range is anything else, it's left alone.
 
-Idempotent — safe to re-run; matches existing rows by name rather than creating duplicates.
+Also recognizes common name variants for a handful of parameters (e.g. a lab that already
+tracks "WBC" rather than "WBCs (Leukocytes)", or "Monocyte"/"Eosinophile"/"Basophile" instead
+of the plural English forms) — see NAME_SYNONYMS below — so an existing differently-named
+parameter gets tagged in place rather than sitting alongside a newly-created duplicate. If this
+script already ran on a database *before* a given synonym was added here, re-running it won't
+retroactively merge any duplicate it already created — see scripts/diagnose_cbc_parameters.py
+to check for that and decide how to merge by hand.
+
+Idempotent — safe to re-run; matches existing rows by name (or known synonym) rather than
+creating duplicates. Also warns (without changing anything) if it finds more than one existing
+parameter sharing the exact same name for this test — a pre-existing data-quality issue no
+name-matching logic can safely resolve on its own, since either row could have real historical
+results tied to it.
 
 Safe by default: this script NEVER opens your real database file directly. It always makes a
 throwaway copy first and points itself at that copy (see --source/--dest below), the same
@@ -54,6 +66,16 @@ import argparse
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 CBC_TEST_NAME_CANDIDATES = ['Complete Blood Count (CBC)', 'CBC', 'Complete Blood Count']
+
+# canonical name (as used in BLOOD_PICTURE/DIFFERENTIAL below) -> other names a lab might
+# already be using for the same parameter. Checked case-insensitively. Extend this if another
+# environment turns out to use yet another spelling — cheaper than a database cleanup.
+NAME_SYNONYMS = {
+    'WBCs (Leukocytes)': ['WBC', 'WBCs', 'Leukocytes', 'WBC Count', 'Total Leukocyte Count'],
+    'Monocytes': ['Monocyte'],
+    'Eosinophils': ['Eosinophile', 'Eosinophil'],
+    'Basophils': ['Basophile', 'Basophil'],
+}
 
 # name, unit, ref_low, ref_high, reference_range_text, category
 BLOOD_PICTURE = [
@@ -99,6 +121,7 @@ def find_cbc_test(LabTest):
 
 
 def apply_cbc_categorization():
+    from collections import Counter
     from src.models.user import db, LabTest
     from src.models.test_parameter import TestParameterTemplate
 
@@ -109,9 +132,41 @@ def apply_cbc_categorization():
         sys.exit(1)
     print(f'Found CBC test: "{cbc.name}" (id={cbc.id})')
 
-    existing_by_name = {
-        p.name: p for p in TestParameterTemplate.query.filter_by(lab_test_id=cbc.id).all()
-    }
+    all_params = TestParameterTemplate.query.filter_by(lab_test_id=cbc.id).all()
+
+    # A pre-existing duplicate name is structurally ambiguous for this script (and for the
+    # report renderer's own (test_id, parameter_name) template lookup) — either row could be
+    # the one with real historical TestResult data tied to it, so this only warns rather than
+    # guessing which to tag/merge. See scripts/diagnose_cbc_parameters.py to investigate.
+    name_counts = Counter(p.name for p in all_params)
+    duplicate_names = [name for name, count in name_counts.items() if count > 1]
+    if duplicate_names:
+        print(f'\nWARNING: {len(duplicate_names)} parameter name(s) appear more than once for this test — '
+              f'not safe to auto-tag, left entirely untouched:')
+        for name in duplicate_names:
+            print(f'  - "{name}" ({name_counts[name]} rows)')
+        print('  Resolve manually in Test Directory > CBC > Parameters (merge/rename/delete the extra '
+              'row) — run scripts/diagnose_cbc_parameters.py first if you need to see which one has real results.\n')
+
+    existing_by_name = {p.name: p for p in all_params if name_counts[p.name] == 1}
+
+    def resolve_existing(canonical_name):
+        """Finds a pre-existing row for `canonical_name`, also checking NAME_SYNONYMS (e.g. a
+        lab that already tracks "WBC" rather than "WBCs (Leukocytes)") — returns the row under
+        whatever name it's ACTUALLY stored as (never renames it). Caches the result under the
+        canonical name too, so later lookups-by-canonical-name (e.g. the WBC id used to build
+        every differential parameter's absolute_count_formula) work regardless of which real
+        name matched."""
+        if canonical_name in existing_by_name:
+            return existing_by_name[canonical_name]
+        for alt in NAME_SYNONYMS.get(canonical_name, []):
+            match = next((p for p in all_params if p.name.strip().lower() == alt.lower()
+                          and name_counts[p.name] == 1), None)
+            if match:
+                existing_by_name[canonical_name] = match
+                return match
+        return None
+
     next_order = (max((p.display_order or 0) for p in existing_by_name.values()) + 10) \
         if existing_by_name else 10
 
@@ -125,11 +180,11 @@ def apply_cbc_categorization():
 
     # --- Blood Picture ---
     for name, unit, ref_low, ref_high, ref_text in BLOOD_PICTURE:
-        row = existing_by_name.get(name)
+        row = resolve_existing(name)
         if row:
             if row.category != 'Blood Picture':
                 row.category = 'Blood Picture'
-                tagged.append(name)
+                tagged.append(name if row.name == name else f'{row.name} (matched "{name}")')
         else:
             row = TestParameterTemplate(
                 lab_test_id=cbc.id, name=name, unit=unit, ref_low=ref_low, ref_high=ref_high,
@@ -144,11 +199,11 @@ def apply_cbc_categorization():
     # --- Differential Count (two passes: create/tag parents before resolving children's
     # parent_parameter_id, since a just-created parent needs its real id first) ---
     for name, ref_low, ref_high, ref_text, parent_name, abs_unit, abs_low, abs_high in DIFFERENTIAL:
-        row = existing_by_name.get(name)
+        row = resolve_existing(name)
         if row:
             if row.category != 'Differential Count':
                 row.category = 'Differential Count'
-                tagged.append(name)
+                tagged.append(name if row.name == name else f'{row.name} (matched "{name}")')
             if name == 'Neutrophils' and row.reference_range_text == '40 - 75' \
                     and row.ref_low == 40 and row.ref_high == 75:
                 row.ref_low, row.ref_high, row.reference_range_text = 30.0, 75.0, '30 - 75'
