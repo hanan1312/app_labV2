@@ -106,9 +106,11 @@
         </div>
         {% endif %}
 
+        {% if config.report_footer_note %}
         <div class="footer">
-            {{ config.report_footer_note or 'This report is not valid for medical legal purposes.' }}
+            {{ config.report_footer_note }}
         </div>
+        {% endif %}
 
         {% if config.signature_path %}
         <img class="signature" src="{{ config.signature_path if config.signature_path.startswith('data:') else '/' + config.signature_path.lstrip('/') }}" alt="Signature">

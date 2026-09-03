@@ -1474,8 +1474,8 @@ def _render_pdf_from_context(ctx, base_url):
         elements.append(interp_table)
         elements.append(Spacer(1, 15))
 
-    footer = config.report_footer_note or 'This report is not valid for medical legal purposes.'
-    elements.append(Paragraph(paragraph_text(footer), small))
+    if config.report_footer_note:
+        elements.append(Paragraph(paragraph_text(config.report_footer_note), small))
 
     doc.build(elements, onFirstPage=_page_decorations, onLaterPages=_page_decorations)
     buffer.seek(0)
