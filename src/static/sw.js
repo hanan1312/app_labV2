@@ -4,6 +4,7 @@ const ASSETS_TO_CACHE = [
     '/index_lab.html',
     '/css/style.css',
     '/js/script_lab.js',
+    '/react/lab-islands.js',
     '/login'
 ];
 

@@ -1,5 +1,7 @@
 node_modules
 src/static/js/config.js
+src/static/react/
+frontend-lab/*.tsbuildinfo
 lab_app/
 src/static/js/.wwebjs_auth/
 src/static/js/.wwebjs_cache/

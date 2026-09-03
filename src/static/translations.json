@@ -17,7 +17,8 @@
       "hr": "HR & Staff",
       "tech_screen": "Tech Screen",
       "warehouse": "Warehouse",
-      "price_check": "Check Tests Total Price"
+      "price_check": "Check Tests Total Price",
+      "security": "Security"
     },
     "dashboard": {
       "title": "Laboratory Dashboard",
@@ -103,6 +104,7 @@
       "add_new_patient": "Add New Patient",
       "add_patient": "Add New Patient",
       "delete_selected": "Delete Selected",
+      "delete": "Delete",
       "save_patient": "Save Patient Record",
       "save_test": "Save Test",
       "submit_booking": "Submit Booking",
@@ -177,7 +179,19 @@
       "username": "Username",
       "show_report_background": "Show this cover as a background on generated reports",
       "show_logo_on_report": "Show this logo on generated reports",
-      "require_results_approval": "Require manual approval before sending results"
+      "require_results_approval": "Require manual approval before sending results",
+      "messaging_settings": "Messaging Settings",
+      "lab_identity": "Lab Identity",
+      "enable_notifications": "Enable Automatic Notifications",
+      "method_label": "Method:",
+      "lab_phone_sender": "Lab Phone Number (Sender)",
+      "lab_name": "Lab Name",
+      "lab_subtitle": "Lab Subtitle",
+      "signature_shown_note": "Shown at the bottom-left of every generated report.",
+      "signature_title": "Signature Title",
+      "no_settings_permission": "You do not have permission to change settings.",
+      "manage_access": "Manage Access",
+      "save_permissions": "Save Permissions"
     },
     "modals": {
       "add_test": "Add New Test",
@@ -227,7 +241,14 @@
     },
     "reports": {
       "title": "Master Patient Directory & Reports",
-      "subtitle": "Complete laboratory history for all registered patients"
+      "subtitle": "Complete laboratory history for all registered patients",
+      "col_patient_id": "Patient ID",
+      "col_name": "Name",
+      "col_date_registered": "Date Registered",
+      "col_phone": "Phone",
+      "col_latest_status": "Latest Status",
+      "col_action": "Action",
+      "view_details": "View Details"
     },
     "history": {
       "title": "Transaction History",
@@ -252,6 +273,15 @@
       "title": "Activity Log",
       "subtitle": "Every login, action, and page view across the system",
       "online_now": "Online Now"
+    },
+    "security": {
+      "title": "Security & Access",
+      "subtitle": "Manage system users, roles, and per-user tab permissions"
+    },
+    "tech_screen": {
+      "title": "Laboratory Technical Dashboard",
+      "pending_card": "Samples Waiting For Collection",
+      "finished_card": "Collected (Waiting for Reports)"
     },
     "hr": {
       "title": "HR & Staff Management",
@@ -375,6 +405,7 @@
       "confirm_delete_tests": "Are you sure you want to delete {count} test(s)? This cannot be undone.",
       "confirm_delete_user": "Are you sure you want to delete this user?",
       "confirm_delete_vacation": "Delete this vacation?",
+      "empty_no_users": "No users found.",
       "confirm_delete_warehouse_items": "Delete {count} item(s) from warehouse?",
       "confirm_mark_finished": "Mark {count} sample(s) as finished?",
       "confirm_reject_work_order": "Reject work order {id}? This cannot be undone.",
@@ -396,6 +427,7 @@
       "formula_click_field_first": "Click into a Formula field first, then click a parameter's 🔗 to insert it.",
       "formula_not_saved": "Formula for \"{name}\" was not saved: {error}",
       "formula_self_reference": "A parameter cannot reference itself.",
+      "fulfill_scan_subtitle": "Scan each item's batch barcode with the handheld scanner — it submits automatically.",
       "generic_error_colon": "Error: {msg}",
       "generic_error_prefix": "Error: {msg}",
       "holiday_add_failed": "Failed to add holiday.",
@@ -487,6 +519,12 @@
       "sample_db_error": "Database error while updating sample.",
       "samples_finished": "Samples marked as finished!",
       "samples_update_error": "Error updating samples.",
+      "scan_anyway": "Scan Anyway",
+      "scan_barcode_placeholder": "Scan barcode...",
+      "scan_error_generic": "Error submitting scan",
+      "scan_failed_generic": "Scan failed",
+      "scan_line_complete_suffix": " — line complete!",
+      "scan_success": "Scanned {item} — {fulfilled}/{requested} fulfilled",
       "select_at_least_one_test": "Please select at least one test.",
       "select_files_first": "Please select files first.",
       "select_item_with_quantity": "Select at least one item with a quantity to order.",
@@ -660,7 +698,8 @@
       "hr": "الموارد البشرية",
       "tech_screen": "شاشة الفني",
       "warehouse": "المخزن",
-      "price_check": "حساب إجمالي سعر التحاليل"
+      "price_check": "حساب إجمالي سعر التحاليل",
+      "security": "الأمان"
     },
     "dashboard": {
       "title": "لوحة تحكم المختبر",
@@ -746,6 +785,7 @@
       "add_new_patient": "إضافة مريض جديد",
       "add_patient": "إضافة مريض جديد",
       "delete_selected": "حذف المحدد",
+      "delete": "حذف",
       "save_patient": "حفظ بيانات المريض",
       "save_test": "حفظ التحليل",
       "submit_booking": "تأكيد الحجز",
@@ -820,7 +860,19 @@
       "username": "اسم المستخدم",
       "show_report_background": "إظهار هذا الغلاف كخلفية في التقارير التي يتم إنشاؤها",
       "show_logo_on_report": "إظهار هذا الشعار في التقارير التي يتم إنشاؤها",
-      "require_results_approval": "طلب موافقة يدوية قبل إرسال النتائج"
+      "require_results_approval": "طلب موافقة يدوية قبل إرسال النتائج",
+      "messaging_settings": "إعدادات المراسلة",
+      "lab_identity": "هوية المعمل",
+      "enable_notifications": "تفعيل الإشعارات التلقائية",
+      "method_label": "الطريقة:",
+      "lab_phone_sender": "رقم هاتف المعمل (المرسل)",
+      "lab_name": "اسم المعمل",
+      "lab_subtitle": "الشعار الفرعي للمعمل",
+      "signature_shown_note": "تظهر أسفل يسار كل تقرير يتم إنشاؤه.",
+      "signature_title": "المسمى الوظيفي للتوقيع",
+      "no_settings_permission": "ليس لديك صلاحية تغيير الإعدادات.",
+      "manage_access": "إدارة الصلاحيات",
+      "save_permissions": "حفظ الصلاحيات"
     },
     "modals": {
       "add_test": "إضافة تحليل جديد",
@@ -870,7 +922,14 @@
     },
     "reports": {
       "title": "الملف الشامل للمريض بالمعمل",
-      "subtitle": "تاريخ شامل لمعاملات المريض مع المعمل"
+      "subtitle": "تاريخ شامل لمعاملات المريض مع المعمل",
+      "col_patient_id": "رقم المريض",
+      "col_name": "الاسم",
+      "col_date_registered": "تاريخ التسجيل",
+      "col_phone": "الهاتف",
+      "col_latest_status": "آخر حالة",
+      "col_action": "إجراء",
+      "view_details": "عرض التفاصيل"
     },
     "history": {
       "title": "سجل المعاملات",
@@ -895,6 +954,15 @@
       "title": "سجل النشاط",
       "subtitle": "كل تسجيل دخول وإجراء ومشاهدة صفحة عبر النظام",
       "online_now": "متصل الآن"
+    },
+    "security": {
+      "title": "الأمان والصلاحيات",
+      "subtitle": "إدارة مستخدمي النظام والأدوار وصلاحيات كل مستخدم للتبويبات"
+    },
+    "tech_screen": {
+      "title": "لوحة التحكم الفنية للمختبر",
+      "pending_card": "عينات بانتظار السحب",
+      "finished_card": "تم السحب (بانتظار التقارير)"
     },
     "hr": {
       "title": "إدارة الموظفين",
@@ -1018,6 +1086,7 @@
       "confirm_delete_tests": "هل أنت متأكد من حذف {count} تحليل؟ لا يمكن التراجع عن هذا الإجراء.",
       "confirm_delete_user": "هل أنت متأكد من حذف هذا المستخدم؟",
       "confirm_delete_vacation": "هل تريد حذف هذه الإجازة؟",
+      "empty_no_users": "لا يوجد مستخدمون.",
       "confirm_delete_warehouse_items": "هل تريد حذف {count} صنف من المخزن؟",
       "confirm_mark_finished": "هل تريد تسجيل {count} عينة كمنتهية؟",
       "confirm_reject_work_order": "هل تريد رفض أمر الصرف {id}؟ لا يمكن التراجع عن هذا الإجراء.",
@@ -1039,6 +1108,7 @@
       "formula_click_field_first": "اضغط داخل حقل المعادلة أولاً، ثم اضغط 🔗 بجانب أحد المعايير لإدراجه.",
       "formula_not_saved": "لم يتم حفظ معادلة \"{name}\": {error}",
       "formula_self_reference": "لا يمكن أن يشير المعيار إلى نفسه.",
+      "fulfill_scan_subtitle": "امسح باركود دفعة كل صنف بالماسح الضوئي — يتم الإرسال تلقائيًا.",
       "generic_error_colon": "خطأ: {msg}",
       "generic_error_prefix": "خطأ: {msg}",
       "holiday_add_failed": "فشل إضافة الإجازة الرسمية.",
@@ -1130,6 +1200,12 @@
       "sample_db_error": "خطأ في قاعدة البيانات أثناء تحديث العينة.",
       "samples_finished": "تم تسجيل العينات كمنتهية!",
       "samples_update_error": "خطأ أثناء تحديث العينات.",
+      "scan_anyway": "امسح على أي حال",
+      "scan_barcode_placeholder": "امسح الباركود...",
+      "scan_error_generic": "خطأ أثناء إرسال المسح",
+      "scan_failed_generic": "فشل المسح",
+      "scan_line_complete_suffix": " — تم إكمال هذا البند!",
+      "scan_success": "تم مسح {item} — تم صرف {fulfilled}/{requested}",
       "select_at_least_one_test": "الرجاء اختيار تحليل واحد على الأقل.",
       "select_files_first": "الرجاء اختيار الملفات أولاً.",
       "select_item_with_quantity": "اختر صنفاً واحداً على الأقل بكمية لطلبه.",

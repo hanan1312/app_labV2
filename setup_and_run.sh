@@ -148,6 +148,9 @@ cat > src/static/js/config.js <<EOF
 window.APP_PORTS = { backend: ${BACKEND_PORT}, node: ${NODE_PORT} };
 EOF
 
+echo "--> Building React islands for the lab workspace (frontend-lab/ -> src/static/react/)..."
+(cd frontend-lab && npm install && npm run build)
+
 echo "--> Starting WhatsApp Microservice with PM2..."
 pm2 stop "$NODE_PM2_NAME" 2>/dev/null || true
 pm2 delete "$NODE_PM2_NAME" 2>/dev/null || true
