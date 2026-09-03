@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(ps -o pid,lstart,cmd -p 2198933,2198820)"
-    ]
-  }
-}

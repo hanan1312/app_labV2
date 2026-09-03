@@ -8,3 +8,6 @@ src/static/js/.wwebjs_cache/
 database/
 __pycache__/
 *.pyc
+.claude/
+docs/
+CLAUDE.md
