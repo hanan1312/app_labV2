@@ -789,7 +789,12 @@
       "received_date": "Received",
       "select_visit": "Select",
       "no_visits_found": "No visits found for this filter.",
-      "visit": "Visit"
+      "visit": "Visit",
+      "edit_referral": "Edit Referral",
+      "referral_updated": "Referral updated.",
+      "referral_missing_lab": "Name the external lab.",
+      "reference_no": "Reference No.",
+      "fee_locked": "Fee already paid — it can no longer be changed."
     }
   },
   "AR": {
@@ -1582,7 +1587,12 @@
       "received_date": "تاريخ الاستلام",
       "select_visit": "اختيار",
       "no_visits_found": "لا توجد زيارات لهذا الفلتر.",
-      "visit": "الزيارة"
+      "visit": "الزيارة",
+      "edit_referral": "تعديل التحويل",
+      "referral_updated": "تم تحديث التحويل.",
+      "referral_missing_lab": "أدخل اسم المعمل الخارجي.",
+      "reference_no": "الرقم المرجعي",
+      "fee_locked": "تم دفع الرسوم بالفعل — لا يمكن تعديلها."
     }
   }
 }

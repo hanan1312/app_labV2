@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { apiFetch } from '../../lib/apiFetch';
 import { useTranslations } from '../../lib/i18n';
 import LogReferralModal from './LogReferralModal';
+import EditReferralModal from './EditReferralModal';
 import DetailModal from './DetailModal';
+import { onNavTabClick } from '../../lib/onNavTabClick';
 
 export interface ReferralRow {
   id: number;
@@ -93,6 +95,7 @@ export default function DayCloseTab() {
   const [summary, setSummary] = useState<DayCloseSummary>(EMPTY);
   const [loading, setLoading] = useState(false);
   const [showReferralModal, setShowReferralModal] = useState(false);
+  const [editingReferral, setEditingReferral] = useState<ReferralRow | null>(null);
   const [busyReferralId, setBusyReferralId] = useState<number | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
   const [detail, setDetail] = useState<DetailState | null>(null);
@@ -128,12 +131,11 @@ export default function DayCloseTab() {
   // never closes over a stale `date`) both when this tab is actually clicked into and whenever
   // a checkout/payment/referral elsewhere fires the matching event.
   useEffect(() => {
-    const tabButton = document.querySelector('.nav-tab[data-tab="day-close"]');
     const onRefresh = () => setRefreshTick((n) => n + 1);
-    tabButton?.addEventListener('click', onRefresh);
+    const offTabClick = onNavTabClick('day-close', onRefresh);
     window.addEventListener('lab:refresh-day-close', onRefresh);
     return () => {
-      tabButton?.removeEventListener('click', onRefresh);
+      offTabClick();
       window.removeEventListener('lab:refresh-day-close', onRefresh);
     };
   }, []);
@@ -165,6 +167,9 @@ export default function DayCloseTab() {
       }
       window.showAlert(t('day_close.referral_fee_paid', 'Fee marked paid and added to Payments.'), 'success');
       load();
+      // The server just created the matching Payment row — tell the (already-mounted)
+      // Payments tab to re-fetch so it's listed there right away.
+      window.dispatchEvent(new CustomEvent('lab:refresh-payments'));
     } catch (err) {
       window.showAlert(t('day_close.referral_update_error', 'Error updating referral: {msg}', { msg: (err as Error).message }), 'error');
     } finally {
@@ -385,6 +390,9 @@ export default function DayCloseTab() {
                       <td>
                         <button className="btn ghost" style={{ padding: '4px 10px', fontSize: 11 }} onClick={() => markReceived(r)} disabled={busyReferralId === r.id}>
                           ✅ {t('day_close.mark_received', 'Mark Received')}
+                        </button>{' '}
+                        <button className="btn ghost" style={{ padding: '4px 10px', fontSize: 11 }} onClick={() => setEditingReferral(r)} disabled={busyReferralId === r.id}>
+                          ✏️ {t('actions.edit', 'Edit')}
                         </button>
                       </td>
                     </tr>
@@ -421,6 +429,9 @@ export default function DayCloseTab() {
                       <td>
                         <button className="btn" style={{ padding: '4px 10px', fontSize: 11, background: 'var(--teal)', color: '#04121d' }} onClick={() => markFeePaid(r)} disabled={busyReferralId === r.id}>
                           💸 {t('day_close.mark_paid', 'Mark Paid')}
+                        </button>{' '}
+                        <button className="btn ghost" style={{ padding: '4px 10px', fontSize: 11 }} onClick={() => setEditingReferral(r)} disabled={busyReferralId === r.id}>
+                          ✏️ {t('actions.edit', 'Edit')}
                         </button>
                       </td>
                     </tr>
@@ -437,6 +448,17 @@ export default function DayCloseTab() {
           onClose={() => setShowReferralModal(false)}
           onSaved={() => {
             setShowReferralModal(false);
+            load();
+          }}
+        />
+      )}
+
+      {editingReferral && (
+        <EditReferralModal
+          referral={editingReferral}
+          onClose={() => setEditingReferral(null)}
+          onSaved={() => {
+            setEditingReferral(null);
             load();
           }}
         />

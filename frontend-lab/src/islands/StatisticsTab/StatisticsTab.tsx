@@ -3,6 +3,7 @@ import { apiFetch } from '../../lib/apiFetch';
 import { useTranslations } from '../../lib/i18n';
 import { PaginationControls } from '../../lib/PaginationControls';
 import { StatusPill } from '../../lib/StatusPill';
+import { onNavTabClick } from '../../lib/onNavTabClick';
 
 interface StatRow {
   date: string;
@@ -78,13 +79,12 @@ export default function StatisticsTab() {
   // `case 'statistics': loadStatistics(); break;`) by listening on the same sidebar button
   // directly, the same way i18n.ts listens on #language-selector.
   useEffect(() => {
-    const tabButton = document.querySelector('.nav-tab[data-tab="statistics"]');
     const onClick = () => {
       setPage(1);
       setRefreshTick((n) => n + 1);
     };
-    tabButton?.addEventListener('click', onClick);
-    return () => tabButton?.removeEventListener('click', onClick);
+    const offTabClick = onNavTabClick('statistics', onClick);
+    return () => offTabClick();
   }, []);
 
   // Replicates refreshVisibleTables()'s statistics branch (script_lab.js) — fired after a

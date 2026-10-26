@@ -3,6 +3,7 @@ import { apiFetch } from '../../lib/apiFetch';
 import { useTranslations } from '../../lib/i18n';
 import { PaginationControls } from '../../lib/PaginationControls';
 import PaymentModal from './PaymentModal';
+import { onNavTabClick } from '../../lib/onNavTabClick';
 
 export interface PaymentRow {
   id: number;
@@ -90,16 +91,15 @@ export default function PaymentsTab() {
   // Same self-attached nav-tab click / lab:refresh-* CustomEvent bridge as every other
   // migrated tab (see TransactionHistoryTab.tsx).
   useEffect(() => {
-    const tabButton = document.querySelector('.nav-tab[data-tab="payments"]');
     const onTabClick = () => {
       setPage(1);
       setRefreshTick((n) => n + 1);
     };
     const onExternalRefresh = () => setRefreshTick((n) => n + 1);
-    tabButton?.addEventListener('click', onTabClick);
+    const offTabClick = onNavTabClick('payments', onTabClick);
     window.addEventListener('lab:refresh-payments', onExternalRefresh);
     return () => {
-      tabButton?.removeEventListener('click', onTabClick);
+      offTabClick();
       window.removeEventListener('lab:refresh-payments', onExternalRefresh);
     };
   }, []);

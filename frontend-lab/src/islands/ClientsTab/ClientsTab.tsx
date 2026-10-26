@@ -3,6 +3,7 @@ import { apiFetch } from '../../lib/apiFetch';
 import { useTranslations } from '../../lib/i18n';
 import { PaginationControls } from '../../lib/PaginationControls';
 import { useSkinConfig, entityLabel, statusInfo, type SkinConfig } from '../../lib/skinConfig';
+import { onNavTabClick } from '../../lib/onNavTabClick';
 
 interface ClientRow {
   id: number;
@@ -94,16 +95,15 @@ export default function ClientsTab() {
   // Statistics/ActivityLog/Dashboard — refreshVisibleTables() dispatches the latter whenever
   // something elsewhere (add/edit/delete a client, Excel import) could have changed this list.
   useEffect(() => {
-    const tabButton = document.querySelector('.nav-tab[data-tab="clients"]');
     const onTabClick = () => {
       setPage(1);
       setRefreshTick((n) => n + 1);
     };
     const onExternalRefresh = () => setRefreshTick((n) => n + 1);
-    tabButton?.addEventListener('click', onTabClick);
+    const offTabClick = onNavTabClick('clients', onTabClick);
     window.addEventListener('lab:refresh-clients', onExternalRefresh);
     return () => {
-      tabButton?.removeEventListener('click', onTabClick);
+      offTabClick();
       window.removeEventListener('lab:refresh-clients', onExternalRefresh);
     };
   }, []);

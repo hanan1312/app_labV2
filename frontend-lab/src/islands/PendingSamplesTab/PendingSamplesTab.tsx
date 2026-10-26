@@ -3,6 +3,7 @@ import { apiFetch } from '../../lib/apiFetch';
 import { useTranslations } from '../../lib/i18n';
 import { PaginationControls } from '../../lib/PaginationControls';
 import VisitsTable, { type VisitRow } from '../DashboardTab/VisitsTable';
+import { onNavTabClick } from '../../lib/onNavTabClick';
 
 interface PagedVisits {
   items: VisitRow[];
@@ -58,17 +59,16 @@ export default function PendingSamplesTab() {
   // Clients/Statistics — refreshVisibleTables() dispatches the latter whenever something
   // elsewhere (booking, collecting, bulk actions) could have changed this list.
   useEffect(() => {
-    const tabButton = document.querySelector('.nav-tab[data-tab="pending-samples"]');
     const onTabClick = () => {
       setFilters({ search: '', dateFrom: '', dateTo: '' }); // matches loadPendingSamples() clearing filters on entry
       setPage(1);
       setRefreshTick((n) => n + 1);
     };
     const onExternalRefresh = () => setRefreshTick((n) => n + 1);
-    tabButton?.addEventListener('click', onTabClick);
+    const offTabClick = onNavTabClick('pending-samples', onTabClick);
     window.addEventListener('lab:refresh-pending-samples', onExternalRefresh);
     return () => {
-      tabButton?.removeEventListener('click', onTabClick);
+      offTabClick();
       window.removeEventListener('lab:refresh-pending-samples', onExternalRefresh);
     };
   }, []);

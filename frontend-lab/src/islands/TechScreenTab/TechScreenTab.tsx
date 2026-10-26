@@ -3,6 +3,7 @@ import { apiFetch } from '../../lib/apiFetch';
 import { useTranslations } from '../../lib/i18n';
 import { PaginationControls } from '../../lib/PaginationControls';
 import VisitsTable, { type VisitRow } from '../DashboardTab/VisitsTable';
+import { onNavTabClick } from '../../lib/onNavTabClick';
 
 type ViewType = 'pending' | 'finished' | null;
 
@@ -34,13 +35,12 @@ export default function TechScreenTab() {
   // Same self-attached nav-tab click / lab:refresh-tech-screen CustomEvent bridge as
   // Dashboard/Clients/Pending Samples.
   useEffect(() => {
-    const tabButton = document.querySelector('.nav-tab[data-tab="tech-screen"]');
     const onTabClick = () => setRefreshTick((n) => n + 1);
     const onExternalRefresh = () => setRefreshTick((n) => n + 1);
-    tabButton?.addEventListener('click', onTabClick);
+    const offTabClick = onNavTabClick('tech-screen', onTabClick);
     window.addEventListener('lab:refresh-tech-screen', onExternalRefresh);
     return () => {
-      tabButton?.removeEventListener('click', onTabClick);
+      offTabClick();
       window.removeEventListener('lab:refresh-tech-screen', onExternalRefresh);
     };
   }, []);

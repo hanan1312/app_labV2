@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { apiFetch } from '../../lib/apiFetch';
 import { useTranslations } from '../../lib/i18n';
 import { PaginationControls } from '../../lib/PaginationControls';
+import { onNavTabClick } from '../../lib/onNavTabClick';
 
 interface ActivityEntry {
   timestamp?: string;
@@ -95,14 +96,13 @@ export default function ActivityLogTab() {
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
 
   useEffect(() => {
-    const tabButton = document.querySelector('.nav-tab[data-tab="activity-log"]');
     const onClick = () => {
       setActivated(true);
       setPage(1);
       setRefreshTick((n) => n + 1);
     };
-    tabButton?.addEventListener('click', onClick);
-    return () => tabButton?.removeEventListener('click', onClick);
+    const offTabClick = onNavTabClick('activity-log', onClick);
+    return () => offTabClick();
   }, []);
 
   // Username filter options — populated once, from /api/users (already admin-only), same

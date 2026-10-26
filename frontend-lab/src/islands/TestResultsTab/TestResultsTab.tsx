@@ -3,6 +3,7 @@ import { apiFetch } from '../../lib/apiFetch';
 import { useTranslations } from '../../lib/i18n';
 import { useCurrentUser } from '../../lib/useCurrentUser';
 import { PaginationControls } from '../../lib/PaginationControls';
+import { onNavTabClick } from '../../lib/onNavTabClick';
 
 interface VisitRow {
   id: number;
@@ -83,17 +84,16 @@ export default function TestResultsTab() {
   // refreshVisibleTables() (script_lab.js), including after approveVisitsAndNotify()'s own
   // loadInitialData() call, so an already-open list picks up a just-approved visit's new status.
   useEffect(() => {
-    const tabButton = document.querySelector('.nav-tab[data-tab="test-results"]');
     const onTabClick = () => {
       setFilters({ search: '', dateFrom: '', dateTo: '', gender: '', status: 'results_delivered_by_link' }); // matches loadTestResults() clearing filters on entry
       setPage(1);
       setRefreshTick((n) => n + 1);
     };
     const onExternalRefresh = () => setRefreshTick((n) => n + 1);
-    tabButton?.addEventListener('click', onTabClick);
+    const offTabClick = onNavTabClick('test-results', onTabClick);
     window.addEventListener('lab:refresh-test-results', onExternalRefresh);
     return () => {
-      tabButton?.removeEventListener('click', onTabClick);
+      offTabClick();
       window.removeEventListener('lab:refresh-test-results', onExternalRefresh);
     };
   }, []);

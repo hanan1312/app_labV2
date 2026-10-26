@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { apiFetch } from '../../lib/apiFetch';
 import { useTranslations } from '../../lib/i18n';
 import { useSkinConfig, entityLabel } from '../../lib/skinConfig';
+import { onNavTabClick } from '../../lib/onNavTabClick';
 
 interface ClientFormFields {
   first_name: string;
@@ -104,15 +105,14 @@ export default function AddClientTab() {
   // resetClientForm();` guard, which preserved an in-progress edit if the user navigated
   // away and back rather than silently discarding it.
   useEffect(() => {
-    const tabButton = document.querySelector('.nav-tab[data-tab="add-client"]');
     const onTabClick = () => {
       if (editingIdRef.current == null) {
         setFields(EMPTY_FORM);
         setErrors([]);
       }
     };
-    tabButton?.addEventListener('click', onTabClick);
-    return () => tabButton?.removeEventListener('click', onTabClick);
+    const offTabClick = onNavTabClick('add-client', onTabClick);
+    return () => offTabClick();
   }, []);
 
   function setField<K extends keyof ClientFormFields>(key: K, value: ClientFormFields[K]) {

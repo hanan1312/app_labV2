@@ -1661,14 +1661,21 @@ def update_lab_referral(referral_id):
     if data.get('status') == 'received' and referral.status != 'received':
         referral.status = 'received'
         referral.received_date = data.get('received_date') or now_cairo().strftime('%Y-%m-%d')
-    for field in ('reference_no', 'notes', 'external_lab_name'):
+    if 'external_lab_name' in data and not (data['external_lab_name'] or '').strip():
+        return jsonify({'error': 'External lab name is required'}), 400
+    for field in ('reference_no', 'notes', 'external_lab_name', 'sent_date'):
         if field in data:
             setattr(referral, field, data[field])
     if 'fee' in data:
         try:
-            referral.fee = float(data['fee']) if data['fee'] not in (None, '') else None
+            new_fee = float(data['fee']) if data['fee'] not in (None, '') else None
         except (TypeError, ValueError):
             return jsonify({'error': 'Invalid fee'}), 400
+        # Once paid, the fee is already mirrored by a real Payment row (pay_lab_referral_fee()) —
+        # changing it here would silently put the two out of sync.
+        if referral.fee_payment_status == 'paid' and new_fee != referral.fee:
+            return jsonify({'error': 'Fee is already paid and can no longer be changed'}), 409
+        referral.fee = new_fee
     db.session.commit()
     return jsonify({'success': True, 'referral': referral.to_dict()})
 

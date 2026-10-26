@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch } from '../../lib/apiFetch';
 import { useTranslations } from '../../lib/i18n';
+import { onNavTabClick } from '../../lib/onNavTabClick';
 
 interface TransactionRow {
   date: string;
@@ -203,12 +204,11 @@ export default function FinancialOverviewTab() {
   // transaction mutated elsewhere (e.g. Transaction History's Complete Payment/bulk delete)
   // updates these totals too.
   useEffect(() => {
-    const tabButton = document.querySelector('.nav-tab[data-tab="financial-overview"]');
     const onRefresh = () => setRefreshTick((n) => n + 1);
-    tabButton?.addEventListener('click', onRefresh);
+    const offTabClick = onNavTabClick('financial-overview', onRefresh);
     window.addEventListener('lab:refresh-financial-overview', onRefresh);
     return () => {
-      tabButton?.removeEventListener('click', onRefresh);
+      offTabClick();
       window.removeEventListener('lab:refresh-financial-overview', onRefresh);
     };
   }, []);

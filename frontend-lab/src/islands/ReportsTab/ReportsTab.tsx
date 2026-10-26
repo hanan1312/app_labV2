@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiFetch } from '../../lib/apiFetch';
 import { useTranslations } from '../../lib/i18n';
+import { onNavTabClick } from '../../lib/onNavTabClick';
 
 interface Client {
   id: number;
@@ -98,7 +99,6 @@ export default function ReportsTab() {
   // Re-entering the tab re-fetches (data may have changed elsewhere in the app) and clears
   // filters, matching loadReports()'s behavior (script_lab.js:2596-2603).
   useEffect(() => {
-    const tabButton = document.querySelector('.nav-tab[data-tab="reports"]');
     const onClick = () => {
       setSearch('');
       setDateFrom('');
@@ -106,8 +106,8 @@ export default function ReportsTab() {
       setGender('');
       setRefreshTick((n) => n + 1);
     };
-    tabButton?.addEventListener('click', onClick);
-    return () => tabButton?.removeEventListener('click', onClick);
+    const offTabClick = onNavTabClick('reports', onClick);
+    return () => offTabClick();
   }, []);
 
   const filtered = useMemo(() => {

@@ -3,6 +3,7 @@ import { apiFetch } from '../../lib/apiFetch';
 import { useTranslations } from '../../lib/i18n';
 import { PaginationControls } from '../../lib/PaginationControls';
 import CompletePaymentModal from './CompletePaymentModal';
+import { onNavTabClick } from '../../lib/onNavTabClick';
 
 export interface TransactionRow {
   id: number;
@@ -94,16 +95,15 @@ export default function TransactionHistoryTab() {
   // ever read whatever was already sitting in the (persistent) filter inputs, never cleared
   // them itself; only the "Clear Filter" button did that.
   useEffect(() => {
-    const tabButton = document.querySelector('.nav-tab[data-tab="transaction-history"]');
     const onTabClick = () => {
       setPage(1);
       setRefreshTick((n) => n + 1);
     };
     const onExternalRefresh = () => setRefreshTick((n) => n + 1);
-    tabButton?.addEventListener('click', onTabClick);
+    const offTabClick = onNavTabClick('transaction-history', onTabClick);
     window.addEventListener('lab:refresh-transaction-history', onExternalRefresh);
     return () => {
-      tabButton?.removeEventListener('click', onTabClick);
+      offTabClick();
       window.removeEventListener('lab:refresh-transaction-history', onExternalRefresh);
     };
   }, []);

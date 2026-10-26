@@ -3,6 +3,7 @@ import { apiFetch } from '../../lib/apiFetch';
 import { useTranslations } from '../../lib/i18n';
 import { PaginationControls } from '../../lib/PaginationControls';
 import VisitsTable, { type VisitRow } from './VisitsTable';
+import { onNavTabClick } from '../../lib/onNavTabClick';
 
 interface ClientRow {
   id: number;
@@ -159,7 +160,6 @@ export default function DashboardTab() {
   // renderDashboardTable() calls (same bridge already used for Statistics — see
   // refreshVisibleTables() in script_lab.js).
   useEffect(() => {
-    const tabButton = document.querySelector('.nav-tab[data-tab="dashboard"]');
     const onTabClick = () => {
       setView('default');
       setPage(1);
@@ -167,10 +167,10 @@ export default function DashboardTab() {
       setRefreshTick((n) => n + 1);
     };
     const onExternalRefresh = () => setRefreshTick((n) => n + 1);
-    tabButton?.addEventListener('click', onTabClick);
+    const offTabClick = onNavTabClick('dashboard', onTabClick);
     window.addEventListener('lab:refresh-dashboard', onExternalRefresh);
     return () => {
-      tabButton?.removeEventListener('click', onTabClick);
+      offTabClick();
       window.removeEventListener('lab:refresh-dashboard', onExternalRefresh);
     };
   }, []);

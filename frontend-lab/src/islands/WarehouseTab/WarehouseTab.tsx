@@ -14,6 +14,7 @@ import ExpiredBatchesModal from './ExpiredBatchesModal';
 import WorkOrderModal from './WorkOrderModal';
 import WorkOrdersHistoryModal from './WorkOrdersHistoryModal';
 import type { WarehouseBillRow } from './billTypes';
+import { onNavTabClick } from '../../lib/onNavTabClick';
 
 const CATEGORY_COLORS = ['var(--danger)', 'var(--teal)', 'var(--warn)', 'var(--ok)', 'var(--gold)', 'var(--brand)'];
 
@@ -65,7 +66,6 @@ export default function WarehouseTab() {
   // Doesn't clear filters on tab entry — matches the vanilla fetchWarehouseData(), which never
   // touched the search/category filter inputs either.
   useEffect(() => {
-    const tabButton = document.querySelector('.nav-tab[data-tab="warehouse"]');
     const onTabClick = () => setRefreshTick((n) => n + 1);
     const onExternalRefresh = () => {
       setRefreshTick((n) => n + 1);
@@ -78,10 +78,10 @@ export default function WarehouseTab() {
           .catch((err) => console.error('Failed to refresh bills history:', err));
       }
     };
-    tabButton?.addEventListener('click', onTabClick);
+    const offTabClick = onNavTabClick('warehouse', onTabClick);
     window.addEventListener('lab:refresh-warehouse', onExternalRefresh);
     return () => {
-      tabButton?.removeEventListener('click', onTabClick);
+      offTabClick();
       window.removeEventListener('lab:refresh-warehouse', onExternalRefresh);
     };
   }, []);
