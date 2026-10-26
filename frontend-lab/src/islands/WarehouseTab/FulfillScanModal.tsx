@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { apiFetch } from '../../lib/apiFetch';
 import { useTranslations } from '../../lib/i18n';
+import { useSkinConfig } from '../../lib/skinConfig';
 import { workOrderStatusLabel, workOrderStatusPillClass, type WorkOrderLine } from './workOrderTypes';
 
 interface Props {
@@ -18,6 +19,7 @@ type Feedback = { kind: 'success'; text: string } | { kind: 'fefo'; message: str
 
 export default function FulfillScanModal({ workOrderId, initialLines, onClose, onProgress }: Props) {
   const { t } = useTranslations();
+  const { skin } = useSkinConfig();
   const [lines, setLines] = useState<WorkOrderLine[]>(initialLines);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -114,7 +116,7 @@ export default function FulfillScanModal({ workOrderId, initialLines, onClose, o
             </thead>
             <tbody>
               {lines.map((l) => {
-                const color = `var(--${workOrderStatusPillClass(l.status)})`;
+                const color = `var(--${workOrderStatusPillClass(l.status, skin)})`;
                 return (
                   <tr key={l.id}>
                     <td>{l.item_name}</td>
@@ -123,7 +125,7 @@ export default function FulfillScanModal({ workOrderId, initialLines, onClose, o
                     </td>
                     <td>
                       <span className="pill" style={{ color, border: `1px solid ${color}`, background: 'transparent' }}>
-                        {workOrderStatusLabel(l.status, t)}
+                        {workOrderStatusLabel(l.status, t, skin)}
                       </span>
                     </td>
                   </tr>

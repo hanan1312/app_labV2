@@ -2,6 +2,7 @@ import { useEffect, useState, type ChangeEvent } from 'react';
 import { apiFetch } from '../../lib/apiFetch';
 import { useTranslations } from '../../lib/i18n';
 import { PaginationControls } from '../../lib/PaginationControls';
+import { useSkinConfig, entityLabel, statusInfo, type SkinConfig } from '../../lib/skinConfig';
 
 interface ClientRow {
   id: number;
@@ -33,16 +34,30 @@ const filterInputStyle = {
   color: 'white',
 } as const;
 
-function statusBadge(c: ClientRow, t: (path: string, fallback: string) => string): { pillClass: string; text: string } {
+function statusBadge(
+  c: ClientRow,
+  skin: SkinConfig | null,
+  t: (path: string, fallback: string, vars?: Record<string, string | number>) => string
+): { pillClass: string; text: string } {
   if (c.test_type && c.test_type.trim() !== '') {
-    if (c.sample_status === 'pending') return { pillClass: 'danger', text: t('alerts.status_pending_badge', 'Pending') };
-    if (c.sample_status === 'collected') return { pillClass: 'ok', text: t('alerts.status_sample_collected', 'Sample Collected') };
+    if (c.sample_status === 'pending') {
+      const s = statusInfo(skin, 'client', 'pending', t, { label: 'Pending', colorClass: 'danger' });
+      return { pillClass: s.colorClass, text: s.label };
+    }
+    if (c.sample_status === 'collected') {
+      const s = statusInfo(skin, 'client', 'collected', t, { label: 'Sample Collected', colorClass: 'ok' });
+      return { pillClass: s.colorClass, text: s.label };
+    }
   }
-  return { pillClass: 'info', text: t('alerts.status_registered', 'Registered') };
+  const s = statusInfo(skin, 'client', 'registered', t, { label: 'Registered', colorClass: 'info' });
+  return { pillClass: s.colorClass, text: s.label };
 }
 
 export default function ClientsTab() {
   const { t } = useTranslations();
+  const { skin } = useSkinConfig();
+  const clientSingular = entityLabel(skin, 'client', t, 'Patient');
+  const clientPlural = entityLabel(skin, 'client', t, 'Patients', { plural: true });
 
   const [data, setData] = useState<PagedClients>(EMPTY);
   const [page, setPage] = useState(1);
@@ -167,7 +182,7 @@ export default function ClientsTab() {
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
-          <h1>{t('sidebar.patients', 'Patient Directory')}</h1>
+          <h1>{clientPlural}</h1>
           <p style={{ color: 'var(--muted)' }}>{t('patients.subtitle', 'Manage all registered laboratory clients')}</p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
@@ -180,7 +195,7 @@ export default function ClientsTab() {
             📤 Import Excel
           </button>
           <button className="btn" style={{ background: 'var(--teal)', color: '#04121d', fontWeight: 'bold' }} onClick={handleAddNewPatient}>
-            + {t('actions.add_patient', 'Add New Patient')}
+            + {t('generic.add_new', 'Add New {entity}', { entity: clientSingular })}
           </button>
         </div>
       </div>
@@ -278,7 +293,7 @@ export default function ClientsTab() {
               </tr>
             ) : (
               data.items.map((c) => {
-                const badge = statusBadge(c, t);
+                const badge = statusBadge(c, skin, t);
                 return (
                   <tr key={c.id}>
                     <td>

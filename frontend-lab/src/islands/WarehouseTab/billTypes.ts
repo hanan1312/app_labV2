@@ -1,3 +1,5 @@
+import { statusInfo, statusColorCssVar, type SkinConfig } from '../../lib/skinConfig';
+
 export interface WarehouseBillRow {
   id: number;
   order_id: string;
@@ -16,8 +18,20 @@ export interface WarehouseBillRow {
   received: boolean;
 }
 
-export function billStatusPillClass(status: string): string {
-  return status === 'demanded' ? 'danger' : status === 'ordered' ? 'warn' : 'ok';
+const FALLBACKS: Record<string, { label: string; colorClass: string }> = {
+  demanded: { label: '🔴 Requested', colorClass: 'danger' },
+  ordered: { label: '🟡 Confirmed', colorClass: 'warn' },
+  delivered: { label: '🟢 Delivered', colorClass: 'ok' },
+};
+
+export function billStatusPillClass(status: string, skin?: SkinConfig | null): string {
+  const fallbackColorClass = FALLBACKS[status]?.colorClass || 'ok';
+  return statusColorCssVar(skin ?? null, 'warehouseBill', status, fallbackColorClass);
+}
+
+export function billStatusLabel(status: string, t: (path: string, fallback: string) => string, skin?: SkinConfig | null): string {
+  const fallback = FALLBACKS[status] || { label: status, colorClass: 'ok' };
+  return statusInfo(skin ?? null, 'warehouseBill', status, t, fallback).label;
 }
 
 // A bulk bill's overall status is whichever of its items is least far along — "Delivered"

@@ -17,6 +17,8 @@ import TestResultsTab from './islands/TestResultsTab/TestResultsTab';
 import WarehouseTab from './islands/WarehouseTab/WarehouseTab';
 import TransactionHistoryTab from './islands/TransactionHistoryTab/TransactionHistoryTab';
 import FinancialOverviewTab from './islands/FinancialOverviewTab/FinancialOverviewTab';
+import PaymentsTab from './islands/PaymentsTab/PaymentsTab';
+import DayCloseTab from './islands/DayCloseTab/DayCloseTab';
 
 // Each migrated tab in index_lab.html gets one mount point, keyed here by its container id.
 // showTab() (script_lab.js) keeps owning navigation/visibility (toggling .active on the
@@ -40,6 +42,8 @@ const islands: Record<string, ComponentType> = {
   'warehouse-react-root': WarehouseTab,
   'transaction-history-react-root': TransactionHistoryTab,
   'financial-overview-react-root': FinancialOverviewTab,
+  'payments-react-root': PaymentsTab,
+  'day-close-react-root': DayCloseTab,
 };
 
 document.addEventListener('DOMContentLoaded', () => {

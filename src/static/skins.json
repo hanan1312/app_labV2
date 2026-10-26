@@ -1,0 +1,87 @@
+{
+  "_readme": "Hand-edit this file to re-skin the app for a different field: rename categories/screens/entities/statuses, reorder or hide screens, regroup them into different categories, or recolor/relabel a status pill. See docs/app_flow_blueprint.md for the full behavioral map this file is a config layer over, and docs/testing_skins_json.md for how the dependency/cascade rules below actually behave when you test an edit. Reload the page after saving — no restart needed. 'id' fields are internal identifiers the code already keys off (nav routing, permission strings, backend status values) and must NOT change; 'label'/'singular'/'plural'/'order'/'category'/'enabled'/'icon'/'color' are the safe fields to edit freely. An optional 'i18nKey' (or 'i18nKeySingular'/'i18nKeyPlural' on an entity) points at an existing translations.json entry so the built-in Arabic translation keeps working for that item unless you also change its wording — leave it out entirely for a brand-new custom label (it will just show literally, in whichever language you wrote it, in every language). A screen's optional 'entities'/'statusGroups' arrays declare which `entities`/`statuses` keys it actually reads — used only to auto-disable that screen (see 'Cross-references / cascading disable' below) if you remove the thing it depends on; they are NOT what wires the reading up in code (adding an id here doesn't make a screen start reading it, removing it doesn't stop a screen from reading it — the JS/TSX still does that). Today only 6 screens actually read `entities`/`statuses` in code — clients/add-client (entity 'client'), clients/dashboard/pending-samples/tech-screen (status group 'visit' or 'client'), and warehouse (entity 'warehouseItem', status groups 'warehouseBill'/'warehouseBatch'/'workOrder') — the rest still show their original hardcoded wording until the same wiring is repeated for them (see docs/app_flow_blueprint.md's customization checklist). Cross-references / cascading disable: a screen is treated as effectively disabled — dropped from the sidebar, and its `showTab()`/deep-link entry point refuses to activate it — if ANY of the following is true: its own `enabled` is `false`; its `category` doesn't match an id under `categories` (or that category itself has `enabled: false`); or any id listed in its `entities`/`statusGroups` no longer has a matching key under this file's `entities`/`statuses`. That last rule is the point of this paragraph: delete (or comment out by removing) an entity or a whole status group, and every screen that declared it as a dependency auto-disables along with it, instead of being left reachable in a broken, unlabeled state. An admin who's logged in sees a one-time on-screen warning naming exactly which screens got auto-disabled this way and why, distinct from a screen you disabled on purpose. Deleting a single status *value* inside a group that still exists (e.g. just `statuses.visit.pending`) does NOT cascade-disable anything — it only makes that one status pill silently fall back to its hardcoded English label/color (a console warning still fires so it isn't invisible).",
+
+  "workspace": { "label": "Laboratory" },
+
+  "categories": [
+    { "id": "overview",  "label": "Overview",       "order": 0, "enabled": true, "i18nKey": "categories.overview" },
+    { "id": "records",   "label": "Clients",        "order": 1, "enabled": true, "i18nKey": "categories.records" },
+    { "id": "catalog",   "label": "Test Catalog",    "order": 2, "enabled": true, "i18nKey": "categories.catalog" },
+    { "id": "results",   "label": "Results",         "order": 3, "enabled": true, "i18nKey": "categories.results" },
+    { "id": "inventory", "label": "Warehouse",       "order": 4, "enabled": true, "i18nKey": "categories.inventory" },
+    { "id": "financial", "label": "Financial",       "order": 5, "enabled": true, "i18nKey": "categories.financial" },
+    { "id": "staff",     "label": "HR",              "order": 6, "enabled": true, "i18nKey": "categories.staff" },
+    { "id": "admin",     "label": "Settings & Admin","order": 7, "enabled": true, "i18nKey": "categories.admin" }
+  ],
+
+  "screens": [
+    { "id": "dashboard",           "category": "overview", "label": "Dashboard",           "icon": "📊", "enabled": true, "order": 0, "i18nKey": "sidebar.dashboard", "statusGroups": ["visit"] },
+
+    { "id": "clients",             "category": "records",  "label": "Patients",            "icon": "👥", "enabled": true, "order": 0, "i18nKey": "sidebar.patients", "entities": ["client"], "statusGroups": ["client"] },
+    { "id": "add-client",          "category": "records",  "label": "Add Patient",         "icon": "➕", "enabled": true, "order": 1, "i18nKey": "sidebar.add_patient", "entities": ["client"] },
+    { "id": "pending-samples",     "category": "records",  "label": "Pending Samples",     "icon": "🧪", "enabled": true, "order": 2, "i18nKey": "sidebar.pending_samples", "statusGroups": ["visit"] },
+    { "id": "tech-screen",         "category": "records",  "label": "Tech Screen",         "icon": "🧪", "enabled": true, "order": 3, "i18nKey": "sidebar.tech_screen", "statusGroups": ["visit"] },
+
+    { "id": "test-list",           "category": "catalog",  "label": "Tests List",          "icon": "📋", "enabled": true, "order": 0, "i18nKey": "sidebar.tests" },
+    { "id": "price-check",         "category": "catalog",  "label": "Check Tests Total Price", "icon": "🧮", "enabled": true, "order": 1, "i18nKey": "sidebar.price_check" },
+
+    { "id": "test-results",        "category": "results",  "label": "Test Results",        "icon": "🔬", "enabled": true, "order": 0, "i18nKey": "sidebar.results" },
+    { "id": "statistics",          "category": "results",  "label": "Statistics",          "icon": "📈", "enabled": true, "order": 1, "i18nKey": "sidebar.statistics" },
+    { "id": "reports",             "category": "results",  "label": "Reports",             "icon": "📑", "enabled": true, "order": 2, "i18nKey": "sidebar.reports" },
+
+    { "id": "warehouse",           "category": "inventory","label": "Warehouse",           "icon": "📦", "enabled": true, "order": 0, "i18nKey": "sidebar.warehouse", "entities": ["warehouseItem"], "statusGroups": ["warehouseBill", "warehouseBatch", "workOrder"] },
+
+    { "id": "transaction-history", "category": "financial","label": "Transaction History", "icon": "🧾", "enabled": true, "order": 0, "i18nKey": "sidebar.transaction_history" },
+    { "id": "financial-overview",  "category": "financial","label": "Financial",           "icon": "💰", "enabled": true, "order": 1, "i18nKey": "sidebar.financial" },
+    { "id": "payments",            "category": "financial","label": "Payments",            "icon": "💸", "enabled": true, "order": 2, "i18nKey": "sidebar.payments" },
+    { "id": "day-close",           "category": "financial","label": "Day Close",           "icon": "🗓️", "enabled": true, "order": 3, "i18nKey": "sidebar.day_close" },
+
+    { "id": "hr-management",       "category": "staff",     "label": "HR & Staff",          "icon": "👥", "enabled": true, "order": 0, "i18nKey": "sidebar.hr" },
+
+    { "id": "settings",            "category": "admin",     "label": "Settings",            "icon": "⚙️", "enabled": true, "order": 0, "i18nKey": "sidebar.settings" },
+    { "id": "security",            "category": "admin",     "label": "Security",           "icon": "🔒", "enabled": true, "order": 1, "i18nKey": "sidebar.security" },
+    { "id": "activity-log",        "category": "admin",     "label": "Activity Log",        "icon": "🕵️", "enabled": true, "order": 2, "i18nKey": "sidebar.activity_log" }
+  ],
+
+  "entities": {
+    "client":        { "singular": "Patient",     "plural": "Patients", "i18nKeySingular": "entities.client_singular",        "i18nKeyPlural": "entities.client_plural" },
+    "visit":         { "singular": "Visit",       "plural": "Visits" },
+    "labTest":       { "singular": "Test",        "plural": "Tests" },
+    "warehouseItem": { "singular": "Item",        "plural": "Items",     "i18nKeySingular": "entities.warehouseItem_singular", "i18nKeyPlural": "entities.warehouseItem_plural" },
+    "employee":      { "singular": "Employee",    "plural": "Employees" },
+    "transaction":   { "singular": "Transaction", "plural": "Transactions" }
+  },
+
+  "statuses": {
+    "client": {
+      "registered": { "label": "Registered",      "color": "info",   "i18nKey": "alerts.status_registered" },
+      "pending":    { "label": "Pending",          "color": "danger", "i18nKey": "alerts.status_pending_badge" },
+      "collected":  { "label": "Sample Collected", "color": "ok",     "i18nKey": "alerts.status_sample_collected" }
+    },
+    "visit": {
+      "registered":                 { "label": "Registered",           "color": "info",   "i18nKey": "alerts.status_registered" },
+      "pending":                    { "label": "Pending",              "color": "danger", "i18nKey": "alerts.status_pending_badge" },
+      "collected":                  { "label": "Waiting for Results",  "color": "ok",     "i18nKey": "alerts.status_waiting_results" },
+      "partially_delivered":        { "label": "Partially Delivered",  "color": "info",   "i18nKey": "alerts.status_partially_delivered" },
+      "awaiting_approval":          { "label": "Waiting for Approval", "color": "warn",   "i18nKey": "alerts.status_awaiting_approval" },
+      "results_delivered_by_link":  { "label": "Delivered",            "color": "info",   "i18nKey": "alerts.status_delivered" }
+    },
+    "warehouseBill": {
+      "demanded":  { "label": "🔴 Requested", "color": "danger", "i18nKey": "alerts.status_bill_requested" },
+      "ordered":   { "label": "🟡 Confirmed", "color": "warn",   "i18nKey": "alerts.status_bill_confirmed" },
+      "delivered": { "label": "🟢 Delivered", "color": "ok",     "i18nKey": "alerts.status_bill_delivered" }
+    },
+    "warehouseBatch": {
+      "active":    { "label": "Active",        "color": "ok",     "i18nKey": "alerts.status_active" },
+      "exhausted": { "label": "Exhausted",      "color": "ghost",  "i18nKey": "alerts.status_exhausted" },
+      "disposed":  { "label": "Disposed",       "color": "ghost",  "i18nKey": "alerts.status_disposed" },
+      "expired":   { "label": "🚩 Expired",     "color": "danger", "i18nKey": "alerts.status_expired_flag" }
+    },
+    "workOrder": {
+      "requested": { "label": "🔴 Requested", "color": "danger", "i18nKey": "alerts.status_wo_requested" },
+      "approved":  { "label": "🟡 Approved",  "color": "warn",   "i18nKey": "alerts.status_wo_approved" },
+      "completed": { "label": "🟢 Completed", "color": "ok",     "i18nKey": "alerts.status_wo_completed" },
+      "rejected":  { "label": "⚪ Rejected",  "color": "ghost",  "i18nKey": "alerts.status_wo_rejected" }
+    }
+  }
+}

@@ -1,4 +1,5 @@
 import { useTranslations } from '../../lib/i18n';
+import { useSkinConfig } from '../../lib/skinConfig';
 import { openPrintWindow } from './printWindow';
 import { workOrderStatusLabel, workOrderStatusPillClass, type WorkOrderLine } from './workOrderTypes';
 
@@ -10,6 +11,7 @@ interface Props {
 
 export default function WorkOrderDetailModal({ workOrderId, lines, onClose }: Props) {
   const { t } = useTranslations();
+  const { skin } = useSkinConfig();
   if (lines.length === 0) return null;
 
   function print() {
@@ -49,7 +51,7 @@ export default function WorkOrderDetailModal({ workOrderId, lines, onClose }: Pr
             </thead>
             <tbody>
               {lines.map((l) => {
-                const color = `var(--${workOrderStatusPillClass(l.status)})`;
+                const color = `var(--${workOrderStatusPillClass(l.status, skin)})`;
                 return (
                   <tr key={l.id}>
                     <td>
@@ -64,7 +66,7 @@ export default function WorkOrderDetailModal({ workOrderId, lines, onClose }: Pr
                     </td>
                     <td>
                       <span className="pill" style={{ color, border: `1px solid ${color}`, background: 'transparent' }}>
-                        {workOrderStatusLabel(l.status, t)}
+                        {workOrderStatusLabel(l.status, t, skin)}
                       </span>
                     </td>
                   </tr>

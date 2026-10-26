@@ -31,59 +31,10 @@
                     <div class="brand-sub" id="sidebar-brand-sub">Pathological Analysis</div>
                 </div>
             </div>
-            <nav class="nav">
-                <button class="nav-tab active" data-tab="dashboard">
-                    <span class="nav-icon">📊</span> <span data-i18n="sidebar.dashboard">Dashboard</span>
-                </button>
-                <button class="nav-tab" data-tab="clients">
-                    <span class="nav-icon">👥</span> <span data-i18n="sidebar.patients">Patients</span>
-                </button>
-                <button class="nav-tab" data-tab="add-client">
-                    <span class="nav-icon">➕</span> <span data-i18n="sidebar.add_patient">Add Patient</span>
-                </button>
-                <button class="nav-tab" data-tab="pending-samples">
-                    <span class="nav-icon">🧪</span> <span data-i18n="sidebar.pending_samples">Pending Samples</span>
-                </button>
-                <button class="nav-tab" data-tab="test-list">
-                    <span class="nav-icon">📋</span> <span data-i18n="sidebar.tests">Tests List</span>
-                </button>
-                <button class="nav-tab" data-tab="price-check">
-                    <span class="nav-icon">🧮</span> <span data-i18n="sidebar.price_check">Check Tests Total Price</span>
-                </button>
-                <button class="nav-tab" data-tab="test-results">
-                    <span class="nav-icon">🔬</span> <span data-i18n="sidebar.results">Test Results</span>
-                </button>
-                <button class="nav-tab" data-tab="statistics">
-                    <span class="nav-icon">📈</span> <span data-i18n="sidebar.statistics">Statistics</span>
-                </button>
-                <button class="nav-tab" data-tab="reports">
-                    <span class="nav-icon">📑</span> <span data-i18n="sidebar.reports">Reports</span>
-                </button>
-                <button class="nav-tab" data-tab="warehouse">
-                    <span class="nav-icon">📦</span> <span data-i18n="sidebar.warehouse">Warehouse</span>
-                </button>
-                <button class="nav-tab" data-tab="transaction-history">
-                    <span class="nav-icon">🧾</span> <span data-i18n="sidebar.transaction_history">Transaction History</span>
-                </button>
-                <button class="nav-tab" data-tab="financial-overview">
-                    <span class="nav-icon">💰</span> <span data-i18n="sidebar.financial">Financial</span>
-                </button>
-                <button class="nav-tab" data-tab="tech-screen">
-                    <span class="nav-icon">🧪</span> <span data-i18n="sidebar.tech_screen">Tech Screen</span>
-                </button>
-                <button class="nav-tab" data-tab="hr-management">
-                    <span class="nav-icon">👥</span> <span data-i18n="sidebar.hr">HR & Staff</span>
-                </button>
-                <button class="nav-tab" data-tab="settings" id="settings-tab">
-                    <span class="nav-icon">⚙️</span> <span data-i18n="sidebar.settings">Settings</span>
-                </button>
-                <button class="nav-tab" data-tab="security">
-                    <span class="nav-icon">🔒</span> <span data-i18n="sidebar.security">Security</span>
-                </button>
-                <button class="nav-tab" data-tab="activity-log">
-                    <span class="nav-icon">🕵️</span> <span data-i18n="sidebar.activity_log">Activity Log</span>
-                </button>
-            </nav>
+            <!-- Populated at boot by renderSidebar() (script_lab.js) from /static/skins.json —
+                 see docs/app_flow_blueprint.md and skins.json's own "_readme" for how to
+                 relabel/reorder/hide/regroup screens without touching this file. -->
+            <nav class="nav" id="app-nav"></nav>
         </aside>
 
         <main class="main">
@@ -351,6 +302,50 @@
                     </div>
                 </div>
 
+                <!-- Preview step before printing a barcode sticker (or batch of them) — lets
+                     whoever's at the printer nudge the margins to suit it, before anything is
+                     actually sent to print. See printBarcodeStickers()/renderBarcodePreview()
+                     in script_lab.js; margins persist per-browser via localStorage so the next
+                     barcode printed on this same machine opens with the same adjustment. -->
+                <div id="barcode-preview-modal" class="modal">
+                    <div class="modal-content" style="max-width: 420px; text-align: center;">
+                        <h2 data-i18n="barcode_preview.title">Barcode Preview</h2>
+                        <p style="font-size: 13px; opacity: 0.8;" data-i18n="barcode_preview.subtitle">Drag an edge to resize the barcode, drag it to nudge its position, or type exact values below — then print.</p>
+
+                        <div id="barcode-preview-stage" style="background:#fff; padding: 20px; border-radius: 6px; margin: 15px 0; display:flex; flex-wrap:wrap; gap:10px; justify-content:center; align-items:center;"></div>
+
+                        <label style="display:block; text-align:left; font-size: 13px; margin-bottom: 15px;">
+                            <span data-i18n="barcode_preview.size">Barcode size (%)</span>
+                            <input type="number" id="barcode-scale" step="5" min="50" max="300" style="width:100%; margin-top: 4px;" oninput="onBarcodeMarginChange()">
+                        </label>
+
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 10px; text-align:left; margin-bottom: 15px; font-size: 13px;">
+                            <label>
+                                <span data-i18n="barcode_preview.margin_top">Top margin (mm)</span>
+                                <input type="number" id="barcode-margin-top" step="0.5" min="-5" max="10" style="width:100%; margin-top: 4px;" oninput="onBarcodeMarginChange()">
+                            </label>
+                            <label>
+                                <span data-i18n="barcode_preview.margin_bottom">Bottom margin (mm)</span>
+                                <input type="number" id="barcode-margin-bottom" step="0.5" min="-5" max="10" style="width:100%; margin-top: 4px;" oninput="onBarcodeMarginChange()">
+                            </label>
+                            <label>
+                                <span data-i18n="barcode_preview.margin_left">Left margin (mm)</span>
+                                <input type="number" id="barcode-margin-left" step="0.5" min="-5" max="10" style="width:100%; margin-top: 4px;" oninput="onBarcodeMarginChange()">
+                            </label>
+                            <label>
+                                <span data-i18n="barcode_preview.margin_right">Right margin (mm)</span>
+                                <input type="number" id="barcode-margin-right" step="0.5" min="-5" max="10" style="width:100%; margin-top: 4px;" oninput="onBarcodeMarginChange()">
+                            </label>
+                        </div>
+
+                        <div style="display:flex; gap:10px;">
+                            <button class="btn" style="flex:1;" onclick="resetBarcodeMargins()" data-i18n="barcode_preview.reset">Reset to Default</button>
+                            <button class="btn" style="flex:1;" onclick="closeBarcodePreviewModal()" data-i18n="barcode_preview.cancel">Cancel</button>
+                            <button class="btn" style="flex:1; background: var(--teal); color:#04121d;" onclick="confirmBarcodePrint()">🖨️ <span data-i18n="barcode_preview.print">Print</span></button>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- complete-payment-modal migrated to React — now rendered inline by
                      frontend-lab/src/islands/TransactionHistoryTab/CompletePaymentModal. -->
 
@@ -432,6 +427,16 @@
                 <div id="financial-overview" class="tab-content">
                     <!-- Migrated to React — see frontend-lab/src/islands/FinancialOverviewTab. Mounted by react/lab-islands.js. -->
                     <div id="financial-overview-react-root"></div>
+                </div>
+
+                <div id="payments" class="tab-content">
+                    <!-- See frontend-lab/src/islands/PaymentsTab. Mounted by react/lab-islands.js. -->
+                    <div id="payments-react-root"></div>
+                </div>
+
+                <div id="day-close" class="tab-content">
+                    <!-- See frontend-lab/src/islands/DayCloseTab. Mounted by react/lab-islands.js. -->
+                    <div id="day-close-react-root"></div>
                 </div>
 
                 <div id="reports" class="tab-content">

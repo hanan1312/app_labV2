@@ -607,16 +607,181 @@ async function processHRExcelImport(event) {
     reader.readAsArrayBuffer(file);
 }
 
+// --- Skin config (skins.json) — the app's re-skinning layer. Fetched once at boot, same
+// static-file precedent as loadTranslations()'s /static/translations.json fetch below, and
+// used by renderSidebar() to build the sidebar from config instead of hardcoded HTML, plus
+// skinEntityLabel()/skinStatusInfo() for any vanilla-owned UI that wants a config-driven
+// noun/status label. See src/static/skins.json's own "_readme" and
+// docs/app_flow_blueprint.md for the full shape this file is a config layer over.
+let skinConfig = null;
+
+// Cross-reference result for the current skinConfig — which screen ids are actually usable
+// once categories/entities/statusGroups they declare a dependency on are checked against what
+// still exists in the file. See resolveSkinConfig() below for the rules, and
+// docs/testing_skins_json.md for the behavior this produces when hand-editing skins.json.
+let resolvedSkin = { enabledScreenIds: new Set(), allScreenIds: new Set(), disabled: [] };
+
+async function loadSkinConfig() {
+    try {
+        const response = await fetch('/static/skins.json');
+        if (!response.ok) throw new Error('Could not load skins.json');
+        skinConfig = await response.json();
+    } catch (error) {
+        console.error('Skin config error:', error);
+        skinConfig = null;
+    }
+    return skinConfig;
+}
+
+// Cross-references skins.json's categories/screens/entities/statuses so that removing (or
+// commenting out, by deleting the entry — plain JSON has no comment syntax) something a screen
+// depends on automatically disables that screen, instead of leaving it silently reachable in a
+// broken, unlabeled state (the pre-existing bug this closes: a screen dropped from the sidebar
+// by an orphaned/deleted category was still fully reachable via a direct showTab() call — see
+// quickEditPatient()/the Excel-import success handler below — and still fully rendered).
+//
+// A screen counts as disabled if: its own `enabled` is false; its `category` doesn't match an
+// enabled entry under `categories`; or any id it lists under `entities`/`statusGroups` no
+// longer has a matching key under this file's `entities`/`statuses`. Deleting one status
+// *value* inside a group that still exists does NOT cascade here — statusInfo()/skinStatusInfo()
+// already fall back gracefully per-value, this only reacts to an entire dependency disappearing.
+function resolveSkinConfig(config) {
+    const result = { enabledScreenIds: new Set(), allScreenIds: new Set(), disabled: [] };
+    if (!config) return result;
+
+    const categoryIds = new Set((config.categories || []).filter(c => c.enabled !== false).map(c => c.id));
+    const entityIds = new Set(Object.keys(config.entities || {}));
+    const statusGroupIds = new Set(Object.keys(config.statuses || {}));
+
+    (config.screens || []).forEach(screen => {
+        result.allScreenIds.add(screen.id);
+        const reasons = [];
+
+        if (screen.enabled === false) reasons.push('disabled');
+        if (!categoryIds.has(screen.category)) reasons.push(`category "${screen.category}" missing or disabled`);
+        (screen.entities || []).forEach(id => {
+            if (!entityIds.has(id)) reasons.push(`entity "${id}" not found`);
+        });
+        (screen.statusGroups || []).forEach(id => {
+            if (!statusGroupIds.has(id)) reasons.push(`status group "${id}" not found`);
+        });
+
+        if (reasons.length === 0) {
+            result.enabledScreenIds.add(screen.id);
+        } else {
+            result.disabled.push({ id: screen.id, label: screen.label || screen.id, reasons });
+        }
+    });
+
+    return result;
+}
+
+// Surfaces the *unintentional* casualties of resolveSkinConfig() — screens that got disabled
+// only because something they depend on disappeared elsewhere in the file, not ones an admin
+// explicitly turned off themselves — so a hand-edit doesn't silently lose a screen without
+// anyone noticing. Admin/master only, matching who's expected to be hand-editing skins.json.
+function warnAboutDisabledScreens() {
+    if (!isAdminUser()) return;
+    const cascaded = resolvedSkin.disabled.filter(d => !(d.reasons.length === 1 && d.reasons[0] === 'disabled'));
+    if (cascaded.length === 0) return;
+
+    const list = cascaded.map(d => `${d.label} (${d.reasons.join(', ')})`).join('; ');
+    showAlert(
+        t('skin_config_screens_disabled', 'skins.json: {list} — auto-disabled because something they depend on is missing. Check the file if this is unexpected.', { list }),
+        'warn'
+    );
+}
+
+// Builds the sidebar's category headers + nav-tab buttons from skinConfig instead of
+// hardcoded HTML (see index_lab.html's now-empty <nav id="app-nav">). setupEventListeners()'s
+// click wiring, setupUIForRole()'s permission-based show/hide, showTab(), and
+// SecurityRBACTab's readTabPermissionOptions() (frontend-lab) all already operate generically
+// on whatever `.nav-tab[data-tab]` elements exist in the DOM — none of them need to change,
+// they just now query a DOM this function generated instead of static markup.
+function renderSidebar(config) {
+    const nav = document.getElementById('app-nav');
+    if (!nav || !config) return;
+
+    const screensByCategory = {};
+    (config.screens || []).forEach(screen => {
+        if (!resolvedSkin.enabledScreenIds.has(screen.id)) return;
+        (screensByCategory[screen.category] ||= []).push(screen);
+    });
+
+    const categories = [...(config.categories || [])].filter(c => c.enabled !== false).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+    nav.innerHTML = '';
+    categories.forEach(category => {
+        const screens = (screensByCategory[category.id] || []).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        if (screens.length === 0) return;
+
+        const header = document.createElement('div');
+        header.className = 'nav-section-label';
+        if (category.i18nKey) header.setAttribute('data-i18n', category.i18nKey);
+        header.textContent = category.label;
+        nav.appendChild(header);
+
+        screens.forEach(screen => {
+            const button = document.createElement('button');
+            button.className = 'nav-tab';
+            button.dataset.tab = screen.id;
+
+            const iconSpan = document.createElement('span');
+            iconSpan.className = 'nav-icon';
+            iconSpan.textContent = screen.icon || '';
+            button.appendChild(iconSpan);
+            button.appendChild(document.createTextNode(' '));
+
+            const labelSpan = document.createElement('span');
+            if (screen.i18nKey) labelSpan.setAttribute('data-i18n', screen.i18nKey);
+            labelSpan.textContent = screen.label;
+            button.appendChild(labelSpan);
+
+            nav.appendChild(button);
+        });
+    });
+
+    // Preserve the original default-active tab (dashboard) so first paint matches before.
+    const firstTab = nav.querySelector('.nav-tab[data-tab="dashboard"]') || nav.querySelector('.nav-tab');
+    if (firstTab) firstTab.classList.add('active');
+}
+
+// Looks up an entity's configured noun (skins.json's `entities` block), falling back to the
+// caller-supplied English default if skins.json hasn't loaded yet or doesn't define that
+// entity — mirrors t()'s same missing-key-degrades-to-fallback behavior.
+function skinEntityLabel(entityId, { plural = false, fallback = '' } = {}) {
+    const entity = skinConfig?.entities?.[entityId];
+    if (!entity) return fallback;
+    return (plural ? entity.plural : entity.singular) || fallback;
+}
+
+// Looks up a status value's configured {label, color} (skins.json's `statuses.<group>`
+// block). `color` is one of the 5 pill tokens (ok/warn/danger/info/ghost) used everywhere
+// else in the app for status pills. Translates via t(entry.i18nKey, entry.label) when an
+// i18nKey is present (keeps existing Arabic translations working for unchanged labels);
+// otherwise shows the configured label literally — a fully custom skin's own wording, shown
+// as-authored regardless of language (see skins.json's own "_readme").
+function skinStatusInfo(group, value, fallback = { label: value, color: 'ghost' }) {
+    const entry = skinConfig?.statuses?.[group]?.[value];
+    if (!entry) return fallback;
+    const label = entry.i18nKey ? t(entry.i18nKey, entry.label) : entry.label;
+    return { label, color: entry.color || fallback.color };
+}
+
 async function initializeApp() {
+    await loadSkinConfig();
+    resolvedSkin = resolveSkinConfig(skinConfig);
+    renderSidebar(skinConfig);
     setupEventListeners();
     await loadFeatures();
     initializeWorkspaceDropdown();
 
     await loadTranslations();
-    
+
     await loadInitialData();
     setupUIForRole();
     updateUserInfo();
+    warnAboutDisabledScreens();
 }
 
 async function loadFeatures() {
@@ -739,6 +904,9 @@ function refreshVisibleTables() {
     // Financial Overview migrated to React (frontend-lab/src/islands/FinancialOverviewTab) —
     // same lab:refresh-* CustomEvent bridge.
     window.dispatchEvent(new CustomEvent('lab:refresh-financial-overview'));
+    // Day Close (frontend-lab/src/islands/DayCloseTab) aggregates transactions/visits booked
+    // today, so a checkout here needs to reach it too — same lab:refresh-* CustomEvent bridge.
+    window.dispatchEvent(new CustomEvent('lab:refresh-day-close'));
     // Statistics tab migrated to React (frontend-lab/src/islands/StatisticsTab) — it owns
     // its own state now, so tell it to refresh via a custom event instead of calling into it
     // directly (mirrors the tab-click listener it attaches to its own nav-tab button).
@@ -891,6 +1059,19 @@ function setupUIForRole() {
             tab.style.display = 'none'; // Keep hidden
         }
     });
+    // A skinConfig-driven category header (renderSidebar()) shouldn't float above a group of
+    // screens that all just got hidden by permission — hide the header too whenever none of
+    // the .nav-tab buttons immediately following it (until the next header) are visible.
+    document.querySelectorAll('.nav-section-label').forEach(header => {
+        let sibling = header.nextElementSibling;
+        let anyVisible = false;
+        while (sibling && sibling.classList.contains('nav-tab')) {
+            if (sibling.style.display !== 'none') { anyVisible = true; break; }
+            sibling = sibling.nextElementSibling;
+        }
+        header.style.display = anyVisible ? '' : 'none';
+    });
+
     const dashboardTab = document.querySelector('.nav-tab[data-tab="dashboard"]');
 
     // If the dashboard is hidden for this user, but there is another allowed tab, switch to it immediately
@@ -935,6 +1116,14 @@ async function toggleTheme() {
 // if (localStorage.getItem('theme') === 'light') document.body.classList.add('light-mode');
 
 function showTab(tabName) {
+    // Only screens skins.json actually knows about are gated here — an id like
+    // 'client-history' (a sub-screen/modal, not a top-level nav entry) is never in
+    // resolvedSkin.allScreenIds, so it's untouched and always allowed through.
+    if (resolvedSkin.allScreenIds.has(tabName) && !resolvedSkin.enabledScreenIds.has(tabName)) {
+        console.warn(`showTab: "${tabName}" is disabled (or missing a dependency) in skins.json, ignoring.`);
+        return;
+    }
+
     document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
     document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
 
@@ -2472,44 +2661,251 @@ function _measureTextWidthMm(text, fontSizePx, bold) {
     return widthPx / 3.7795275591; // 96 CSS px/inch ÷ 25.4mm/inch
 }
 
-// Opens a print window sized to fit a small roll-fed barcode sticker (a real physical
-// label, unlike a full A4/Letter sheet) — each sticker's page is sized around its own
-// barcode/caption content rather than a fixed guess, per `stickers`: [{ caption,
-// barcodeValue }]. Every sticker in one call shares the same page size (the widest one
-// needed in the batch), so a whole multi-tube order still prints as one continuous job.
-function printBarcodeStickers(stickers) {
-    const BAR_HEIGHT_MM = 6.5;   // physical height of the barcode bars themselves
-    const LINE_HEIGHT_MM = 3;    // the one caption line under the barcode
-    const PAD_MM = 1;
-    const MIN_WIDTH_MM = 18;
-    const MAX_WIDTH_MM = 42;
+// --- Barcode print preview (adjustable margins + size, remembered per-browser) ---
+// Different machines have different printers/alignment quirks, so this is deliberately a
+// per-browser preference (localStorage), not a shared lab-wide setting — see
+// printBarcodeStickers() below for how it's used.
+const BARCODE_BASE_BAR_HEIGHT_MM = 6.5; // physical bar height at 100% scale
+const BARCODE_LINE_HEIGHT_MM = 3;       // the one caption line under the barcode
+const BARCODE_PAD_MM = 1;               // baseline padding always present, before any user margin
+const BARCODE_MIN_CONTENT_WIDTH_MM = 16;
+const BARCODE_MAX_CAPTION_WIDTH_MM = 42; // caption alone can be truncated; the barcode itself is never capped — scaling it up is the whole point
+const BARCODE_MARGIN_STORAGE_KEY = 'barcodeStickerMargins';
+let _pendingBarcodeStickers = null; // set while the preview modal is open; null otherwise
 
-    let widestMm = MIN_WIDTH_MM;
-    const rendered = stickers.map(s => {
+function _loadBarcodeSettings() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(BARCODE_MARGIN_STORAGE_KEY));
+        if (saved && typeof saved === 'object') {
+            return {
+                top: Number(saved.top) || 0, bottom: Number(saved.bottom) || 0,
+                left: Number(saved.left) || 0, right: Number(saved.right) || 0,
+                scale: Number(saved.scale) || 100, // absent in anything saved before resizing existed
+            };
+        }
+    } catch (e) { /* malformed/missing — fall through to defaults */ }
+    return { top: 0, bottom: 0, left: 0, right: 0, scale: 100 };
+}
+
+function _readBarcodeSettings() {
+    return {
+        top: parseFloat(document.getElementById('barcode-margin-top').value) || 0,
+        bottom: parseFloat(document.getElementById('barcode-margin-bottom').value) || 0,
+        left: parseFloat(document.getElementById('barcode-margin-left').value) || 0,
+        right: parseFloat(document.getElementById('barcode-margin-right').value) || 0,
+        scale: parseFloat(document.getElementById('barcode-scale').value) || 100,
+    };
+}
+
+function _writeBarcodeSettings(s) {
+    document.getElementById('barcode-margin-top').value = s.top;
+    document.getElementById('barcode-margin-bottom').value = s.bottom;
+    document.getElementById('barcode-margin-left').value = s.left;
+    document.getElementById('barcode-margin-right').value = s.right;
+    document.getElementById('barcode-scale').value = s.scale;
+}
+
+// A margin can go negative (see the -5..10 input range) but CSS padding cannot — a bare
+// negative value would make the whole `padding` shorthand invalid and get dropped entirely,
+// silently blanking every side, not just the negative one. Clamped at the point of use rather
+// than on the stored margin itself, so the number input/localStorage still keep the real
+// signed value the user set. Floored at 0 rather than at BARCODE_PAD_MM: the box's own
+// dimensions (see _barcodeBoxDims()) already guarantee room for the bare content even at zero
+// padding, so this can legitimately go all the way down to a snug 0.
+function _barcodePaddingMm(marginMm) {
+    return Math.max(0, BARCODE_PAD_MM + marginMm);
+}
+
+// The bare barcode+caption size at the given scale (%), with no padding — the floor every box
+// dimension is built on top of, so a negative margin can zero out the *padding* but can never
+// shrink the box below this and clip the actual content. This is what makes "resize" grow/
+// shrink the barcode image itself: scale changes barHeightMm (and, via the barcode's fixed
+// aspect ratio, its width) directly, independent of the margin/padding system entirely.
+function _barcodeContentDims(sticker, scalePercent) {
+    const barHeightMm = BARCODE_BASE_BAR_HEIGHT_MM * (scalePercent / 100);
+    const barWidthMm = barHeightMm * sticker.barAspect;
+    const widthMm = Math.max(BARCODE_MIN_CONTENT_WIDTH_MM, barWidthMm, sticker.captionWidthMm);
+    const heightMm = barHeightMm + (sticker.caption ? BARCODE_LINE_HEIGHT_MM : 0);
+    return { barHeightMm, widthMm, heightMm };
+}
+
+// Re-renders the preview stage from `_pendingBarcodeStickers` (set by printBarcodeStickers())
+// at accurate mm size, with the currently-shown margins/scale applied — the same box
+// confirmBarcodePrint() will actually send to the printer.
+function renderBarcodePreview() {
+    if (!_pendingBarcodeStickers) return;
+    const m = _readBarcodeSettings();
+    const padTop = _barcodePaddingMm(m.top), padRight = _barcodePaddingMm(m.right);
+    const padBottom = _barcodePaddingMm(m.bottom), padLeft = _barcodePaddingMm(m.left);
+    const stage = document.getElementById('barcode-preview-stage');
+    stage.innerHTML = _pendingBarcodeStickers.map(s => {
+        const dims = _barcodeContentDims(s, m.scale);
+        const boxWidthMm = dims.widthMm + padLeft + padRight;
+        const boxHeightMm = dims.heightMm + padTop + padBottom;
+        return `
+        <div class="bc-preview-box" style="
+            position: relative;
+            width: ${boxWidthMm}mm; height: ${boxHeightMm}mm;
+            border: 1px dashed #999; box-sizing: border-box;">
+            <div class="bc-handle bc-handle-top" onmousedown="startBarcodeEdgeDrag(event, 'top')" title="Drag to resize the barcode"></div>
+            <div class="bc-handle bc-handle-bottom" onmousedown="startBarcodeEdgeDrag(event, 'bottom')" title="Drag to resize the barcode"></div>
+            <div class="bc-handle bc-handle-left" onmousedown="startBarcodeEdgeDrag(event, 'left')" title="Drag to resize the barcode"></div>
+            <div class="bc-handle bc-handle-right" onmousedown="startBarcodeEdgeDrag(event, 'right')" title="Drag to resize the barcode"></div>
+            <div class="bc-content" onmousedown="startBarcodeContentDrag(event)" title="Drag to nudge position" style="
+                position: absolute; inset: 0;
+                padding: ${padTop}mm ${padRight}mm ${padBottom}mm ${padLeft}mm;
+                display: flex; flex-direction: column; align-items: center; justify-content: center;
+                text-align: center; cursor: move;">
+                <img src="${s.dataUrl}" draggable="false" style="height: ${dims.barHeightMm}mm; width: auto; pointer-events: none;">
+                ${s.caption ? `<div style="font-size: 2.6mm; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; color: #000;">${s.caption}</div>` : ''}
+            </div>
+        </div>`;
+    }).join('');
+}
+
+// Bound to each margin/size input's oninput — saves immediately (an edit IS the new default
+// the moment it's made, even before Print is pressed) and updates the live preview.
+function onBarcodeMarginChange() {
+    localStorage.setItem(BARCODE_MARGIN_STORAGE_KEY, JSON.stringify(_readBarcodeSettings()));
+    renderBarcodePreview();
+}
+
+function resetBarcodeMargins() {
+    const defaults = { top: 0, bottom: 0, left: 0, right: 0, scale: 100 };
+    _writeBarcodeSettings(defaults);
+    localStorage.setItem(BARCODE_MARGIN_STORAGE_KEY, JSON.stringify(defaults));
+    renderBarcodePreview();
+}
+
+// --- Mouse drag/resize for the preview box itself, mirroring the number inputs ---
+// Two distinct gestures, both reflected live into the fields and saved immediately (same as
+// typing a value): dragging an edge HANDLE resizes the barcode itself bigger/smaller (moves
+// the shared "Barcode Size" field — any edge, dragged outward from the box's center, grows
+// it); dragging the barcode/caption CONTENT nudges its position without changing the box's
+// overall size (one side's margin grows exactly as much as the opposite side's shrinks). Both
+// drive the same onBarcodeMarginChange() persistence path, just via mouse deltas instead of
+// typed values.
+const BARCODE_MM_PER_PX = 25.4 / 96; // inverse of the 96 CSS px/inch used elsewhere (see _measureTextWidthMm)
+const BARCODE_SCALE_PERCENT_PER_MM = 4; // drag sensitivity for the resize handles
+let _barcodeDragState = null;
+
+function _clampBarcodeMargin(value) {
+    return Math.max(-5, Math.min(10, Math.round(value * 2) / 2)); // snap to the inputs' own 0.5mm step
+}
+
+function _clampBarcodeScale(value) {
+    return Math.max(50, Math.min(300, Math.round(value)));
+}
+
+function startBarcodeEdgeDrag(e, edge) {
+    e.preventDefault();
+    e.stopPropagation();
+    _barcodeDragState = { mode: 'edge', edge, startX: e.clientX, startY: e.clientY, start: _readBarcodeSettings() };
+    document.addEventListener('mousemove', _onBarcodeDragMove);
+    document.addEventListener('mouseup', _onBarcodeDragEnd);
+}
+
+function startBarcodeContentDrag(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    _barcodeDragState = { mode: 'content', startX: e.clientX, startY: e.clientY, start: _readBarcodeSettings() };
+    document.addEventListener('mousemove', _onBarcodeDragMove);
+    document.addEventListener('mouseup', _onBarcodeDragEnd);
+}
+
+function _onBarcodeDragMove(e) {
+    if (!_barcodeDragState) return;
+    const dxMm = (e.clientX - _barcodeDragState.startX) * BARCODE_MM_PER_PX;
+    const dyMm = (e.clientY - _barcodeDragState.startY) * BARCODE_MM_PER_PX;
+    const start = _barcodeDragState.start;
+    const m = { ...start };
+
+    if (_barcodeDragState.mode === 'edge') {
+        let deltaMm;
+        switch (_barcodeDragState.edge) {
+            case 'top': deltaMm = -dyMm; break;
+            case 'bottom': deltaMm = dyMm; break;
+            case 'left': deltaMm = -dxMm; break;
+            case 'right': deltaMm = dxMm; break;
+        }
+        m.scale = _clampBarcodeScale(start.scale + deltaMm * BARCODE_SCALE_PERCENT_PER_MM);
+    } else {
+        m.left = _clampBarcodeMargin(start.left + dxMm);
+        m.right = _clampBarcodeMargin(start.right - dxMm);
+        m.top = _clampBarcodeMargin(start.top + dyMm);
+        m.bottom = _clampBarcodeMargin(start.bottom - dyMm);
+    }
+
+    _writeBarcodeSettings(m);
+    localStorage.setItem(BARCODE_MARGIN_STORAGE_KEY, JSON.stringify(m));
+    renderBarcodePreview();
+}
+
+function _onBarcodeDragEnd() {
+    _barcodeDragState = null;
+    document.removeEventListener('mousemove', _onBarcodeDragMove);
+    document.removeEventListener('mouseup', _onBarcodeDragEnd);
+}
+
+function closeBarcodePreviewModal() {
+    document.getElementById('barcode-preview-modal').style.display = 'none';
+    _pendingBarcodeStickers = null;
+}
+
+// Opens a preview step for a small roll-fed barcode sticker (a real physical label, unlike
+// a full A4/Letter sheet) instead of printing straight away — each sticker's page is sized
+// around its own barcode/caption content rather than a fixed guess, per `stickers`: [{
+// caption, barcodeValue }]. Every sticker in one call shares the same page size (the widest
+// one needed in the batch), so a whole multi-tube order still prints as one continuous job.
+// Margin/size adjustment happens in the modal (see confirmBarcodePrint()); this function only
+// renders the preview.
+function printBarcodeStickers(stickers) {
+    _pendingBarcodeStickers = stickers.map(s => {
         const canvas = document.createElement('canvas');
         JsBarcode(canvas, s.barcodeValue, { format: 'CODE128', width: 1, height: 60, displayValue: false, margin: 0 });
-        const barcodeWidthMm = BAR_HEIGHT_MM * (canvas.width / canvas.height);
-        const captionWidthMm = s.caption ? _measureTextWidthMm(s.caption, 9, false) : 0;
-        const neededMm = Math.max(barcodeWidthMm, captionWidthMm) + PAD_MM * 2;
-        widestMm = Math.max(widestMm, Math.min(neededMm, MAX_WIDTH_MM));
-        return { ...s, dataUrl: canvas.toDataURL('image/png') };
+        return {
+            ...s,
+            dataUrl: canvas.toDataURL('image/png'),
+            barAspect: canvas.width / canvas.height, // preserved at any scale
+            captionWidthMm: s.caption ? Math.min(_measureTextWidthMm(s.caption, 9, false), BARCODE_MAX_CAPTION_WIDTH_MM) : 0,
+        };
     });
-    const width = Math.ceil(widestMm);
-    const height = Math.ceil(BAR_HEIGHT_MM + LINE_HEIGHT_MM + PAD_MM * 2);
+
+    _writeBarcodeSettings(_loadBarcodeSettings());
+    renderBarcodePreview();
+    document.getElementById('barcode-preview-modal').style.display = 'block';
+}
+
+// Sends the previewed sticker(s) to print — called from the preview modal's Print button.
+// Bakes the currently-shown margins/scale in exactly as shown in the live preview (same
+// _barcodeContentDims()/_barcodePaddingMm() box-sizing math), then prints exactly as
+// printBarcodeStickers() used to do unconditionally before this preview step existed.
+function confirmBarcodePrint() {
+    if (!_pendingBarcodeStickers || !_pendingBarcodeStickers.length) {
+        closeBarcodePreviewModal();
+        return;
+    }
+    const m = _readBarcodeSettings();
+    const padTop = _barcodePaddingMm(m.top), padRight = _barcodePaddingMm(m.right);
+    const padBottom = _barcodePaddingMm(m.bottom), padLeft = _barcodePaddingMm(m.left);
+    const first = _pendingBarcodeStickers[0];
+    const firstDims = _barcodeContentDims(first, m.scale);
+    const width = Math.max(1, Math.ceil(firstDims.widthMm + padLeft + padRight));
+    const height = Math.max(1, Math.ceil(firstDims.heightMm + padTop + padBottom));
 
     let html = `<html><head><title>Print Barcode</title><style>
         @page { size: ${width}mm ${height}mm; margin: 0; }
         * { box-sizing: border-box; }
         body { margin: 0; font-family: Arial, sans-serif; }
         .sticker {
-            width: ${width}mm; height: ${height}mm; padding: ${PAD_MM}mm;
+            width: ${width}mm; height: ${height}mm; padding: ${padTop}mm ${padRight}mm ${padBottom}mm ${padLeft}mm;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            page-break-after: always; overflow: hidden; text-align: center;
+            page-break-after: always; text-align: center;
         }
         .sticker .caption { font-size: 2.6mm; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-        .sticker img { height: ${BAR_HEIGHT_MM}mm; max-width: 100%; }
+        .sticker img { height: ${firstDims.barHeightMm}mm; width: auto; }
     </style></head><body>`;
-    rendered.forEach(s => {
+    _pendingBarcodeStickers.forEach(s => {
         html += `<div class="sticker"><img src="${s.dataUrl}">${s.caption ? `<div class="caption">${s.caption}</div>` : ''}</div>`;
     });
     html += '<script>window.onload = function(){ setTimeout(()=>{window.print(); window.close();}, 200); }</script></body></html>';
@@ -2517,6 +2913,8 @@ function printBarcodeStickers(stickers) {
     const printWindow = window.open('', '_blank', 'width=400,height=300');
     printWindow.document.write(html);
     printWindow.document.close();
+
+    closeBarcodePreviewModal();
 }
 
 // 1. Print Receipt

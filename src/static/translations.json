@@ -18,7 +18,9 @@
       "tech_screen": "Tech Screen",
       "warehouse": "Warehouse",
       "price_check": "Check Tests Total Price",
-      "security": "Security"
+      "security": "Security",
+      "payments": "Payments",
+      "day_close": "Day Close"
     },
     "dashboard": {
       "title": "Laboratory Dashboard",
@@ -74,7 +76,12 @@
       "code": "Code",
       "reg_date": "Reg. Date",
       "id": "ID",
-      "physician": "Physician"
+      "physician": "Physician",
+      "test": "Test",
+      "patient": "Patient",
+      "date": "Date",
+      "amount": "Amount",
+      "actions": "Actions"
     },
     "status": {
       "registered": "Registered",
@@ -109,7 +116,9 @@
       "save_test": "Save Test",
       "submit_booking": "Submit Booking",
       "upload": "Upload",
-      "back": "Back"
+      "back": "Back",
+      "search": "Search",
+      "edit": "Edit"
     },
     "forms": {
       "test_name": "Test Name",
@@ -256,7 +265,8 @@
       "clear_filter": "Clear Filter",
       "total_today": "Total Paid Today",
       "total_week": "Total Paid This Week",
-      "total_month": "Total Paid This Month"
+      "total_month": "Total Paid This Month",
+      "method": "Method"
     },
     "stats": {
       "title": "Test Results Statistics",
@@ -668,7 +678,8 @@
       "visits_delete_error": "Error deleting orders/visits: {msg}",
       "visits_delete_partial": "Deleted {ok}; {failed} failed: {msg}",
       "tests_imported_with_params": "Successfully imported {count} tests and {paramCount} parameter(s)!",
-      "tests_delete_partial": "Deleted {ok} test(s); {failed} failed: {msg}"
+      "tests_delete_partial": "Deleted {ok} test(s); {failed} failed: {msg}",
+      "skin_config_screens_disabled": "skins.json: {list} — auto-disabled because something they depend on is missing. Check the file if this is unexpected."
     },
     "price_check": {
       "title": "Check Tests Total Price",
@@ -678,6 +689,107 @@
       "tests_selected": "Tests Selected",
       "total_price": "Total Price",
       "subtotal": "Subtotal"
+    },
+    "categories": {
+      "overview": "Overview",
+      "records": "Clients",
+      "catalog": "Test Catalog",
+      "results": "Results",
+      "inventory": "Warehouse",
+      "financial": "Financial",
+      "staff": "HR",
+      "admin": "Settings & Admin"
+    },
+    "generic": {
+      "add_new": "Add New {entity}",
+      "register_entity": "Register {entity}",
+      "entity_name_header": "{entity} Name",
+      "loading": "Loading..."
+    },
+    "entities": {
+      "client_singular": "Patient",
+      "client_plural": "Patients",
+      "warehouseItem_singular": "Item",
+      "warehouseItem_plural": "Items"
+    },
+    "barcode_preview": {
+      "title": "Barcode Preview",
+      "subtitle": "Drag an edge to resize the barcode, drag it to nudge its position, or type exact values below — then print.",
+      "margin_top": "Top margin (mm)",
+      "margin_bottom": "Bottom margin (mm)",
+      "margin_left": "Left margin (mm)",
+      "margin_right": "Right margin (mm)",
+      "reset": "Reset to Default",
+      "cancel": "Cancel",
+      "print": "Print",
+      "size": "Barcode size (%)"
+    },
+    "payments": {
+      "title": "Payments",
+      "subtitle": "Money paid out — bills, rent, and ordered services",
+      "add": "Log Payment",
+      "add_title": "Log a Payment",
+      "edit_title": "Edit Payment",
+      "category": "Category",
+      "description": "Description",
+      "paid_to": "Paid To",
+      "notes": "Notes",
+      "total_today": "Paid Out Today",
+      "total_week": "Paid Out This Week",
+      "total_month": "Paid Out This Month",
+      "total_filtered": "Total for this filter: {amount} EGP",
+      "empty": "No payments logged for this filter.",
+      "missing_fields": "Category and description are required.",
+      "saved": "Payment saved!",
+      "save_error": "Error saving payment: {msg}",
+      "confirm_delete": "Delete {count} payment(s)? This cannot be undone.",
+      "deleted": "Deleted {count} payment(s).",
+      "delete_error": "Error deleting payments: {msg}",
+      "delete_partial": "Deleted {ok} payment(s); {failed} failed: {msg}"
+    },
+    "day_close": {
+      "title": "Day Close",
+      "subtitle": "One day's operations: revenue, tests, physicians, patients, results, and outsourced samples",
+      "date": "Date",
+      "revenue_collected": "Revenue Collected",
+      "payments_out": "Payments (Out)",
+      "visits": "Visits / Patients",
+      "outstanding": "Outstanding to Collect",
+      "tests_ordered": "Tests Ordered",
+      "physicians": "Physicians",
+      "physician": "Physician",
+      "visits_count": "Visits",
+      "count": "Count",
+      "gender": "Gender",
+      "results": "Results",
+      "no_data": "No data for this day.",
+      "lab_to_lab": "Lab-to-Lab",
+      "sent_today": "{count} sent today",
+      "log_referral": "Log Referral",
+      "no_pending_referrals": "Nothing outstanding — every referral has come back.",
+      "sent_date": "Sent",
+      "external_lab": "External Lab",
+      "mark_received": "Mark Received",
+      "referral_marked_received": "Marked as received.",
+      "referral_update_error": "Error updating referral: {msg}",
+      "search_visit": "Search visit by ID, patient name, or phone",
+      "change_visit": "Change Visit",
+      "referral_missing_fields": "Pick a visit and test, and name the external lab.",
+      "referral_logged": "Referral logged.",
+      "referral_save_error": "Error logging referral: {msg}",
+      "net_revenues": "Net Revenues",
+      "net_payments": "Net Payments",
+      "fee": "Fee",
+      "awaiting_payment": "Lab-to-Lab — Awaiting Fee Payment",
+      "no_awaiting_payment": "No received referrals with an unpaid fee.",
+      "mark_paid": "Mark Paid",
+      "referral_fee_paid": "Fee marked paid and added to Payments.",
+      "parameter": "Parameter",
+      "result_value": "Result",
+      "received_date": "Received",
+      "select_visit": "Select",
+      "no_visits_found": "No visits found for this filter.",
+      "visit": "Visit"
     }
   },
   "AR": {
@@ -699,7 +811,9 @@
       "tech_screen": "شاشة الفني",
       "warehouse": "المخزن",
       "price_check": "حساب إجمالي سعر التحاليل",
-      "security": "الأمان"
+      "security": "الأمان",
+      "payments": "المدفوعات",
+      "day_close": "إغلاق اليوم"
     },
     "dashboard": {
       "title": "لوحة تحكم المختبر",
@@ -755,7 +869,12 @@
       "code": "الكود",
       "reg_date": "تاريخ التسجيل",
       "id": "المعرف",
-      "physician": "الطبيب المعالج"
+      "physician": "الطبيب المعالج",
+      "test": "التحليل",
+      "patient": "المريض",
+      "date": "التاريخ",
+      "amount": "المبلغ",
+      "actions": "الإجراءات"
     },
     "status": {
       "registered": "مسجل",
@@ -790,7 +909,9 @@
       "save_test": "حفظ التحليل",
       "submit_booking": "تأكيد الحجز",
       "upload": "رفع",
-      "back": "رجوع"
+      "back": "رجوع",
+      "search": "بحث",
+      "edit": "تعديل"
     },
     "forms": {
       "test_name": "اسم التحليل",
@@ -937,7 +1058,8 @@
       "clear_filter": "مسح الفلتر",
       "total_today": "إجمالي المدفوع اليوم",
       "total_week": "إجمالي المدفوع هذا الأسبوع",
-      "total_month": "إجمالي المدفوع هذا الشهر"
+      "total_month": "إجمالي المدفوع هذا الشهر",
+      "method": "الطريقة"
     },
     "stats": {
       "title": "إحصائيات نتائج التحاليل",
@@ -1349,7 +1471,8 @@
       "visits_delete_error": "خطأ أثناء حذف الطلبات/الزيارات: {msg}",
       "visits_delete_partial": "تم حذف {ok}؛ فشل حذف {failed}: {msg}",
       "tests_imported_with_params": "تم استيراد {count} تحليل و {paramCount} معيار بنجاح!",
-      "tests_delete_partial": "تم حذف {ok} تحليل؛ فشل حذف {failed}: {msg}"
+      "tests_delete_partial": "تم حذف {ok} تحليل؛ فشل حذف {failed}: {msg}",
+      "skin_config_screens_disabled": "skins.json: {list} — تم تعطيلها تلقائيًا بسبب فقدان عنصر تعتمد عليه. راجع الملف إذا لم يكن هذا مقصودًا."
     },
     "price_check": {
       "title": "حساب إجمالي سعر التحاليل",
@@ -1359,6 +1482,107 @@
       "tests_selected": "عدد التحاليل المحددة",
       "total_price": "السعر الإجمالي",
       "subtotal": "الإجمالي الفرعي"
+    },
+    "categories": {
+      "overview": "نظرة عامة",
+      "records": "العملاء",
+      "catalog": "دليل التحاليل",
+      "results": "النتائج",
+      "inventory": "المخزن",
+      "financial": "الماليات",
+      "staff": "الموارد البشرية",
+      "admin": "الإعدادات والإدارة"
+    },
+    "generic": {
+      "add_new": "إضافة {entity} جديد",
+      "register_entity": "تسجيل {entity}",
+      "entity_name_header": "اسم {entity}",
+      "loading": "جارٍ التحميل..."
+    },
+    "entities": {
+      "client_singular": "مريض",
+      "client_plural": "مرضى",
+      "warehouseItem_singular": "صنف",
+      "warehouseItem_plural": "أصناف"
+    },
+    "barcode_preview": {
+      "title": "معاينة الباركود",
+      "subtitle": "اسحب الحافة لتغيير حجم الباركود، أو اسحبه لتحريك موضعه، أو أدخل قيمًا دقيقة أدناه — ثم اطبع.",
+      "margin_top": "الهامش العلوي (مم)",
+      "margin_bottom": "الهامش السفلي (مم)",
+      "margin_left": "الهامش الأيسر (مم)",
+      "margin_right": "الهامش الأيمن (مم)",
+      "reset": "إعادة التعيين",
+      "cancel": "إلغاء",
+      "print": "طباعة",
+      "size": "حجم الباركود (%)"
+    },
+    "payments": {
+      "title": "المدفوعات",
+      "subtitle": "الأموال المدفوعة للخارج — فواتير، إيجار، وخدمات مطلوبة",
+      "add": "تسجيل دفعة",
+      "add_title": "تسجيل دفعة جديدة",
+      "edit_title": "تعديل الدفعة",
+      "category": "الفئة",
+      "description": "الوصف",
+      "paid_to": "مدفوعة إلى",
+      "notes": "ملاحظات",
+      "total_today": "المدفوع اليوم",
+      "total_week": "المدفوع هذا الأسبوع",
+      "total_month": "المدفوع هذا الشهر",
+      "total_filtered": "الإجمالي لهذا الفلتر: {amount} جنيه",
+      "empty": "لا توجد مدفوعات مسجلة لهذا الفلتر.",
+      "missing_fields": "الفئة والوصف مطلوبان.",
+      "saved": "تم حفظ الدفعة!",
+      "save_error": "خطأ في حفظ الدفعة: {msg}",
+      "confirm_delete": "حذف {count} دفعة/دفعات؟ لا يمكن التراجع عن هذا.",
+      "deleted": "تم حذف {count} دفعة/دفعات.",
+      "delete_error": "خطأ في حذف المدفوعات: {msg}",
+      "delete_partial": "تم حذف {ok}؛ فشل {failed}: {msg}"
+    },
+    "day_close": {
+      "title": "إغلاق اليوم",
+      "subtitle": "عمليات اليوم: الإيرادات، التحاليل، الأطباء، المرضى، النتائج، والعينات المرسلة لمعامل أخرى",
+      "date": "التاريخ",
+      "revenue_collected": "الإيرادات المحصلة",
+      "payments_out": "المدفوعات (للخارج)",
+      "visits": "الزيارات / المرضى",
+      "outstanding": "المتبقي للتحصيل",
+      "tests_ordered": "التحاليل المطلوبة",
+      "physicians": "الأطباء",
+      "physician": "الطبيب",
+      "visits_count": "الزيارات",
+      "count": "العدد",
+      "gender": "الجنس",
+      "results": "النتائج",
+      "no_data": "لا توجد بيانات لهذا اليوم.",
+      "lab_to_lab": "معمل إلى معمل",
+      "sent_today": "تم إرسال {count} اليوم",
+      "log_referral": "تسجيل تحويل",
+      "no_pending_referrals": "لا يوجد شيء معلق — عادت كل التحويلات.",
+      "sent_date": "تاريخ الإرسال",
+      "external_lab": "المعمل الخارجي",
+      "mark_received": "تحديد كمستلم",
+      "referral_marked_received": "تم التحديد كمستلم.",
+      "referral_update_error": "خطأ في تحديث التحويل: {msg}",
+      "search_visit": "ابحث عن الزيارة بالرقم أو اسم المريض أو الهاتف",
+      "change_visit": "تغيير الزيارة",
+      "referral_missing_fields": "اختر الزيارة والتحليل، واذكر اسم المعمل الخارجي.",
+      "referral_logged": "تم تسجيل التحويل.",
+      "referral_save_error": "خطأ في تسجيل التحويل: {msg}",
+      "net_revenues": "صافي الإيرادات",
+      "net_payments": "صافي المدفوعات",
+      "fee": "الرسوم",
+      "awaiting_payment": "معمل إلى معمل — بانتظار دفع الرسوم",
+      "no_awaiting_payment": "لا توجد تحويلات مستلمة برسوم غير مدفوعة.",
+      "mark_paid": "تحديد كمدفوع",
+      "referral_fee_paid": "تم تحديد الرسوم كمدفوعة وإضافتها إلى المدفوعات.",
+      "parameter": "المعامل",
+      "result_value": "النتيجة",
+      "received_date": "تاريخ الاستلام",
+      "select_visit": "اختيار",
+      "no_visits_found": "لا توجد زيارات لهذا الفلتر.",
+      "visit": "الزيارة"
     }
   }
 }

@@ -219,6 +219,87 @@ class Employee(db.Model):
             'username': self.username,
             'photo_path': self.photo_path,
         }
-    
+
+
+# Money going OUT (bills, rent, ordered services) — the "Payments" tab. Deliberately the
+# mirror image of TransactionList (money coming in from patients): flat, no relationships,
+# free-text category rather than an enum so the operator isn't blocked by a fixed list.
+class Payment(db.Model):
+    __tablename__ = 'payments'
+    id = db.Column(db.Integer, primary_key=True)
+    category = db.Column(db.String(50), nullable=False)  # e.g. "bill", "rent", "service", "supplier", "other"
+    description = db.Column(db.String(255), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    paid_to = db.Column(db.String(200))
+    payment_method = db.Column(db.String(50))
+    payment_date = db.Column(db.String(100))  # "YYYY-MM-DD", same style as TransactionList.date
+    notes = db.Column(db.Text)
+    created_by = db.Column(db.String(100))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'category': self.category,
+            'description': self.description,
+            'amount': self.amount,
+            'paid_to': self.paid_to,
+            'payment_method': self.payment_method,
+            'payment_date': self.payment_date,
+            'notes': self.notes,
+            'created_by': self.created_by,
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
+        }
+
+
+# A sample/test sent out to an external partner lab ("Lab-to-Lab") instead of being run
+# in-house — the minimal record Day Close needs to show what's outstanding. Scoped to one
+# specific booked test (visit_id + lab_test_id) rather than a whole visit, since only some
+# tests on an order are typically the ones that get outsourced.
+class LabReferral(db.Model):
+    __tablename__ = 'lab_referrals'
+    id = db.Column(db.Integer, primary_key=True)
+    # Same ondelete convention as VisitTest: gone if the visit itself is deleted, but the
+    # test itself can't be deleted while it's ever been referred out (real history).
+    visit_id = db.Column(db.Integer, db.ForeignKey('patient_visits.id', ondelete='CASCADE'), nullable=False)
+    lab_test_id = db.Column(db.Integer, db.ForeignKey('lab_tests.id', ondelete='RESTRICT'), nullable=False)
+    external_lab_name = db.Column(db.String(200), nullable=False)
+    sent_date = db.Column(db.String(100))  # "YYYY-MM-DD"
+    status = db.Column(db.String(20), nullable=False, default='sent')  # sent, received
+    received_date = db.Column(db.String(100))
+    reference_no = db.Column(db.String(100))
+    notes = db.Column(db.Text)
+    created_by = db.Column(db.String(100))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # What the external lab charges for running this referred-out test — set at logging time,
+    # since that's usually known/quoted up front even though the money doesn't actually leave
+    # until fee_payment_status flips to 'paid' (see pay_lab_referral_fee() in main.py, which is
+    # what actually creates the linked Payment row below — this column alone never puts
+    # anything in the Payments ledger by itself).
+    fee = db.Column(db.Float)
+    fee_payment_status = db.Column(db.String(20), nullable=False, default='unpaid')  # unpaid, paid
+    # Set only once fee_payment_status becomes 'paid' — the Payment row that was created for
+    # this fee, kept so it can't accidentally be paid twice and so the two stay traceable to
+    # each other. No ondelete: deleting that Payment later (or this referral) is deliberately
+    # left as independent history, same as visits/transactions elsewhere in this app.
+    payment_id = db.Column(db.Integer, db.ForeignKey('payments.id'), nullable=True)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'visit_id': self.visit_id,
+            'lab_test_id': self.lab_test_id,
+            'external_lab_name': self.external_lab_name,
+            'sent_date': self.sent_date,
+            'status': self.status,
+            'received_date': self.received_date,
+            'reference_no': self.reference_no,
+            'notes': self.notes,
+            'created_by': self.created_by,
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
+            'fee': self.fee,
+            'fee_payment_status': self.fee_payment_status,
+            'payment_id': self.payment_id,
+        }
 
 

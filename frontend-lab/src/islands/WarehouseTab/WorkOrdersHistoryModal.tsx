@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { apiFetch } from '../../lib/apiFetch';
 import { useTranslations } from '../../lib/i18n';
+import { useSkinConfig } from '../../lib/skinConfig';
 import { workOrderGroupStatus, workOrderStatusLabel, workOrderStatusPillClass, type WorkOrderLine } from './workOrderTypes';
 import WorkOrderDetailModal from './WorkOrderDetailModal';
 import FulfillScanModal from './FulfillScanModal';
@@ -15,6 +16,7 @@ interface Props {
 
 export default function WorkOrdersHistoryModal({ isAdmin, onClose, onStockChanged }: Props) {
   const { t } = useTranslations();
+  const { skin } = useSkinConfig();
   const [workOrders, setWorkOrders] = useState<WorkOrderLine[] | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [scanningId, setScanningId] = useState<string | null>(null);
@@ -121,7 +123,7 @@ export default function WorkOrdersHistoryModal({ isAdmin, onClose, onStockChange
                 <tbody>
                   {[...grouped.entries()].map(([workOrderId, lines]) => {
                     const status = workOrderGroupStatus(lines);
-                    const color = `var(--${workOrderStatusPillClass(status)})`;
+                    const color = `var(--${workOrderStatusPillClass(status, skin)})`;
                     const itemsLabel = lines.length === 1 ? lines[0].item_name : `${lines.length} items`;
                     return (
                       <tr key={workOrderId} style={{ cursor: 'pointer' }} onClick={() => setDetailId(workOrderId)} title="View work order details">
@@ -133,7 +135,7 @@ export default function WorkOrdersHistoryModal({ isAdmin, onClose, onStockChange
                         <td style={{ color: 'var(--muted)' }}>{lines[0].user}</td>
                         <td>
                           <span className="pill" style={{ color, border: `1px solid ${color}`, background: 'transparent' }}>
-                            {workOrderStatusLabel(status, t)}
+                            {workOrderStatusLabel(status, t, skin)}
                           </span>
                         </td>
                         <td onClick={(e) => e.stopPropagation()}>

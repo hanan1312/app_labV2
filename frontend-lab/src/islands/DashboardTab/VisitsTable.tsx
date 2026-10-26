@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { useSkinConfig, statusInfo, type SkinConfig } from '../../lib/skinConfig';
 
 export interface VisitRow {
   id?: number; // absent for the "total" view's unbooked-client placeholder rows
@@ -19,29 +20,28 @@ type TFunc = (path: string, fallback: string, vars?: Record<string, string | num
 // actual reachable branches (its status === 'collected' clause appears twice in the vanilla
 // if/else-if chain; the second occurrence is unreachable dead code since the first already
 // matches, so only the dropdown behavior it actually produces is replicated here).
-function statusBadge(row: VisitRow, t: TFunc): { pillClass: string; text: string; countBadge?: string } {
-  switch (row.status) {
-    case 'registered':
-      return { pillClass: 'info', text: t('alerts.status_registered', 'Registered') };
-    case 'pending':
-      return { pillClass: 'danger', text: t('alerts.status_pending_badge', 'Pending') };
-    case 'collected':
-      return { pillClass: 'ok', text: t('alerts.status_waiting_results', 'Waiting for Results') };
-    case 'partially_delivered': {
-      const total = row.tests?.length || 0;
-      const done = row.completed_tests?.length || 0;
-      const text = done
-        ? t('alerts.status_delivered_suffix', '{tests} Delivered', { tests: (row.completed_tests || []).join(', ') })
-        : t('alerts.status_partially_delivered', 'Partially Delivered');
-      return { pillClass: 'info', text, countBadge: `${done}/${total}` };
-    }
-    case 'awaiting_approval':
-      return { pillClass: 'warn', text: t('alerts.status_awaiting_approval', 'Waiting for Approval') };
-    case 'results_delivered_by_link':
-      return { pillClass: 'info', text: t('alerts.status_delivered', 'Delivered') };
-    default:
-      return { pillClass: 'ghost', text: t('alerts.status_pending_badge', 'Pending') };
+function statusBadge(row: VisitRow, skin: SkinConfig | null, t: TFunc): { pillClass: string; text: string; countBadge?: string } {
+  // partially_delivered's count badge and "{tests} Delivered" suffix are per-visit computed
+  // text, not a fixed status label — kept as a local special case rather than folded into
+  // skins.json's statuses.visit entry, which only ever supplies one fixed label per value.
+  if (row.status === 'partially_delivered') {
+    const total = row.tests?.length || 0;
+    const done = row.completed_tests?.length || 0;
+    const s = statusInfo(skin, 'visit', 'partially_delivered', t, { label: 'Partially Delivered', colorClass: 'info' });
+    const text = done ? t('alerts.status_delivered_suffix', '{tests} Delivered', { tests: (row.completed_tests || []).join(', ') }) : s.label;
+    return { pillClass: s.colorClass, text, countBadge: `${done}/${total}` };
   }
+  const known = ['registered', 'pending', 'collected', 'awaiting_approval', 'results_delivered_by_link'];
+  const value = known.includes(row.status) ? row.status : 'pending';
+  const fallbacks: Record<string, { label: string; colorClass: string }> = {
+    registered: { label: 'Registered', colorClass: 'info' },
+    pending: { label: 'Pending', colorClass: 'danger' },
+    collected: { label: 'Waiting for Results', colorClass: 'ok' },
+    awaiting_approval: { label: 'Waiting for Approval', colorClass: 'warn' },
+    results_delivered_by_link: { label: 'Delivered', colorClass: 'info' },
+  };
+  const s = statusInfo(skin, 'visit', value, t, fallbacks[value]);
+  return { pillClass: s.colorClass, text: s.label };
 }
 
 function RowActions({ row, t, onCollectSample }: { row: VisitRow; t: TFunc; onCollectSample: (visitId: string) => void }) {
@@ -186,6 +186,7 @@ export default function VisitsTable({
   containerId: string;
   t: TFunc;
 }) {
+  const { skin } = useSkinConfig();
   const selectableIds = rows.filter((r) => r.id != null).map((r) => r.id as number);
   const allChecked = selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
 
@@ -246,7 +247,7 @@ export default function VisitsTable({
               </tr>
             ) : (
               rows.map((row, index) => {
-                const badge = statusBadge(row, t);
+                const badge = statusBadge(row, skin, t);
                 const isClickable = clickable && row.id != null && row.status !== 'registered';
                 return (
                   <tr

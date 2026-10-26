@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { apiFetch } from '../../lib/apiFetch';
 import { useTranslations } from '../../lib/i18n';
-import { batchStatusPillClass, type WarehouseBatchRow } from './batchTypes';
+import { useSkinConfig } from '../../lib/skinConfig';
+import { batchStatusPillClass, batchStatusLabel, type WarehouseBatchRow } from './batchTypes';
 import { printBatchLabel } from './batchLabel';
 
 interface Props {
@@ -12,6 +13,7 @@ interface Props {
 
 export default function ItemBatchesModal({ itemId, itemName, onClose }: Props) {
   const { t } = useTranslations();
+  const { skin } = useSkinConfig();
   const [batches, setBatches] = useState<WarehouseBatchRow[] | null>(null);
   const [error, setError] = useState(false);
 
@@ -31,10 +33,7 @@ export default function ItemBatchesModal({ itemId, itemName, onClose }: Props) {
   }, [itemId]);
 
   function statusLabel(batch: WarehouseBatchRow): string {
-    if (batch.is_expired) return t('alerts.status_expired_flag', '🚩 Expired');
-    if (batch.status === 'disposed') return t('alerts.status_disposed', 'Disposed');
-    if (batch.status === 'exhausted') return t('alerts.status_exhausted', 'Exhausted');
-    return t('alerts.status_active', 'Active');
+    return batchStatusLabel(batch, t, skin);
   }
 
   return (
@@ -70,7 +69,7 @@ export default function ItemBatchesModal({ itemId, itemName, onClose }: Props) {
                 </thead>
                 <tbody>
                   {batches.map((b) => {
-                    const color = `var(--${batchStatusPillClass(b)})`;
+                    const color = `var(--${batchStatusPillClass(b, skin)})`;
                     return (
                       <tr key={b.id}>
                         <td style={{ color: b.is_expired ? 'var(--danger)' : 'var(--text)', fontWeight: b.is_expired ? 'bold' : 'normal' }}>{b.expiry_date}</td>

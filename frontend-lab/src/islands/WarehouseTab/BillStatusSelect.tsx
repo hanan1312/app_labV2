@@ -1,5 +1,6 @@
 import { useTranslations } from '../../lib/i18n';
-import { billStatusPillClass } from './billTypes';
+import { useSkinConfig } from '../../lib/skinConfig';
+import { billStatusPillClass, billStatusLabel } from './billTypes';
 
 // Everyone with warehouse access can move a bill between Requested/Delivered — marking stock
 // as physically delivered is a routine receiving-desk action. "Confirmed" (ordered) stays
@@ -16,7 +17,8 @@ export default function BillStatusSelect({
   onChange: (newStatus: string) => void;
 }) {
   const { t } = useTranslations();
-  const color = `var(--${billStatusPillClass(status)})`;
+  const { skin } = useSkinConfig();
+  const color = `var(--${billStatusPillClass(status, skin)})`;
   return (
     <select
       value={status}
@@ -24,12 +26,12 @@ export default function BillStatusSelect({
       onClick={(e) => e.stopPropagation()}
       style={{ padding: 4, fontSize: 11, background: 'transparent', border: `1px solid ${color}`, color, borderRadius: 4 }}
     >
-      <option value="demanded">{t('alerts.status_bill_requested', '🔴 Requested')}</option>
+      <option value="demanded">{billStatusLabel('demanded', t, skin)}</option>
       <option value="ordered" disabled={!isAdmin}>
-        {t('alerts.status_bill_confirmed', '🟡 Confirmed')}
+        {billStatusLabel('ordered', t, skin)}
         {isAdmin ? '' : t('alerts.admin_only_suffix', ' (admin only)')}
       </option>
-      <option value="delivered">{t('alerts.status_bill_delivered', '🟢 Delivered')}</option>
+      <option value="delivered">{billStatusLabel('delivered', t, skin)}</option>
     </select>
   );
 }

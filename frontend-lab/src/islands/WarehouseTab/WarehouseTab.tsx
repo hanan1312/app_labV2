@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { apiFetch } from '../../lib/apiFetch';
 import { useTranslations } from '../../lib/i18n';
 import { useCurrentUser } from '../../lib/useCurrentUser';
+import { useSkinConfig, entityLabel } from '../../lib/skinConfig';
 import ItemModal, { type WarehouseItemRow } from './ItemModal';
 import NewBillModal from './NewBillModal';
 import BulkBillModal from './BulkBillModal';
@@ -19,6 +20,8 @@ const CATEGORY_COLORS = ['var(--danger)', 'var(--teal)', 'var(--warn)', 'var(--o
 export default function WarehouseTab() {
   const { t } = useTranslations();
   const { user, isAdmin } = useCurrentUser();
+  const { skin } = useSkinConfig();
+  const itemSingular = entityLabel(skin, 'warehouseItem', t, 'Item');
 
   const [items, setItems] = useState<WarehouseItemRow[]>([]);
   const [refreshTick, setRefreshTick] = useState(0);
@@ -278,7 +281,7 @@ export default function WarehouseTab() {
               setItemModalOpen(true);
             }}
           >
-            + Add New Item
+            + {t('generic.add_new', 'Add New {entity}', { entity: itemSingular })}
           </button>
         </div>
       </div>
@@ -325,7 +328,7 @@ export default function WarehouseTab() {
                     <input type="checkbox" checked={allChecked} onChange={(e) => toggleAll(e.target.checked)} />
                   </th>
                   <th>#</th>
-                  <th>Item Name</th>
+                  <th>{t('generic.entity_name_header', '{entity} Name', { entity: itemSingular })}</th>
                   <th>Category</th>
                   <th>Stock Level</th>
                   <th>Last Updated</th>

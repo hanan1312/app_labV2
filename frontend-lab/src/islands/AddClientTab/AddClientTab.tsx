@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { apiFetch } from '../../lib/apiFetch';
 import { useTranslations } from '../../lib/i18n';
+import { useSkinConfig, entityLabel } from '../../lib/skinConfig';
 
 interface ClientFormFields {
   first_name: string;
@@ -46,6 +47,8 @@ const BLOOD_TYPES = ['A+', 'O+', 'B+', 'AB+', 'A-', 'O-', 'B-', 'AB-'];
 // button dispatches { clientId: null } directly for the same reason.
 export default function AddClientTab() {
   const { t } = useTranslations();
+  const { skin } = useSkinConfig();
+  const clientSingular = entityLabel(skin, 'client', t, 'Patient');
 
   const [fields, setFields] = useState<ClientFormFields>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -148,7 +151,7 @@ export default function AddClientTab() {
 
   return (
     <>
-      <h1>{t('add_patient.title', 'Register Patient')}</h1>
+      <h1>{t('generic.register_entity', 'Register {entity}', { entity: clientSingular })}</h1>
       <div className="card">
         <form id="client-form" onSubmit={handleSubmit}>
           {errors.length > 0 && (

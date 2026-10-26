@@ -29,7 +29,7 @@ from flask import Flask, send_from_directory, redirect, session, request, jsonif
 from flask_cors import CORS
 
 from config import DevelopmentConfig, ProductionConfig, DB_DIR 
-from src.models.user import db, User, LabTest, TransactionList, PatientVisit, WarehouseItem, WarehouseBill,Employee, WarehouseWorkOrder, WarehouseBatch, WarehouseWorkOrderScan
+from src.models.user import db, User, LabTest, TransactionList, PatientVisit, WarehouseItem, WarehouseBill,Employee, WarehouseWorkOrder, WarehouseBatch, WarehouseWorkOrderScan, Payment, LabReferral
 from src.models.client import Client
 from src.models.test_result import TestResult
 from src.models.test_parameter import TestParameterTemplate
@@ -383,6 +383,34 @@ with app.app_context():
         for statement in [
             "ALTER TABLE test_parameter_templates ADD COLUMN category VARCHAR(100)",
             "ALTER TABLE test_parameter_templates ADD COLUMN parent_parameter_id INTEGER REFERENCES test_parameter_templates(id) ON DELETE SET NULL",
+        ]:
+            try:
+                db.session.execute(text(statement))
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+
+        # Payments tab (money out: bills/rent/ordered services) — brand-new, no FKs, no
+        # pre-existing rows to reconcile.
+        db.Model.metadata.create_all(bind=engine, tables=[Payment.__table__])
+
+        # Day Close's "Lab-to-Lab" referral log. LabReferral FKs into patient_visits/lab_tests
+        # (both pre-existing tables) — per the AttendanceSession precedent above, the FK
+        # target tables must be included in the SAME create_all() call or SQLite's DDL
+        # compiler silently drops the ON DELETE CASCADE/RESTRICT clauses on the new table;
+        # checkfirst (the create_all default) skips the two that already exist.
+        db.Model.metadata.create_all(bind=engine, tables=[
+            PatientVisit.__table__, LabTest.__table__, LabReferral.__table__,
+        ])
+
+        # Lab Referral fee tracking — new nullable columns, DEFAULT 'unpaid' is correct for
+        # every pre-existing row too (none of them have ever been paid through this new
+        # mechanism, since it didn't exist yet), so no backfill is needed.
+        db.session.bind = engine
+        for statement in [
+            "ALTER TABLE lab_referrals ADD COLUMN fee FLOAT",
+            "ALTER TABLE lab_referrals ADD COLUMN fee_payment_status VARCHAR(20) DEFAULT 'unpaid'",
+            "ALTER TABLE lab_referrals ADD COLUMN payment_id INTEGER REFERENCES payments(id)",
         ]:
             try:
                 db.session.execute(text(statement))
@@ -1121,6 +1149,11 @@ def get_all_visits():
             'patient_name': f'{patient.first_name} {patient.last_name}' if patient else v.patient_name,
             'date': v.date,
             'tests': [name for _lab_test_id, name in booked],
+            # Parallel to 'tests' above (same order) — lab_test_id per booked test, needed to
+            # create a LabReferral ("Lab-to-Lab") against a specific test on this visit; kept
+            # as a separate array rather than changing 'tests' itself so every existing
+            # consumer of the plain name list is unaffected.
+            'test_ids': [lab_test_id for lab_test_id, _name in booked],
             'completed_tests': completed,
             'status': getattr(v, 'status', 'pending') or 'pending',
             'phone': patient.phone if patient else 'N/A',
@@ -1428,6 +1461,394 @@ def get_transactions_summary():
         'today': total_since(today),
         'this_week': total_since(week_start),
         'this_month': total_since(month_start),
+    })
+
+
+# --- PAYMENTS (money OUT: bills, rent, ordered services) ---
+
+@app.route('/api/payments', methods=['POST'])
+@require_permission('payments')
+def create_payment():
+    data = request.json or {}
+    if not data.get('category') or not data.get('description'):
+        return jsonify({'error': 'category and description are required'}), 400
+    try:
+        amount = float(data.get('amount'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Invalid amount'}), 400
+
+    payment = Payment(
+        category=data['category'],
+        description=data['description'],
+        amount=amount,
+        paid_to=data.get('paid_to'),
+        payment_method=data.get('payment_method'),
+        payment_date=data.get('payment_date') or now_cairo().strftime('%Y-%m-%d'),
+        notes=data.get('notes'),
+        created_by=session.get('username'),
+    )
+    db.session.add(payment)
+    db.session.commit()
+    return jsonify({'success': True, 'payment': payment.to_dict()})
+
+
+@app.route('/api/payments', methods=['GET'])
+@require_permission('payments')
+def get_all_payments():
+    """Supports optional pagination + filtering via ?page=&per_page=&date_from=&date_to=&
+    category= — omit `page` to get the full unfiltered list (used by the Payments tab's own
+    summary cards, which need the complete filtered set for totals)."""
+    query = Payment.query
+
+    date_from = request.args.get('date_from')
+    date_to = request.args.get('date_to')
+    if date_from:
+        query = query.filter(Payment.payment_date >= date_from)
+    if date_to:
+        query = query.filter(Payment.payment_date <= date_to)
+
+    category = request.args.get('category')
+    if category:
+        query = query.filter(Payment.category == category)
+
+    total_amount = query.with_entities(db.func.sum(Payment.amount)).scalar() or 0
+    query = query.order_by(Payment.id.desc())
+
+    page = request.args.get('page', type=int)
+    total = None
+    if page is not None:
+        per_page = max(1, min(request.args.get('per_page', 100, type=int), 500))
+        total = query.count()
+        payments = query.offset((page - 1) * per_page).limit(per_page).all()
+    else:
+        payments = query.all()
+
+    payload = [p.to_dict() for p in payments]
+    if page is not None:
+        return jsonify({
+            'items': payload, 'page': page, 'per_page': per_page, 'total': total,
+            'total_pages': max(1, (total + per_page - 1) // per_page),
+            'total_amount': total_amount,
+        })
+    return jsonify(payload)
+
+
+@app.route('/api/payments/<int:payment_id>', methods=['PUT'])
+@require_permission('payments')
+def update_payment(payment_id):
+    payment = db.session.get(Payment, payment_id)
+    if not payment:
+        return jsonify({'error': 'Payment not found'}), 404
+    data = request.json or {}
+    if 'amount' in data:
+        try:
+            payment.amount = float(data['amount'])
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Invalid amount'}), 400
+    for field in ('category', 'description', 'paid_to', 'payment_method', 'payment_date', 'notes'):
+        if field in data:
+            setattr(payment, field, data[field])
+    db.session.commit()
+    return jsonify({'success': True, 'payment': payment.to_dict()})
+
+
+@app.route('/api/payments/<int:payment_id>', methods=['DELETE'])
+@require_permission('payments')
+def delete_payment(payment_id):
+    payment = db.session.get(Payment, payment_id)
+    if not payment:
+        return jsonify({'error': 'Payment not found'}), 404
+    db.session.delete(payment)
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+@app.route('/api/payments/summary', methods=['GET'])
+@require_permission('payments')
+def get_payments_summary():
+    """Same today/this_week/this_month shape as get_transactions_summary() above, for the
+    Payments tab's own overview cards."""
+    today = now_cairo().date()
+    week_start = today - timedelta(days=today.weekday())
+    month_start = today.replace(day=1)
+
+    def total_since(start_date):
+        return (Payment.query
+                .filter(Payment.payment_date >= start_date.strftime('%Y-%m-%d'))
+                .with_entities(db.func.sum(Payment.amount)).scalar() or 0)
+
+    return jsonify({
+        'today': total_since(today),
+        'this_week': total_since(week_start),
+        'this_month': total_since(month_start),
+    })
+
+
+# --- LAB-TO-LAB REFERRALS (Day Close) ---
+
+@app.route('/api/lab-referrals', methods=['POST'])
+@require_permission('day_close')
+def create_lab_referral():
+    data = request.json or {}
+    visit_id = data.get('visit_id')
+    lab_test_id = data.get('lab_test_id')
+    external_lab_name = (data.get('external_lab_name') or '').strip()
+    if not visit_id or not lab_test_id or not external_lab_name:
+        return jsonify({'error': 'visit_id, lab_test_id and external_lab_name are required'}), 400
+    if not PatientVisit.query.get(visit_id):
+        return jsonify({'error': 'Visit not found'}), 404
+    if not LabTest.query.get(lab_test_id):
+        return jsonify({'error': 'Test not found'}), 404
+
+    fee = None
+    if data.get('fee') not in (None, ''):
+        try:
+            fee = float(data['fee'])
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Invalid fee'}), 400
+
+    referral = LabReferral(
+        visit_id=visit_id,
+        lab_test_id=lab_test_id,
+        external_lab_name=external_lab_name,
+        sent_date=data.get('sent_date') or now_cairo().strftime('%Y-%m-%d'),
+        notes=data.get('notes'),
+        fee=fee,
+        created_by=session.get('username'),
+    )
+    db.session.add(referral)
+    db.session.commit()
+    return jsonify({'success': True, 'referral': referral.to_dict()})
+
+
+@app.route('/api/lab-referrals', methods=['GET'])
+@require_permission('day_close')
+def get_lab_referrals():
+    """?status=sent|received|all (default 'sent' — the outstanding worklist) and optional
+    date_from/date_to on sent_date."""
+    query = (db.session.query(LabReferral, PatientVisit, LabTest)
+             .join(PatientVisit, LabReferral.visit_id == PatientVisit.id)
+             .join(LabTest, LabReferral.lab_test_id == LabTest.id))
+
+    status = request.args.get('status', 'sent')
+    if status in ('sent', 'received'):
+        query = query.filter(LabReferral.status == status)
+
+    date_from = request.args.get('date_from')
+    date_to = request.args.get('date_to')
+    if date_from:
+        query = query.filter(LabReferral.sent_date >= date_from)
+    if date_to:
+        query = query.filter(LabReferral.sent_date <= date_to)
+
+    rows = query.order_by(LabReferral.id.desc()).all()
+    payload = []
+    for referral, visit, test in rows:
+        d = referral.to_dict()
+        d['patient_name'] = visit.patient_name
+        d['test_name'] = test.name
+        payload.append(d)
+    return jsonify(payload)
+
+
+@app.route('/api/lab-referrals/<int:referral_id>', methods=['PUT'])
+@require_permission('day_close')
+def update_lab_referral(referral_id):
+    referral = db.session.get(LabReferral, referral_id)
+    if not referral:
+        return jsonify({'error': 'Referral not found'}), 404
+    data = request.json or {}
+    if data.get('status') == 'received' and referral.status != 'received':
+        referral.status = 'received'
+        referral.received_date = data.get('received_date') or now_cairo().strftime('%Y-%m-%d')
+    for field in ('reference_no', 'notes', 'external_lab_name'):
+        if field in data:
+            setattr(referral, field, data[field])
+    if 'fee' in data:
+        try:
+            referral.fee = float(data['fee']) if data['fee'] not in (None, '') else None
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Invalid fee'}), 400
+    db.session.commit()
+    return jsonify({'success': True, 'referral': referral.to_dict()})
+
+
+@app.route('/api/lab-referrals/<int:referral_id>', methods=['DELETE'])
+@require_permission('day_close')
+def delete_lab_referral(referral_id):
+    referral = db.session.get(LabReferral, referral_id)
+    if not referral:
+        return jsonify({'error': 'Referral not found'}), 404
+    db.session.delete(referral)
+    db.session.commit()
+    return jsonify({'success': True})
+
+
+@app.route('/api/lab-referrals/<int:referral_id>/pay', methods=['POST'])
+@require_permission('day_close')
+def pay_lab_referral_fee(referral_id):
+    """Marks a referral's fee as paid and creates the matching Payment row (money out) in the
+    same step — the two must always be created together so 'paid' never means anything other
+    than 'there's a real Payment behind this'. Idempotent-safe: refuses to run twice for the
+    same referral (fee_payment_status/payment_id guard), so a double-click can't double-pay."""
+    referral = db.session.get(LabReferral, referral_id)
+    if not referral:
+        return jsonify({'error': 'Referral not found'}), 404
+    if referral.fee_payment_status == 'paid':
+        return jsonify({'error': 'This referral fee is already marked paid'}), 409
+    if not referral.fee:
+        return jsonify({'error': 'This referral has no fee to pay'}), 400
+
+    visit = db.session.get(PatientVisit, referral.visit_id)
+    test = db.session.get(LabTest, referral.lab_test_id)
+    payment = Payment(
+        category='lab_referral',
+        description=f"Lab-to-Lab referral fee — {test.name if test else 'test'} ({referral.external_lab_name})"
+                    + (f" for {visit.patient_name}" if visit else ''),
+        amount=referral.fee,
+        paid_to=referral.external_lab_name,
+        payment_date=now_cairo().strftime('%Y-%m-%d'),
+        notes=f'Auto-created when Lab Referral #{referral.id} was marked paid.',
+        created_by=session.get('username'),
+    )
+    db.session.add(payment)
+    db.session.flush()  # need payment.id before linking it below
+
+    referral.fee_payment_status = 'paid'
+    referral.payment_id = payment.id
+    db.session.commit()
+    return jsonify({'success': True, 'referral': referral.to_dict(), 'payment': payment.to_dict()})
+
+
+# --- DAY CLOSE ---
+
+def _lab_referral_payload(referral, visit, test):
+    d = referral.to_dict()
+    d['patient_name'] = visit.patient_name
+    d['test_name'] = test.name
+    return d
+
+
+@app.route('/api/day-close/summary', methods=['GET'])
+@require_permission('day_close')
+def get_day_close_summary():
+    """One day's operational summary — ?date=YYYY-MM-DD, defaults to today (Africa/Cairo).
+    Revenue/tests/physicians/patients/gender all scope to visits *booked* that day (same
+    PatientVisit.date boundary convention as get_all_transactions()/get_statistics_results());
+    results scope to TestResult rows against those same visits. Lab-to-Lab's two worklists
+    (pending receipt, awaiting fee payment) are running queues independent of the selected
+    date — a referral doesn't age out of them just because you moved the date picker.
+
+    `visits_detail`/`results_detail` carry the same day's data at row level (not just grouped
+    counts) so the frontend can filter them client-side for the "click a summary row to see
+    what's behind it" drill-down, without a separate round-trip per click."""
+    date_str = request.args.get('date') or now_cairo().strftime('%Y-%m-%d')
+    day_start = date_str
+    day_end = date_str + ' 23:59:59'
+
+    transactions = (TransactionList.query
+                     .filter(TransactionList.date >= day_start, TransactionList.date <= day_end)
+                     .all())
+    revenue_billed = sum(t.total_price or 0 for t in transactions)
+    revenue_collected = sum((t.amount_paid if t.amount_paid is not None else t.final_payment) or 0
+                             for t in transactions)
+    revenue_outstanding = sum(t.remaining_fees or 0 for t in transactions)
+
+    visits = (PatientVisit.query
+              .filter(PatientVisit.date >= day_start, PatientVisit.date <= day_end)
+              .all())
+    visit_ids = [v.id for v in visits]
+    patient_ids = {v.patient_id for v in visits if v.patient_id}
+    clients_by_id = {c.id: c for c in Client.query.filter(Client.id.in_(patient_ids)).all()}
+
+    tests_by_visit = {}
+    if visit_ids:
+        for v_id, name in (db.session.query(VisitTest.visit_id, LabTest.name)
+                            .join(LabTest, VisitTest.lab_test_id == LabTest.id)
+                            .filter(VisitTest.visit_id.in_(visit_ids))
+                            .all()):
+            tests_by_visit.setdefault(v_id, []).append(name)
+
+    gender_counts = {}
+    physician_counts = {}
+    test_counts = {}
+    visits_detail = []
+    for v in visits:
+        client = clients_by_id.get(v.patient_id)
+        gender = (client.gender if client else None) or 'unknown'
+        physician = v.referred_by or 'Self'
+        tests = tests_by_visit.get(v.id, [])
+        gender_counts[gender] = gender_counts.get(gender, 0) + 1
+        physician_counts[physician] = physician_counts.get(physician, 0) + 1
+        for name in tests:
+            test_counts[name] = test_counts.get(name, 0) + 1
+        visits_detail.append({
+            'visit_id': v.id, 'visit_code': v.visit_id, 'patient_name': v.patient_name,
+            'date': v.date, 'gender': gender, 'physician': physician, 'tests': tests,
+        })
+    tests_ordered = [{'test_name': name, 'count': count} for name, count in test_counts.items()]
+
+    results_by_status = {}
+    results_detail = []
+    if visit_ids:
+        visit_patient_names = {v.id: v.patient_name for v in visits}
+        for result in TestResult.query.filter(TestResult.visit_id.in_(visit_ids)).all():
+            status = result.status or 'pending'
+            results_by_status[status] = results_by_status.get(status, 0) + 1
+            results_detail.append({
+                'patient_name': visit_patient_names.get(result.visit_id, ''),
+                'test_name': result.test_name, 'parameter_name': result.parameter_name,
+                'result_value': result.result_value, 'status': status,
+            })
+
+    payments = Payment.query.filter(Payment.payment_date == date_str).all()
+    total_payments = sum(p.amount or 0 for p in payments)
+
+    referrals_sent_today = LabReferral.query.filter(LabReferral.sent_date == date_str).count()
+    pending_rows = (db.session.query(LabReferral, PatientVisit, LabTest)
+                     .join(PatientVisit, LabReferral.visit_id == PatientVisit.id)
+                     .join(LabTest, LabReferral.lab_test_id == LabTest.id)
+                     .filter(LabReferral.status == 'sent')
+                     .order_by(LabReferral.sent_date)
+                     .all())
+    pending_referrals = [_lab_referral_payload(r, v, t) for r, v, t in pending_rows]
+
+    # Received but the external lab's fee hasn't actually been paid yet — separate from the
+    # "still out for testing" queue above; only referrals with a real fee show up here (one
+    # with no fee at all has nothing to pay).
+    awaiting_payment_rows = (db.session.query(LabReferral, PatientVisit, LabTest)
+                     .join(PatientVisit, LabReferral.visit_id == PatientVisit.id)
+                     .join(LabTest, LabReferral.lab_test_id == LabTest.id)
+                     .filter(LabReferral.status == 'received',
+                             LabReferral.fee_payment_status == 'unpaid',
+                             LabReferral.fee.isnot(None))
+                     .order_by(LabReferral.received_date)
+                     .all())
+    awaiting_payment_referrals = [_lab_referral_payload(r, v, t) for r, v, t in awaiting_payment_rows]
+
+    return jsonify({
+        'date': date_str,
+        'revenue': {
+            'billed': revenue_billed,
+            'collected': revenue_collected,
+            'outstanding': revenue_outstanding,
+        },
+        'transactions_count': len(transactions),
+        'visits_count': len(visits),
+        'patients_count': len(patient_ids),
+        'gender_breakdown': gender_counts,
+        'physicians': [{'name': name, 'count': count} for name, count in physician_counts.items()],
+        'tests_ordered': tests_ordered,
+        'results_breakdown': results_by_status,
+        'payments_total': total_payments,
+        'payments_count': len(payments),
+        'visits_detail': visits_detail,
+        'results_detail': results_detail,
+        'lab_to_lab': {
+            'sent_today': referrals_sent_today,
+            'pending': pending_referrals,
+            'awaiting_payment': awaiting_payment_referrals,
+        },
     })
 
 
