@@ -1,12 +1,28 @@
-Flask>=2.3.0
-SQLAlchemy>=2.0.0
-flask-cors>=4.0.0
-flask-sqlalchemy>=3.0.0
-reportlab>=4.0.0
-qrcode>=7.4.0
-Pillow>=10.0.0
+# Pinned to exact versions (not >=) so a Docker build resolves the same working set every
+# time, instead of picking up whatever's newest on the day the image happens to be built —
+# these are the versions actually verified working against this codebase (venv 'lab_app').
+# Includes transitive dependencies too, for the same reason.
+
+# Direct dependencies (imported by src/)
+Flask==2.3.3
 Werkzeug==2.3.7
-python-dotenv>=1.0.0
-tzdata>=2024.1
-arabic-reshaper>=3.0.0
-python-bidi>=0.6.0
+flask-cors==6.0.5
+flask-sqlalchemy==3.1.1
+SQLAlchemy==2.0.51
+reportlab==5.0.0
+qrcode==8.2
+Pillow==12.3.0
+python-dotenv==1.2.2
+tzdata==2026.3
+arabic-reshaper==3.0.1
+python-bidi==0.6.11
+
+# Transitive dependencies, pinned for the same reproducibility reason
+blinker==1.9.0
+charset-normalizer==3.4.9
+click==8.4.2
+greenlet==3.5.5
+itsdangerous==2.2.0
+Jinja2==3.1.6
+MarkupSafe==3.0.3
+typing_extensions==4.16.0

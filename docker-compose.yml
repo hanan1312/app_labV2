@@ -1,0 +1,54 @@
+# Two independent containers, not one, because the browser talks to each of them directly at
+# its own port — it builds the WhatsApp service's URL client-side as
+# `http://<same hostname the page loaded from>:${NODE_PORT}` (script_lab.js/results_entry.js/
+# HREmployeesTab.tsx), never through the Flask backend and never through a Docker-internal
+# service name. That means BOTH ports below must be published straight to whatever host/domain
+# browsers actually reach this app on — not just reachable container-to-container — same as
+# the two ports setup_and_run.sh/install_systemd_services.sh already expose on bare metal.
+#
+# Quick start:
+#   cp .env.example .env      # optional — only needed to change ports or set a real SECRET_KEY
+#   docker compose up --build
+#   docker compose logs -f whatsapp-bot   # scan the QR code once per machine/volume
+
+services:
+  backend:
+    build:
+      context: .
+      target: backend
+    ports:
+      - "${BACKEND_PORT:-9050}:${BACKEND_PORT:-9050}"
+    environment:
+      BACKEND_PORT: "${BACKEND_PORT:-9050}"
+      # Only needed here to generate config.js for the browser — the backend itself never
+      # calls the whatsapp-bot service (see the comment above).
+      NODE_PORT: "${NODE_PORT:-5050}"
+      SECRET_KEY: "${SECRET_KEY:-super-secret-dev-key}"
+      # Uncomment to point at something other than the default SQLite file — read
+      # docs/app_react_migration.md's Architecture section / CLAUDE.md's dual-engine gotcha
+      # first if you do (the lab-workspace request path has its own hardcoded DB file lookup
+      # that does NOT respect this variable).
+      # DATABASE_URL: "postgresql://user:pass@host/dbname"
+    volumes:
+      - database:/app/database
+      - reports:/app/src/static/reports
+    restart: unless-stopped
+
+  whatsapp-bot:
+    build:
+      context: .
+      target: whatsapp-bot
+    ports:
+      - "${NODE_PORT:-5050}:${NODE_PORT:-5050}"
+    environment:
+      NODE_PORT: "${NODE_PORT:-5050}"
+    volumes:
+      - wwebjs_auth:/app/src/static/js/.wwebjs_auth
+      - wwebjs_cache:/app/src/static/js/.wwebjs_cache
+    restart: unless-stopped
+
+volumes:
+  database:
+  reports:
+  wwebjs_auth:
+  wwebjs_cache:

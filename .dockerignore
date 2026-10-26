@@ -1,0 +1,34 @@
+# Mirrors .gitignore, plus Docker-specific excludes. Keeps the build context small and
+# guarantees stale local artifacts (a build output, a WhatsApp session, a venv) never leak
+# into an image even if they happen to exist on the host running `docker build`.
+
+.git
+.gitignore
+
+# Python
+lab_app/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+database/
+
+# Node (both the WhatsApp bot's root-level deps and frontend-lab's own) — each Docker stage
+# runs its own `npm ci` instead of reusing whatever's on the host.
+node_modules
+frontend-lab/*.tsbuildinfo
+
+# Generated at container start (backend-entrypoint.sh), or by the frontend-builder stage —
+# never something to copy in from the host.
+src/static/js/config.js
+src/static/react/
+
+# WhatsApp session/auth — sensitive, and must come from a volume, never be baked into an image.
+src/static/js/.wwebjs_auth/
+src/static/js/.wwebjs_cache/
+
+# Editor/CI noise, docs, and this project's own tooling config — irrelevant to any image.
+.claude/
+docs/
+*.md
+admins.json.bak-*
